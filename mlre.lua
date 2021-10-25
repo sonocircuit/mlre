@@ -11,20 +11,10 @@
 --
 -- MIDI transport form @okyeron
 --
--- delayyyyyyyy engine
--- from @cfd90
---
 -- thank you!
 --
 -- for docs go to:
 -- github.com/sonocircuits/mlre
---
--- NOTES TO SELF:
---
--- TODO: - ADD TO PARAMS FOR MIDI MAP ONLY (HIDE) -> TOGGLE REC, MOM retrig() and MOM altrun()
---
--- FUTURE: - ONESHOT REC (Arm via alt + rec..i) starts when pos==0 and stops after pos==15 (starts at pos0 now but does not stop)
---         - custom scales per track
 --
 -- /////////
 -- ////
@@ -45,8 +35,6 @@
 --
 --
 
-engine.name = "Delayyyyyyyy"
-
 local g = grid.connect()
 
 local fileselect = require 'fileselect'
@@ -57,6 +45,7 @@ local TRACKS = 6
 local FADE = 0.01
 local pageNum = 1
 local key1_hold = 0
+local armrec = 0
 
 -- for scales (comment in (remove --) for one of the options you wish to use)
 
@@ -72,6 +61,9 @@ local scale = controlspec.new(-1.0,1.0,"lin", 1/12, 0,"", 1/48) -- semitones
 --local scale = controlspec.new(-2.0,2.0,"lin", 9/12, 0,"", 1/24) -- major sixths
 --local scale = controlspec.new(-2.0,2.0,"lin", 10/12, 0,"", 1/24) -- minor sevenths
 --local scale = controlspec.new(-2.0,2.0,"lin", 11/12, 0,"", 1/24) -- major sevenths
+
+local scale_options = {"none", "semitones", "minor", "major", "fifths"}
+local scale_track = {"global", "none", "semitones", "minor", "major", "fifths"}
 
 -- for lib/hnds
 local lfo = include 'lib/hnds_mlre'
@@ -179,7 +171,7 @@ function event_exec(e)
     end
   elseif e.t == eSTOP then
     track[e.i].play = 0
-    --track[e.i].pos_grid = -1 --removes "glitch" where after start last grid button lights up
+    --track[e.i].pos_grid = -1 --removes "glitch" where after "play" last grid button lights up(locks to last step if in "freeze" mode)
     ch_toggle(e.i, 0)
     dirtygrid = true
   elseif e.t == eSTART then
@@ -194,7 +186,7 @@ function event_exec(e)
     local lend = clip[track[e.i].clip].s + (track[e.i].loop_end)/16*clip[track[e.i].clip].l
     softcut.loop_start(e.i,lstart)
     softcut.loop_end(e.i,lend)
-    if view == vCUT then dirtygrid = true end
+    dirtygrid = true
   elseif e.t == eSPEED then
     track[e.i].speed = e.speed
     update_rate(e.i)
@@ -516,30 +508,14 @@ end
 --iniiiiiiit!
 init = function()
 
-  --params for "globals"
+--params for "globals"
   params:add_separator("global")
 
-  -- params for delay
-  params:add_group("delay (pre rec)", 4)
-  params:add_control("time", "time", controlspec.new(0.01, 2, 'lin', 0.01, 0.42, 's'))
-  params:set_action("time", function(x) engine.time(x) end)
+-- rec thesh set
+  params:add_control("record_threshold","rec threshold",controlspec.new(1,1000,'exp',1,85,''))
 
-  params:add_control("feedback", "feedback", controlspec.new(0, 100, 'lin', 1, 24, '%'))
-  params:set_action("feedback", function(x) engine.feedback(x / 100) end)
-
-  params:add_control("sep", "mod/sep", controlspec.new(0, 100, 'lin', 1, 0, '%'))
-  params:set_action("sep", function(x) engine.sep(x / 100 / 100) end)
-
-  params:add_control("mix", "mix", controlspec.new(0, 100, 'lin', 1, 0, '%'))
-  params:set_action("mix", function(x) engine.mix(((x / 100) * 2) - 1) end)
-
-  -- adc to softcut level
-  params:add_control("sc_input_level", "input level -> softcut", controlspec.new(0, 1, "lin", 0, 0))
-  params:set_action("sc_input_level", function(x) audio.level_adc_cut(x) end)
-
-  -- engine to softcut level
-  params:add_control("sc_engine_level", "delay level -> softcut", controlspec.new(0, 1, "lin", 0, 1))
-  params:set_action("sc_engine_level", function(x) audio.level_eng_cut(x) end)
+-- params for scales
+  params:add_option("scale","scale", scale_options,1)
 
 -- params for quant division
   params:set_action("clock_tempo", function() update_tempo() end)
@@ -556,7 +532,7 @@ init = function()
   audio.level_eng_cut(1)
 
   for i = 1,TRACKS do
-    params:add_group("track "..i, 14)
+    params:add_group("track "..i, 15)
 
   --softcut settings
     softcut.enable(i, 1)
@@ -600,7 +576,7 @@ init = function()
     params:add_control(i.."dub", i.." dub", controlspec.UNIPOLAR)
     params:set_action(i.."dub", function(x) track[i].pre_level = x set_rec(i) end)
     -- scale
-    --params:add_option(i.."scale", i.." scale", scale_options) -- to define
+    params:add_option(i.."t_scale", i.." scale", scale_track) -- to define
     --params:set_action(i.."scale", function() set_scale end)   -- to define
     -- transpose
     params:add_control(i.."transpose", i.." transpose", scale)
@@ -614,7 +590,7 @@ init = function()
     -- add file
     params:add_file(i.."file", i.." file", "")
     params:set_action(i.."file", function(n) fileselect_callback(n,i) end)
-    params:hide(i.."file")--never use this as present in CLIP page and don't need to midimap
+    params:hide(i.."file") --never use this as present in CLIP page and don't need to midimap
 
     params:add_separator("filter")
     -- cutoff
@@ -701,6 +677,9 @@ gridkey_nav = function(x, z)
       set_view(vREC)
     elseif x == 2 then set_view(vCUT)
     elseif x == 3 then set_view(vCLIP)
+    --elseif x == 4 then
+      --armrec = 1 - armrec
+      --arm_rec()
     elseif x>4 and x<9 then
       local i = x - 4
       if alt == 1 then
@@ -760,6 +739,8 @@ gridredraw_nav = function()
   g:led(2, 1, 3)
   g:led(3, 1, 2)
   g:led(view, 1, 9)
+  if armrec == 1 then g:led(4, 1, 9)
+  else g:led(4, 1, 0) end
   if alt == 1 and alt2 == 0 then g:led(16, 1, 15)
   elseif alt == 0 then g:led(16, 1, 9) end
   if quantize == 1 then g:led(15, 1, 9)
@@ -828,7 +809,7 @@ v.enc[vREC] = function(n, d)
      if n == 2 then
        params:delta(focus.."transpose", d)
      elseif n == 3 then return
-       --params:delta(focus.."filter_q", d)
+       params:delta(focus.."t_scale", d)
      end
    else
      if n == 2 then
@@ -908,7 +889,7 @@ v.redraw[vREC] = function()
     screen.move(10,32)
     screen.text(params:string(focus.."transpose"))
     screen.move(70,32)
-    screen.text("none")
+    screen.text(params:string(focus.."t_scale"))
     screen.level(3)
     screen.move(10,40)
     screen.text("transpose")
@@ -981,7 +962,7 @@ v.gridkey[vREC] = function(x, y, z)
     if held[y] > heldmax[y] then heldmax[y] = held[y] end
     local i = focus
     if z == 1 then
-      if alt2 == 1 then --"freeze" function as on cut page (more elegant to implement in event_exec(e)?? -> eFREEZ?)
+      if alt2 == 1 then --"freeze" function as on cut page (better to implement in event_exec(e)?? -> eFREEZ?)
         heldmax[y] = x
         e = {}
         e.t = eLOOP
