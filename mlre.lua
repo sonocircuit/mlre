@@ -36,6 +36,7 @@
 --
 
 local g = grid.connect()
+local m = midi.connect()
 
 local fileselect = require 'fileselect'
 local textentry = require 'textentry'
@@ -44,26 +45,28 @@ local pattern_time = require 'pattern_time'
 local TRACKS = 6
 local FADE = 0.01
 local pageNum = 1
+local pageLFO = 1
 local key1_hold = 0
-local armrec = 0
+local scale_idx = 1
 
--- for scales (comment in (remove --) for one of the options you wish to use)
+-- for transpose scales
+local scale_options = {"chromatic", "minor", "major", "just min", "just maj"}
 
---local scale = controlspec.new(-1.0,1.0,"lin", 0, 0,"",0.01) -- no quantization
-local scale = controlspec.new(-1.0,1.0,"lin", 1/12, 0,"", 1/48) -- semitones
---local scale = controlspec.new(-1.0,1.0,"lin", 2/12, 0,"", 1/48) -- tones
---local scale = controlspec.new(-1.0,1.0,"lin", 3/12, 0,"", 1/36) -- minor thrids
---local scale = controlspec.new(-1.0,1.0,"lin", 4/12, 0,"", 1/36) -- major thrids
---local scale = controlspec.new(-1.0,1.0,"lin", 5/12, 0,"", 1/24) -- fourths
---local scale = controlspec.new(-1.0,1.0,"lin", 6/12, 0,"", 1/24) -- diminished fifths
---local scale = controlspec.new(-1.75,1.75,"lin", 7/12, 0,"", 1/24) -- fifths
---local scale = controlspec.new(-2.0,2.0,"lin", 8/12, 0,"", 1/24) -- minor sixths
---local scale = controlspec.new(-2.0,2.0,"lin", 9/12, 0,"", 1/24) -- major sixths
---local scale = controlspec.new(-2.0,2.0,"lin", 10/12, 0,"", 1/24) -- minor sevenths
---local scale = controlspec.new(-2.0,2.0,"lin", 11/12, 0,"", 1/24) -- major sevenths
+local trans_id = {
+  {"-P5","-d5","-P4","-M3","-m3","-M2","-m2","P1","m2","M2","m3","M3","P4","d5","P5"},
+  {"-P8","-m7","-m6","-P5","-P4","-m3","-M2","P1","M2","m3","P4","P5","m6","m7","P8"},
+  {"-P8","-M7","-M6","-P5","-P4","-M3","-M2","P1","M2","M3","P4","P5","M6","M7","P8"},
+  {"-P8","-m7","-m6","-P5","-P4","-m3","-M2","P1","M2","m3","P4","P5","m6","m7","P8"},
+  {"-P8","-M7","-M6","-P5","-P4","-M3","-M2","P1","M2","M3","P4","P5","M6","M7","P8"},
+}
 
-local scale_options = {"none", "semitones", "minor", "major", "fifths"}
-local scale_track = {"global", "none", "semitones", "minor", "major", "fifths"}
+local trans_scale = {
+  {-700, -600, -500, -400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 700},
+  {-1200, -1000, -800, -700, -500, -300, -200, 0, 200, 300, 500, 700, 800, 1000, 1200},
+  {-1200, -1100, -900, -700, -500, -400, -200, 0, 200, 400, 500, 700, 900, 1100, 1200},
+  {-1200, -996, -814, -702, -498, -316, -204, 0, 204, 316, 498, 702, 814, 996, 1200},
+  {-1200, -1088, -884, -702, -498, -386, -204, 0, 204, 386, 498, 702, 884, 1088, 1200},
+}
 
 -- for lib/hnds
 local lfo = include 'lib/hnds_mlre'
@@ -81,11 +84,6 @@ end
 -- softcut has ~350s per buffer
 local CLIP_LEN_SEC = 45
 local MAX_CLIPS = 7
-
-local vREC = 1
-local vCUT = 2
-local vCLIP = 3
-local vTIME = 15
 
 -- events
 local eCUT = 1
@@ -237,25 +235,7 @@ function recall_exec(i)
   end
 end
 
-view = vREC
-view_prev = view
-
-v = {}
-v.key = {}
-v.enc = {}
-v.redraw = {}
-v.gridkey = {}
-v.gridredraw = {}
-
-viewinfo = {}
-viewinfo[vREC] = 0
-viewinfo[vCUT] = 0
-viewinfo[vTIME] = 0
-
-focus = 1
-alt = 0
-alt2 = 0
-
+--for tracks and clips
 track = {}
 for i = 1,TRACKS do
   track[i] = {}
@@ -275,6 +255,7 @@ for i = 1,TRACKS do
   track[i].speed = 0
   track[i].rev = 0
   track[i].tempo_map = 0
+  track[i].transpose = 0
 end
 
 set_clip_length = function(i, len)
@@ -337,6 +318,12 @@ set_rec = function(n)
   end
 end
 
+function ch_toggle(i, x)
+  softcut.play(i, x)
+  softcut.rec(i, x)
+end
+
+--for gridpress range
 held = {}
 heldmax = {}
 done = {}
@@ -350,6 +337,33 @@ for i = 1,8 do
   second[i] = 0
 end
 
+--interface
+local vREC = 1
+local vCUT = 2
+local vCLIP = 3
+local vLFO = 4
+local vTIME = 15
+
+view = vREC
+view_prev = view
+
+v = {}
+v.key = {}
+v.enc = {}
+v.redraw = {}
+v.gridkey = {}
+v.gridredraw = {}
+
+viewinfo = {}
+viewinfo[vREC] = 0
+viewinfo[vCUT] = 0
+viewinfo[vLFO] = 0
+viewinfo[vTIME] = 0
+
+focus = 1
+alt = 0
+alt2 = 0
+
 key = function(n, z)
     if n == 1 then
     key1_hold = z
@@ -360,7 +374,16 @@ end
 enc = function(n, d) _enc(n, d) end
 
 redraw = function() _redraw() end
+
 g.key = function(x, y, z) _gridkey(x, y, z) end
+
+gridredraw = function()
+  if not g then return end
+  if dirtygrid == true then
+    _gridredraw()
+    dirtygrid = false
+  end
+end
 
 set_view = function(x)
   if x == -1 then x = view_prev end
@@ -375,28 +398,94 @@ set_view = function(x)
   dirtygrid = true
 end
 
-gridredraw = function()
-  if not g then return end
-  if dirtygrid == true then
-    _gridredraw()
-    dirtygrid = false
-  end
-end
-
-function ch_toggle(i, x)
-  softcut.play(i, x)
-  softcut.rec(i, x)
-end
-
-function runall() --start all selected tracks (currently unused)
-  for i = 1, TRACKS do
-    if track[i].sel == 1 then
-      e = {} e.t = eSTART e.i = i
+-- for lfos (hnds_mlre)
+function lfo.process()
+  for i = 1, 6 do
+    local target = params:get(i .. "lfo_target")
+    local target_name = string.sub(lfo_targets[target], 2)
+    local voice = string.sub(lfo_targets[target], 1, 1)
+    if params:get(i .. "lfo") == 2 then
+      if target_name == "vol" then
+        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
+      elseif target_name == "pan" then
+        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, -1.0, 1.0))
+      elseif target_name == "dub" then
+        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
+      elseif target_name == "transpose" then
+        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 1, 16))
+      elseif target_name == "rate_slew" then
+        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
+      elseif target_name == "cutoff" then
+      params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 20, 18000))
+      end
     end
-  event(e)
   end
 end
 
+-- set scales
+function set_scale(n)
+  for i = 1, TRACKS do
+    local p = params:lookup_param(i.."transpose")
+	  p.options = trans_id[n]
+	  p:bang()
+	end
+end
+
+function set_transpose(i,x)
+  local scale_idx = params:get("scale")
+  track[i].transpose = trans_scale[scale_idx][x] / 1200
+  if track[i].play == 1 then
+    update_rate(i)
+  end
+end
+
+--rec state
+function rec_state(i, id)
+  if id == 2 then
+    track[i].rec = 1
+  else
+    track[i].rec = 0
+  end
+end
+
+--select input
+function update_softcut_input()
+  for i=1,TRACKS do
+    if params:get("input type") == 1 then
+      --print("L&R "..i)
+      softcut.level_input_cut(1, i, 1)
+      softcut.level_input_cut(2, i, 1)
+      audio.level_adc_cut(1)
+      audio.level_tape_cut(0)
+      --audio.level_eng_cut(0)
+      --audio.level_monitor(1)
+    elseif params:get("input type") == 2 then
+      --print("L "..i)
+      softcut.level_input_cut(1, i, 1)
+      softcut.level_input_cut(2, i, 0)
+      audio.level_adc_cut(1)
+      audio.level_tape_cut(0)
+      --audio.level_eng_cut(0)
+      --audio.level_monitor(1)
+    elseif params:get("input type") == 3 then
+      --print("R "..i)
+      softcut.level_input_cut(1,i,0)
+      softcut.level_input_cut(2,i,1)
+      audio.level_adc_cut(1)
+      audio.level_tape_cut(0)
+      --audio.level_eng_cut(0)
+      --audio.level_monitor(1)
+    elseif params:get("input type") == 4 then
+      --print("TAPE "..i)
+      audio.level_adc_cut(0)
+      audio.level_tape_cut(1)
+      --audio.level_eng_cut(0)
+      --audio.level_monitor(1)
+    end
+  end
+end
+
+-- transport functions
 function stopall() --stop all tracks tracks
   for i = 1, TRACKS do
       e = {} e.t = eSTOP e.i = i
@@ -409,11 +498,9 @@ function altrun() --add alternative run function for selected tracks (see gridna
     if track[i].sel == 1 then
       if track[i].play == 1 then
         e = {} e.t = eSTOP e.i = i
-      else
+      elseif track[i].play == 0 then
         e = {} e.t = eSTART e.i = i
       end
-    elseif track[i].sel == 0 then
-      return
     end
   event(e)
   end
@@ -427,14 +514,13 @@ function retrig() --add retrig function for playing tracks (see gridnav)
       elseif track[i].rev == 1 then
         e = {} e.t = eCUT e.i = i e.pos = 15
       end
-    event(e)
     end
+    event(e)
   end
 end
 
---play any track before using otherwise we get an error "attempt to index a nil value (local 'e')"
-function osrec()
-  for i = 1, TRACKS do
+function oneshot_rec()
+  for i = 1, TRACKS do --play any track before using otherwise we get an error "attempt to index a nil value (local 'e')"
     if track[i].rec == 1 then
       if track[i].rev == 0 then
         e = {} e.t = eCUT e.i = i e.pos = 0
@@ -460,8 +546,7 @@ function mstart() --MIDI START for selected tracks
 end
 
 -- MIDI SETUP
-local clk_midi = midi.connect()
-clk_midi.event = function(data)
+m.event = function(data)
   local d = midi.to_msg(data)
   if d.type == "start" then
       clock.transport.start()
@@ -481,64 +566,85 @@ function clock.transport.stop()
   stopall()
 end
 
--- for hnds (TODO: tweek the min max values for the according target params)
-function lfo.process()
-  for i = 1, 6 do
-    local target = params:get(i .. "lfo_target")
-    local target_name = string.sub(lfo_targets[target], 2)
-    local voice = string.sub(lfo_targets[target], 1, 1)
-    if params:get(i .. "lfo") == 2 then
-      if target_name == "vol" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
-      elseif target_name == "pan" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, -1.0, 1.0))
-      elseif target_name == "dub" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
-      elseif target_name == "transpose" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 2.0, -2.0, 2.0))
-      elseif target_name == "rate_slew" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
-      elseif target_name == "cutoff" then
-      params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 20, 18000))
-      end
-    end
-  end
-end
-
---iniiiiiiit!
+--init
 init = function()
 
 --params for "globals"
   params:add_separator("global")
 
--- rec thesh set
-  params:add_control("record_threshold","rec threshold",controlspec.new(1,1000,'exp',1,85,''))
+  --input options
+  params:add_option("input type","input type",{"L+R", "L IN", "R IN", "TAPE"}, 1)
+  params:set_action("input type",function(x) update_softcut_input() end)
 
--- params for scales
+  --rec thesh set
+  --params:add_control("record_threshold","rec threshold",controlspec.new(1, 100, 'exp', 1, 50, ''))
+
+  --params for scales
   params:add_option("scale","scale", scale_options,1)
+  params:set_action("scale", function(n) set_scale(n) end)
 
--- params for quant division
+  --params for quant division
   params:set_action("clock_tempo", function() update_tempo() end)
   params:add_option("quant_div", "quant div", {1, 2, 4, 8, 16, 32}, 4)
   params:set_action("quant_div",function() update_tempo() end)
 
--- params for tracks 1-6
+--params for tracks
   params:add_separator("tracks")
 
-  p = {}
-
-  audio.level_cut(1)
-  audio.level_adc_cut(1)
-  audio.level_eng_cut(1)
+  --p = {} -- is this needed? can't find any table p and can't seem to identify any missing feature when commented out
 
   for i = 1,TRACKS do
-    params:add_group("track "..i, 15)
+    params:add_group("track "..i, 16)
 
-  --softcut settings
+    params:add_separator("tape / buffer")
+    -- track volume
+    params:add_control(i.."vol", i.." vol", controlspec.new(0, 1, 'lin', 0, 1, ""))
+    params:set_action(i.."vol", function(x) softcut.level(i,x) end)
+    -- track pan
+    params:add_control(i.."pan", i.." pan", controlspec.new(-1, 1, 'lin', 0, 0, ""))
+    params:set_action(i.."pan", function(x) softcut.pan(i,x) end)
+    -- record level
+    params:add_control(i.."rec", i.." rec", controlspec.new(0, 1, 'lin', 0, 1, ""))
+    params:set_action(i.."rec", function(x) track[i].rec_level = x set_rec(i) end)
+    -- overdub level
+    params:add_control(i.."dub", i.." dub", controlspec.UNIPOLAR)
+    params:set_action(i.."dub", function(x) track[i].pre_level = x set_rec(i) end)
+    -- detune
+    params:add_control(i.."detune", i.." detune", controlspec.BIPOLAR)
+    params:set_action(i.."detune", function() update_rate(i) end)
+    -- transpose
+    params:add_option(i.."transpose", i.." transpose", trans_id[params:get("scale")], 8)
+    params:set_action(i.."transpose", function(x) set_transpose(i,x) end)
+    -- rate slew
+    params:add_control(i.."rate_slew", i.." rate slew", controlspec.new(0, 1, 'lin', 0, 0, ""))
+    params:set_action(i.."rate_slew", function(x) softcut.rate_slew_time(i, x) end)
+    -- level slew
+    params:add_control(i.."level_slew", i.." level slew", controlspec.new(0.0, 10.0, "lin", 0.1, 0.1, ""))
+    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) end)
+    -- rec state
+    params:add_option(i.."rec_state", i.." rec state", {"off", "on"}, 1)
+    params:set_action(i.. "rec_state", function(id) rec_state(i, id) end)
+    -- add file
+    params:add_file(i.."file", i.." file", "")
+    params:set_action(i.."file", function(n) fileselect_callback(n,i) end)
+    params:hide(i.."file") --I never use this as it is present in CLIP page and don't need to midimap
+
+    params:add_separator("filter")
+    -- cutoff
+    params:add_control(i.."cutoff", i.." cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
+    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) softcut.post_filter_fc(i, x) end)
+    -- filter q
+    params:add_control(i.."filter_q", i.." filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
+    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) softcut.post_filter_rq(i, x) end)
+    -- low pass
+    params:add_control(i.."low_pass", i.." lp level", controlspec.new(0, 1, 'lin', 0.01, 1, ""))
+    params:set_action(i.."low_pass", function(x) softcut.post_filter_lp(i, x) softcut.post_filter_lp(i, x) end)
+    -- high pass
+    params:add_control(i.."high_pass", i.." hp level", controlspec.new(0, 1, 'lin', 0.01, 0, ""))
+    params:set_action(i.."high_pass", function(x) softcut.post_filter_hp(i, x) softcut.post_filter_hp(i, x) end)
+
+    --softcut settings
     softcut.enable(i, 1)
-
-  	softcut.level_input_cut(1, i, 1.0)
-  	softcut.level_input_cut(2, i, 1.0)
 
     softcut.play(i, 0)
     softcut.rec(i, 0)
@@ -562,64 +668,22 @@ init = function()
     softcut.loop(i, 1)
     softcut.position(i, clip[track[i].clip].s)
 
-    params:add_separator("tape / buffer")
-    -- track volume
-    params:add_control(i.."vol", i.." vol", controlspec.new(0, 1, 'lin', 0, 1, ""))
-    params:set_action(i.."vol", function(x) softcut.level(i,x) end)
-    -- track pan
-    params:add_control(i.."pan", i.." pan", controlspec.new(-1, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."pan", function(x) softcut.pan(i,x) end)
-    -- record level
-    params:add_control(i.."rec", i.." rec", controlspec.new(0, 1, 'lin', 0, 1, ""))
-    params:set_action(i.."rec", function(x) track[i].rec_level = x set_rec(i) end)
-    -- overdub level
-    params:add_control(i.."dub", i.." dub", controlspec.UNIPOLAR)
-    params:set_action(i.."dub", function(x) track[i].pre_level = x set_rec(i) end)
-    -- scale
-    params:add_option(i.."t_scale", i.." scale", scale_track) -- to define
-    --params:set_action(i.."scale", function() set_scale end)   -- to define
-    -- transpose
-    params:add_control(i.."transpose", i.." transpose", scale)
-    params:set_action(i.."transpose", function() update_rate(i) end)
-    -- transpose slew
-    params:add_control(i.."rate_slew", i.." rate slew", controlspec.new(0, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."rate_slew", function(x) softcut.rate_slew_time(i, x) end)
-    -- level slew
-    params:add_control(i.."level_slew", i.." level slew", controlspec.new(0.0, 10.0, "lin", 0.1, 0.1, ""))
-    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) end)
-    -- add file
-    params:add_file(i.."file", i.." file", "")
-    params:set_action(i.."file", function(n) fileselect_callback(n,i) end)
-    params:hide(i.."file") --never use this as present in CLIP page and don't need to midimap
-
-    params:add_separator("filter")
-    -- cutoff
-    params:add_control(i.."cutoff", i.." cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
-    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) softcut.post_filter_fc(i, x) end)
-    -- filter q
-    params:add_control(i.."filter_q", i.." filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
-    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) softcut.post_filter_rq(i, x) end)
-    -- low pass
-    params:add_control(i.."low_pass", i.." lp level", controlspec.new(0, 1, 'lin', 0.01, 1, ""))
-    params:set_action(i.."low_pass", function(x) softcut.post_filter_lp(i, x) softcut.post_filter_lp(i, x) end)
-    -- high pass
-    params:add_control(i.."high_pass", i.." hp level", controlspec.new(0, 1, 'lin', 0.01, 0, ""))
-    params:set_action(i.."high_pass", function(x) softcut.post_filter_hp(i, x) softcut.post_filter_hp(i, x) end)
-    
     update_rate(i)
     set_clip(i, i)
+
   end
-  
--- params for modulation
+
+-- params for modulation (hnds_mlre)
   params:add_separator("modulation")
-
-  -- for hnds
-  for i = 1, 6 do
-    lfo[i].lfo_targets = lfo_targets
-  end
-
+  for i = 1, 6 do lfo[i].lfo_targets = lfo_targets end
   lfo.init()
 
+  --input settings --do these need to be initialized as already done in update_softcut_input()?
+  audio.level_cut(1)
+  audio.level_adc_cut(1)
+  audio.level_eng_cut(1)
+
+  --quantizer init
   quantizer = metro.init()
   quantizer.time = 0.125
   quantizer.count = -1
@@ -646,8 +710,9 @@ init = function()
   softcut.poll_start_phase()
 
   clock.run(clock_update_tempo)
+  --clock.run(oneshot_rec)
 
-end -- init end
+end -- end of init
 
 -- poll callback
 phase = function(n, x)
@@ -661,7 +726,7 @@ phase = function(n, x)
 end
 
 update_rate = function(i)
-  local n = math.pow(2, track[i].speed + params:get(i.."transpose"))
+  local n = math.pow(2, track[i].speed + track[i].transpose + params:get(i.."detune"))
   if track[i].rev == 1 then n = -n end
   if track[i].tempo_map == 1 then
     local bpmmod = params:get("clock_tempo") / clip[track[i].clip].bpm
@@ -670,6 +735,7 @@ update_rate = function(i)
   softcut.rate(i, n)
 end
 
+--user interface
 gridkey_nav = function(x, z)
   if z == 1 then
     if x == 1 then
@@ -677,9 +743,7 @@ gridkey_nav = function(x, z)
       set_view(vREC)
     elseif x == 2 then set_view(vCUT)
     elseif x == 3 then set_view(vCLIP)
-    --elseif x == 4 then
-      --armrec = 1 - armrec
-      --arm_rec()
+    elseif x == 4 then set_view(vLFO)
     elseif x>4 and x<9 then
       local i = x - 4
       if alt == 1 then
@@ -739,8 +803,6 @@ gridredraw_nav = function()
   g:led(2, 1, 3)
   g:led(3, 1, 2)
   g:led(view, 1, 9)
-  if armrec == 1 then g:led(4, 1, 9)
-  else g:led(4, 1, 0) end
   if alt == 1 and alt2 == 0 then g:led(16, 1, 15)
   elseif alt == 0 then g:led(16, 1, 9) end
   if quantize == 1 then g:led(15, 1, 9)
@@ -807,9 +869,9 @@ v.enc[vREC] = function(n, d)
  elseif pageNum == 3 then
    if viewinfo[vREC] == 0 then
      if n == 2 then
+       params:delta(focus.."detune", d)
+     elseif n == 3 then
        params:delta(focus.."transpose", d)
-     elseif n == 3 then return
-       params:delta(focus.."t_scale", d)
      end
    else
      if n == 2 then
@@ -818,8 +880,9 @@ v.enc[vREC] = function(n, d)
        params:delta(focus.."level_slew", d)
      end
    end
-  end
-  redraw()
+ end
+ dirtygrid = true
+ redraw()
 end
 
 v.redraw[vREC] = function()
@@ -828,11 +891,15 @@ v.redraw[vREC] = function()
   screen.move(10,16)
   screen.text("TRACK "..focus)
   local sel = viewinfo[vREC] == 0
+  local mp = 104
 
   if pageNum == 1 then
-    screen.level(15)
-    screen.move(112,16)
-    screen.text("1/3")
+    screen.level(6)
+    screen.rect(mp+3,12,5,5)
+    screen.fill()
+    screen.rect(mp+11,13,4,4)
+    screen.rect(mp+18,13,4,4)
+    screen.stroke()
     screen.level(sel and 15 or 4)
     screen.move(10,32)
     screen.text(params:string(focus.."vol"))
@@ -856,9 +923,12 @@ v.redraw[vREC] = function()
     screen.text("dub level")
 
   elseif pageNum == 2 then
-    screen.level(15)
-    screen.move(110,16)
-    screen.text("2/3")
+    screen.level(6)
+    screen.rect(mp+10,12,5,5)
+    screen.fill()
+    screen.rect(mp+4,13,4,4)
+    screen.rect(mp+18,13,4,4)
+    screen.stroke()
     screen.level(sel and 15 or 4)
     screen.move(10,32)
     screen.text(params:string(focus.."cutoff"))
@@ -882,19 +952,22 @@ v.redraw[vREC] = function()
     screen.text("lp level")
 
   elseif pageNum == 3 then
-    screen.level(15)
-    screen.move(110,16)
-    screen.text("3/3")
+    screen.level(6)
+    screen.rect(mp+17,12,5,5)
+    screen.fill()
+    screen.rect(mp+4,13,4,4)
+    screen.rect(mp+11,13,4,4)
+    screen.stroke()
     screen.level(sel and 15 or 4)
     screen.move(10,32)
-    screen.text(params:string(focus.."transpose"))
+    screen.text(params:string(focus.."detune"))
     screen.move(70,32)
-    screen.text(params:string(focus.."t_scale"))
+    screen.text(params:string(focus.."transpose"))
     screen.level(3)
     screen.move(10,40)
-    screen.text("transpose")
+    screen.text("detune")
     screen.move(70,40)
-    screen.text("set scale")
+    screen.text("transpose")
 
     screen.level(not sel and 15 or 4)
     screen.move(10,52)
@@ -927,7 +1000,7 @@ v.gridkey[vREC] = function(x, y, z)
         track[i].rec = 1 - track[i].rec
           set_rec(i)
           if track[i].oneshot == 1 and track[i].rec == 1 then
-            osrec()
+            oneshot_rec()
           end
       elseif x == 1 and y<TRACKS+2 and alt == 1 then
         track[i].oneshot = 1 - track[i].oneshot
@@ -962,7 +1035,7 @@ v.gridkey[vREC] = function(x, y, z)
     if held[y] > heldmax[y] then heldmax[y] = held[y] end
     local i = focus
     if z == 1 then
-      if alt2 == 1 then --"freeze" function as on cut page (better to implement in event_exec(e)?? -> eFREEZ?)
+      if alt2 == 1 then --freeze mode as on cut page (better to implement in event_exec(e)?? -> eFREEZ?)
         heldmax[y] = x
         e = {}
         e.t = eLOOP
@@ -1038,13 +1111,17 @@ v.enc[vCUT] = v.enc[vREC]
 v.redraw[vCUT] = v.redraw[vREC]
 
 v.gridkey[vCUT] = function(x, y, z)
-
+  --set range logic
   if z == 1 and held[y] then heldmax[y] = 0 end
   held[y] = held[y] + (z*2-1)
   if held[y] > heldmax[y] then heldmax[y] = held[y] end
 
   if y == 1 then gridkey_nav(x,z)
-  elseif y == 8 then return
+  elseif y == 8 then
+    if x >= 1 and x <=8 then params:set(focus.."transpose",x) end
+    if x >= 9 and x <=16 then params:set(focus.."transpose",x-1) end
+    dirtygrid = true
+    redraw()
   else
     i = y-1
     if z == 1 then
@@ -1059,8 +1136,7 @@ v.gridkey[vCUT] = function(x, y, z)
           e = {} e.t = eSTART e.i = i
         end
         event(e)
-      elseif alt2 == 1 and y<TRACKS+2 then
-        --if track[i].play == 1 then
+      elseif alt2 == 1 and y<TRACKS+2 then --freeze mode
           heldmax[y] = x
           e = {}
           e.t = eLOOP
@@ -1069,7 +1145,6 @@ v.gridkey[vCUT] = function(x, y, z)
           e.loop_start = x
           e.loop_end = x
           event(e)
-        --end
       elseif y<TRACKS+2 and held[y] == 1 then
         first[y] = x
         local cut = x-1
@@ -1097,7 +1172,7 @@ v.gridredraw[vCUT] = function()
   gridredraw_nav()
   for i = 1, TRACKS do
     if track[i].loop == 1 then
-      for x=track[i].loop_start, track[i].loop_end do
+      for x = track[i].loop_start, track[i].loop_end do
         g:led(x, i+1, 4)
       end
     end
@@ -1113,6 +1188,13 @@ v.gridredraw[vCUT] = function()
         end
       end
     end
+  end
+  g:led(8,8,4)
+  g:led(9,8,4)
+  if track[focus].transpose < 0 then
+    g:led(params:get(focus.."transpose"), 8, 10)
+  elseif track[focus].transpose > 0 then
+    g:led(params:get(focus.."transpose")+1, 8, 10)
   end
   g:refresh();
 end
@@ -1252,6 +1334,108 @@ v.gridredraw[vCLIP] = function()
   gridredraw_nav()
   for i = 1, MAX_CLIPS do g:led(i, clip_sel+1, 4) end --changed to MAX_CLIPS instead of 16
   for i = 1, TRACKS do g:led(track[i].clip, i+1, 10) end
+  g:refresh();
+end
+
+-------------------- LFO -------------------------
+v.key[vLFO] = function(n, z)
+  if n == 2 and z == 1 then
+    viewinfo[vLFO] = 1 - viewinfo[vLFO]
+    redraw()
+  end
+end
+
+v.enc[vLFO] = function(n, d)
+  if n == 1 then
+    if key1_hold == 0 then
+      pageLFO = util.clamp(pageLFO+d, 1, 6)
+    elseif key1_hold == 1 then
+      params:delta("output_level", d)
+    end
+  end
+  if viewinfo[vLFO] == 0 then
+    if n == 2 then
+      params:delta(pageLFO.."lfo_target", d)
+    elseif n == 3 then
+      params:delta(pageLFO.."lfo_freq", d)
+    end
+  else
+    if n == 2 then
+      params:delta(pageLFO.."lfo_shape", d)
+    elseif n == 3 then
+      params:delta(pageLFO.."offset", d)
+    end
+  end
+  redraw()
+end
+
+v.redraw[vLFO] = function()
+  screen.clear()
+  screen.level(15)
+  screen.move(10,16)
+  screen.text("LFO "..pageLFO)
+  local sel = viewinfo[vLFO] == 0
+
+  screen.level(sel and 15 or 4)
+  screen.move(10,32)
+  screen.text(params:string(pageLFO.."lfo_target"))
+  screen.move(70,32)
+  screen.text(params:string(pageLFO.."lfo_freq"))
+  screen.level(3)
+  screen.move(10,40)
+  screen.text("lfo target")
+  screen.move(70,40)
+  screen.text("freq")
+
+  screen.level(not sel and 15 or 4)
+  screen.move(10,52)
+  screen.text(params:string(pageLFO.."lfo_shape"))
+  screen.move(70,52)
+  screen.text(params:string(pageLFO.."offset"))
+  screen.level(3)
+  screen.move(10,60)
+  screen.text("lfo shape")
+  screen.move(70,60)
+  screen.text("offset")
+
+  screen.update()
+end
+
+v.gridkey[vLFO] = function(x, y, z)
+  if y == 1 then gridkey_nav(x, z)
+    dirtygrid = true
+  end
+  if y > 1 and y < 8 then
+    local lfo_index = y - 1
+    if z == 1 then
+      if x == 1 then
+        lfo[lfo_index].active = 1 - lfo[lfo_index].active
+        if lfo[lfo_index].active == 1 then
+          params:set(lfo_index .. "lfo", 2)
+        else
+          params:set(lfo_index .. "lfo", 1)
+        end
+      end
+      if x > 1 and x <= 16 then
+        params:set(lfo_index.."lfo_depth",(x-2) * util.round_up((100/14),0.1))
+      end
+    end
+    dirtygrid = true
+  end
+  redraw()
+end
+
+v.gridredraw[vLFO] = function()
+  g:all(0)
+  gridredraw_nav()
+  for i = 1, 6 do
+    g:led(1, i + 1, params:get(i.. "lfo") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3)
+    local range = math.floor(util.linlin(0, 100, 2, 16, params:get(i.."lfo_depth")))
+    g:led(range,i + 1, 7)
+    for x = 2, range -1 do
+      g:led(x, i + 1, 3)
+    end
+  end
   g:refresh();
 end
 
