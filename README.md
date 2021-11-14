@@ -1,4 +1,5 @@
 # mlre
+
 ---
 
 ## work in progress
@@ -13,7 +14,7 @@ I'd like to point out that there might be some bits of code that probably are re
 
 Also, this wouldn't have been possible without the countless contributions made by many members of ////////! Studying other scripts and comments on forum and discord channel have been, and will continue to be, a immense source of knowlage!
 
-A special thanks to **tehn** for creating mlr and **zebra** for softcut. **justmat** for hnds and many bits of code from otis
+A special thanks to **tehn** for creating mlr and **zebra** for softcut and answering questions, **justmat** for hnds and many bits of code and **infiniate digits** for bits of code, answering questions and giving me ideas.
 
 
 **TODO:**
@@ -22,18 +23,27 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut. **justm
 
 ---
 
+# Documentation:
+
 ## Grid Navigation
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_gridnav.png)
+
+---
 
 ## REC Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_recview.png)
 
+---
+
 ## CUT Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_cutview.png)
+
+---
 
 ## CLIP Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_clipview.png)
 
+---
+
 ## LFO Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_lfoview.png)
----
