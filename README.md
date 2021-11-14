@@ -5,8 +5,6 @@ an adaption of tehn's mlr script
 
 work in progress
 
-once finished docs will be here
-
-feel free to test and report bugs.
+https://github.com/sonoCircuits/mlre/blob/main/grid_mlr_gridnav.png
 
 ---
