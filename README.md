@@ -28,15 +28,16 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 ## Grid Navigation
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_gridnav.png)
 
-**REC view:** Set grid page to REC page, norns to MAIN pages  
-**CUT view:** Set grid page to CUT page, norns to MAIN pages  
-**CLIP view:** Set grid page to CLIP page, norns to CLIP page  
-**LFO view:** Set grid page to LFO page, norns to LFO pages  
-
-**STOP ALL:** Stop all playing tracks  
-**MOD:** Modifier for different functions (see COMBOS)  
-**Q:** Quantize grid presses (ON/OFF)  
-**ALT:** ALT button (see COMBOS)  
+|Button|Function|  
+|---:|:---|
+|**REC view:**|Set grid page to REC page|
+|**CUT view:**|Set grid page to CUT page|
+|**CLIP view:**|Set grid page to CLIP page|
+|**LFO view:**|Set grid page to LFO page|
+|**STOP ALL:**| Stop all playing tracks| 
+|**MOD:**| Modifier for different functions (see COMBOS)|
+|**Q:**| Quantize grid presses (ON/OFF)|
+|**ALT:**|ALT button (see COMBOS)|
 
 **PATTERNS:**
 - Description here
