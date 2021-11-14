@@ -26,7 +26,7 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 # Documentation:
 
 ## Grid Navigation
-![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_gridnav.png)  
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_gridnav.png)
 
 **REC view:** Set grid page to REC page, norns to MAIN pages  
 **CUT view:** Set grid page to CUT page, norns to MAIN pages  
