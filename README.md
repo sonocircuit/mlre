@@ -18,8 +18,9 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 
 **TODO:**
 - [ ] cleanup code
-- [ ] implement loop resize on record end
-
+- [ ] implement loop resize at rec end??
+- [ ] oneshot mode??
+- [ ] threshold rec??
 
 
 # Documentation:
