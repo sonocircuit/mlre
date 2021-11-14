@@ -1,10 +1,9 @@
 # mlre
 
----
 
 ## work in progress
 
----
+
 
 This an adaption of tehn's mlr script.
 
@@ -21,29 +20,29 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 - [ ] cleanup code
 - [ ] implement loop resize on record end
 
----
+
 
 # Documentation:
 
 ## Grid Navigation
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_gridnav.png)
 
----
+
 
 ## REC Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_recview.png)
 
----
+
 
 ## CUT Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_cutview.png)
 
----
+
 
 ## CLIP Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_clipview.png)
 
----
+
 
 ## LFO Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_lfoview.png)
