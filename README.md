@@ -18,6 +18,7 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 
 **TODO:**
 - [ ] cleanup code
+- [ ] separate transpose page
 - [ ] implement loop resize at rec end??
 - [ ] oneshot mode??
 - [ ] threshold rec??
