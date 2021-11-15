@@ -4,7 +4,7 @@
 -- parameters.
 -- ----------
 --
--- v0.4 @justmat
+-- v0.4 @justmat slightly adapted by @sonocircuit
 
 local number_of_outputs = 6
 
@@ -26,7 +26,8 @@ for i = 1, number_of_outputs do
     waveform = options.lfotypes[1],
     slope = 0,
     depth = 100,
-    offset = 0
+    offset = 0,
+    active = 0 -- this adds possibility to toggle on/off via grid with one button
   }
 end
 
@@ -119,6 +120,7 @@ function lfo.init()
       end
     end
     lfo.process()
+    dirtygrid = true --for blinkenlights (lfo slope on "on" grid button)
   end
   lfo_metro:start()
 end
