@@ -40,6 +40,8 @@ local pageNum = 1
 local pageLFO = 1
 local key1_hold = 0
 local scale_idx = 1
+local trksel = 0
+local dstview = 0
 
 -- for transpose scales
 local scale_options = {"semitones", "minor", "major", "custom a", "custom b"}
@@ -88,7 +90,7 @@ local ePATTERN = 7
 
 local quantize = 0
 local quantizer
-local div_options = {1, 2, 4, 8, 16, 32} --smaller range to choose from... a bit more intuitive maybe?
+local div_options = {1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 30, 32}
 
 local function update_tempo()
   local t = params:get("clock_tempo")
@@ -154,7 +156,7 @@ function event_exec(e)
       softcut.loop_start(e.i,clip[track[e.i].clip].s)
       softcut.loop_end(e.i,clip[track[e.i].clip].e)
     end
-    local cut = (e.pos/16)*clip[track[e.i].clip].l + clip[track[e.i].clip].s
+    local cut = (e.pos / 16) * clip[track[e.i].clip].l + clip[track[e.i].clip].s
     softcut.position(e.i,cut)
     if track[e.i].play == 0 then
       track[e.i].play = 1
@@ -173,8 +175,8 @@ function event_exec(e)
     track[e.i].loop = 1
     track[e.i].loop_start = e.loop_start
     track[e.i].loop_end = e.loop_end
-    local lstart = clip[track[e.i].clip].s + (track[e.i].loop_start-1)/16*clip[track[e.i].clip].l
-    local lend = clip[track[e.i].clip].s + (track[e.i].loop_end)/16*clip[track[e.i].clip].l
+    local lstart = clip[track[e.i].clip].s + (track[e.i].loop_start-1) / 16 * clip[track[e.i].clip].l
+    local lend = clip[track[e.i].clip].s + (track[e.i].loop_end) / 16 * clip[track[e.i].clip].l
     softcut.loop_start(e.i,lstart)
     softcut.loop_end(e.i,lend)
     dirtygrid = true
@@ -232,7 +234,7 @@ end
 track = {}
 for i = 1,TRACKS do
   track[i] = {}
-  track[i].head = (i-1)%4+1
+  track[i].head = (i - 1) %4 + 1
   track[i].play = 0
   track[i].sel = 0
   track[i].rec = 0
@@ -268,9 +270,9 @@ clip_reset = function(i, length)
 end
 
 clip = {}
-for i = 1,MAX_CLIPS do
+for i = 1, MAX_CLIPS do
   clip[i] = {}
-  clip[i].s = 2 + (i-1)*CLIP_LEN_SEC
+  clip[i].s = 2 + (i - 1)*CLIP_LEN_SEC
   clip[i].name = "-"
   set_clip_length(i, 4)
 end
@@ -333,9 +335,9 @@ end
 --interface
 local vREC = 1
 local vCUT = 2
-local vCLIP = 3
+local vTRANS = 3
 local vLFO = 4
-local vTIME = 15
+local vCLIP = 15
 
 view = vREC
 view_prev = view
@@ -350,8 +352,9 @@ v.gridredraw = {}
 viewinfo = {}
 viewinfo[vREC] = 0
 viewinfo[vCUT] = 0
+viewinfo[vCLIP] = 0
 viewinfo[vLFO] = 0
-viewinfo[vTIME] = 0
+viewinfo[vTRANS] = 0
 
 focus = 1
 alt = 0
@@ -404,16 +407,16 @@ end
 function set_track_route()
   for i = 1, 4 do
     if route[i].t5 == 1 then
-      softcut.level_cut_cut(i,5,1)
+      softcut.level_cut_cut(i, 5, 1)
     else
-      softcut.level_cut_cut(i,5,0)
+      softcut.level_cut_cut(i, 5, 0)
     end
   end
   for i = 1, 5 do
     if route[i].t6 == 1 then
-      softcut.level_cut_cut(i,6,1)
+      softcut.level_cut_cut(i, 6, 1)
     else
-      softcut.level_cut_cut(i,6,0)
+      softcut.level_cut_cut(i, 6, 0)
     end
   end
 end
@@ -483,7 +486,7 @@ function set_scale(n)
 	end
 end
 
-function set_transpose(i,x)
+function set_transpose(i, x)
   local scale_idx = params:get("scale")
   track[i].transpose = trans_scale[scale_idx][x] / 1200
   if track[i].play == 1 then --not sure if this condition is really needed
@@ -559,6 +562,29 @@ function clock.transport.stop()
   stopall()
 end
 
+function arm_thresh_rec()
+  amp_in[1]:start()
+  amp_in[2]:start()
+end
+
+-- oneshot recording ** oneshot part not implemented yet... have to figure that out
+function oneshot_rec()
+  --play any track before using otherwise we get an error "attempt to index a nil value (local 'e')"
+  --addressed this issue by adding track[1].play = 1 track[1].play = 0 in init() function (is this ok?)
+  for i = 1, TRACKS do
+    if track[i].oneshot == 1 then
+      track[i].rec = 1
+      set_rec(i)
+      if track[i].rev == 0 then
+        e = {} e.t = eCUT e.i = i e.pos = 0
+      elseif track[i].rev == 1 then
+        e = {} e.t = eCUT e.i = i e.pos = 15
+      end
+      event(e)
+    end
+  end
+end
+
 --init
 init = function()
 
@@ -571,8 +597,11 @@ init = function()
 
   --params for quant division
   params:set_action("clock_tempo", function() update_tempo() end)
-  params:add_option("quant_div", "quant div", div_options, 4)
+  params:add_option("quant_div", "quant div", div_options, 5)
   params:set_action("quant_div",function() update_tempo() end)
+
+  --params for rec threshold
+  params:add_control("rec_threshold", "rec threshold", controlspec.new(1, 1000, 'exp', 1, 200, ''))
 
 --params for tracks
   params:add_separator("tracks")
@@ -695,6 +724,28 @@ init = function()
 
   clock.run(clock_update_tempo)
 
+  track[1].play = 1 -- added this to set
+  track[1].play = 0
+
+  --threshold rec poll
+  amp_in = {}
+  local amp_src = {"amp_in_l", "amp_in_r"}
+  for ch = 1, 2 do
+    amp_in[ch] = poll.set(amp_src[ch])
+    amp_in[ch].time = 0.01
+    amp_in[ch].callback = function(val)
+      if val > params:get("rec_threshold")/10000 then
+        for i = 1, TRACKS do
+          if track[i].oneshot == 1 then
+            oneshot_rec()
+            track[i].oneshot = 0
+          end
+        end
+        amp_in[ch]:stop()
+      end
+    end
+  end
+
 end -- end of init
 
 -- poll callback
@@ -725,9 +776,9 @@ gridkey_nav = function(x, z)
       if alt == 1 then softcut.buffer_clear() end
       set_view(vREC)
     elseif x == 2 then set_view(vCUT)
-    elseif x == 3 then set_view(vCLIP)
+    elseif x == 3 then set_view(vTRANS)
     elseif x == 4 then set_view(vLFO)
-    elseif x>4 and x<9 then
+    elseif x > 4 and x < 9 then
       local i = x - 4
       if alt == 1 then
         local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
@@ -743,8 +794,8 @@ gridkey_nav = function(x, z)
       else
         local e = {t = ePATTERN, i = i, action = "start"} event(e)
       end
-    elseif x>8 and x<13 then
-      local i = x-8
+    elseif x > 8 and x < 13 then
+      local i = x - 8
       if alt == 1 then
         recall[i].event = {}
         recall[i].recording = false
@@ -764,7 +815,7 @@ gridkey_nav = function(x, z)
       else quantizer:start()
       end
     elseif x == 15 and alt == 1 then
-      set_view(vTIME)
+      set_view(vCLIP)
     elseif x == 16 then alt = 1
     elseif x == 14 and alt == 0 then alt2 = 1
     elseif x == 14 and alt == 1 then retrig()  --retrig all playing tracks to pos 1
@@ -774,8 +825,7 @@ gridkey_nav = function(x, z)
   elseif z == 0 then
     if x == 16 then alt = 0
     elseif x == 14 and alt == 0 then alt2 = 0 --lock alt2 if alt2 released before alt is released
-    elseif x == 15 and view == vTIME then set_view(-1)
-    elseif x>8 and x<13 then recall[x-8].active = false
+    elseif x > 8 and x < 13 then recall[x - 8].active = false
     end
   end
   dirtygrid = true
@@ -793,15 +843,15 @@ gridredraw_nav = function()
   if alt2 == 1 then g:led(14, 1, 9)
   elseif alt2 == 0 then g:led(14, 1, 2) end
   for i = 1, 4 do
-    if pattern[i].rec == 1 then g:led(i+4, 1, 15)
-    elseif pattern[i].play == 1 then g:led(i+4, 1, 11)
-    elseif pattern[i].count > 0 then g:led(i+4, 1, 7)
-    else g:led(i+4, 1, 4) end
+    if pattern[i].rec == 1 then g:led(i + 4, 1, 15)
+    elseif pattern[i].play == 1 then g:led(i + 4, 1, 11)
+    elseif pattern[i].count > 0 then g:led(i + 4, 1, 7)
+    else g:led(i + 4, 1, 4) end
     local b = 3
     if recall[i].recording == true then b = 15
     elseif recall[i].active == true then b = 11
     elseif recall[i].has_data == true then b = 7 end
-    g:led(i+8, 1, b)
+    g:led(i + 8, 1, b)
   end
 end
 
@@ -809,6 +859,8 @@ end
 v.key[vREC] = function(n, z)
   if n == 2 and z == 1 then
     viewinfo[vREC] = 1 - viewinfo[vREC]
+  elseif n == 3 and z == 1 then
+    pageNum = (pageNum %3) + 1
     redraw()
   end
 end
@@ -816,7 +868,7 @@ end
 v.enc[vREC] = function(n, d)
   if n == 1 then
     if key1_hold == 0 then
-      pageNum = util.clamp(pageNum+d, 1, 3)
+      pageNum = util.clamp(pageNum + d, 1, 3)
     elseif key1_hold == 1 then
       params:delta("output_level", d)
     end
@@ -871,96 +923,99 @@ end
 v.redraw[vREC] = function()
   screen.clear()
   screen.level(15)
-  screen.move(10,16)
+  screen.move(10, 16)
   screen.text("TRACK "..focus)
   local sel = viewinfo[vREC] == 0
-  local mp = 104
+  local mp = 98
 
   if pageNum == 1 then
-    screen.level(6)
-    screen.rect(mp+3,12,5,5)
+    screen.level(15)
+    screen.rect(mp+3 ,11, 5, 5)
     screen.fill()
-    screen.rect(mp+11,13,4,4)
-    screen.rect(mp+18,13,4,4)
+    screen.level(6)
+    screen.rect(mp+11, 12, 4, 4)
+    screen.rect(mp+18, 12, 4, 4)
     screen.stroke()
     screen.level(sel and 15 or 4)
-    screen.move(10,32)
+    screen.move(10, 32)
     screen.text(params:string(focus.."vol"))
-    screen.move(70,32)
+    screen.move(70, 32)
     screen.text(params:string(focus.."pan"))
     screen.level(3)
-    screen.move(10,40)
+    screen.move(10, 40)
     screen.text("volume")
-    screen.move(70,40)
+    screen.move(70, 40)
     screen.text("pan")
 
     screen.level(not sel and 15 or 4)
-    screen.move(10,52)
+    screen.move(10, 52)
     screen.text(params:string(focus.."rec"))
-    screen.move(70,52)
+    screen.move(70, 52)
     screen.text(params:string(focus.."dub"))
     screen.level(3)
-    screen.move(10,60)
+    screen.move(10, 60)
     screen.text("rec level")
-    screen.move(70,60)
+    screen.move(70, 60)
     screen.text("dub level")
 
   elseif pageNum == 2 then
-    screen.level(6)
-    screen.rect(mp+10,12,5,5)
+    screen.level(15)
+    screen.rect(mp+10, 11, 5, 5)
     screen.fill()
-    screen.rect(mp+4,13,4,4)
-    screen.rect(mp+18,13,4,4)
+    screen.level(6)
+    screen.rect(mp+4, 12, 4, 4)
+    screen.rect(mp+18, 12, 4, 4)
     screen.stroke()
     screen.level(sel and 15 or 4)
-    screen.move(10,32)
+    screen.move(10, 32)
     screen.text(params:string(focus.."cutoff"))
-    screen.move(70,32)
+    screen.move(70, 32)
     screen.text(params:string(focus.."filter_q"))
     screen.level(3)
-    screen.move(10,40)
+    screen.move(10, 40)
     screen.text("cutoff")
-    screen.move(70,40)
+    screen.move(70, 40)
     screen.text("filter q")
 
     screen.level(not sel and 15 or 4)
-    screen.move(10,52)
+    screen.move(10, 52)
     screen.text(params:string(focus.."high_pass"))
-    screen.move(70,52)
+    screen.move(70, 52)
     screen.text(params:string(focus.."low_pass"))
     screen.level(3)
-    screen.move(10,60)
+    screen.move(10, 60)
     screen.text("hp level")
-    screen.move(70,60)
+    screen.move(70, 60)
     screen.text("lp level")
 
   elseif pageNum == 3 then
-    screen.level(6)
-    screen.rect(mp+17,12,5,5)
+    screen.level(15)
+    screen.rect(mp+17, 11, 5, 5)
     screen.fill()
-    screen.rect(mp+4,13,4,4)
-    screen.rect(mp+11,13,4,4)
+    screen.level(6)
+    screen.rect(mp+4, 12, 4, 4)
+    screen.rect(mp+11, 12, 4, 4)
     screen.stroke()
     screen.level(sel and 15 or 4)
-    screen.move(10,32)
+    screen.move(10, 32)
     screen.text(params:string(focus.."detune"))
-    screen.move(70,32)
+    screen.move(70, 32)
     screen.text(params:string(focus.."transpose"))
     screen.level(3)
-    screen.move(10,40)
+    screen.move(10, 40)
     screen.text("detune")
-    screen.move(70,40)
+    screen.move(70, 40)
     screen.text("transpose")
 
     screen.level(not sel and 15 or 4)
-    screen.move(10,52)
+    screen.move(10, 52)
     screen.text(params:string(focus.."rate_slew"))
-    screen.move(70,52)
+    screen.move(70, 52)
     screen.text(params:string(focus.."level_slew"))
     screen.level(3)
-    screen.move(10,60)
+    screen.move(10, 60)
     screen.text("rate slew")
-    screen.move(70,60)
+    screen.move(70, 60)
     screen.text("level slew")
   end
   screen.update()
@@ -968,10 +1023,10 @@ end
 
 v.gridkey[vREC] = function(x, y, z)
   if y == 1 then gridkey_nav(x, z)
-  elseif y>1 and y<8 then
+  elseif y > 1 and y < 8 then
     if z == 1 then
-      i = y-1
-      if x>2 and x<7 then
+      i = y - 1
+      if x > 2 and x < 7 then
         if alt == 1 then
           track[i].tempo_map = 1 - track[i].tempo_map
           update_rate(i)
@@ -979,15 +1034,15 @@ v.gridkey[vREC] = function(x, y, z)
           focus = i
           redraw()
         end
-      elseif x == 1 and y<TRACKS+2 and alt == 0 then
+      elseif x == 1 and y < 8 and alt == 0 then
         track[i].rec = 1 - track[i].rec
-          set_rec(i)
-          --if track[i].oneshot == 1 and track[i].rec == 1 then -- **disabled as I can't figure out how to implemet a oneshot function
-            --function goes here
-          --end
-      --elseif x == 1 and y<TRACKS+2 and alt == 1 then --** see above
-        --track[i].oneshot = 1 - track[i].oneshot
-      elseif x == 16 and y<TRACKS+2 and alt == 0 then
+        set_rec(i)
+      elseif x == 1 and y < 8 and alt == 1 then
+        track[i].oneshot = 1 - track[i].oneshot
+        if track[i].oneshot == 1 then
+          arm_thresh_rec()
+        end
+      elseif x == 16 and y < 8 and alt == 0 then
         if track[i].play == 1 then
           e = {}
           e.t = eSTOP
@@ -999,13 +1054,13 @@ v.gridkey[vREC] = function(x, y, z)
           e.i = i
           event(e)
         end
-      elseif x == 16 and y<TRACKS+2 and alt == 1 then
+      elseif x == 16 and y < 8 and alt == 1 then
         track[i].sel = 1 - track[i].sel
-      elseif x>8 and x<16 and y<TRACKS+2 then
-        local n = x-12
+      elseif x > 8 and x < 16 and y<TRACKS+2 then
+        local n = x - 12
         e = {} e.t = eSPEED e.i = i e.speed = n
         event(e)
-      elseif x == 8 and y<TRACKS+2 then
+      elseif x == 8 and y < 8 then
         local n = 1 - track[i].rev
         e = {} e.t = eREV e.i = i e.rev = n
         event(e)
@@ -1014,7 +1069,7 @@ v.gridkey[vREC] = function(x, y, z)
     end
   elseif y == 8 then
     if z == 1 and held[y] then heldmax[y] = 0 end
-    held[y] = held[y] + (z*2-1)
+    held[y] = held[y] + (z * 2 - 1)
     if held[y] > heldmax[y] then heldmax[y] = held[y] end
     local i = focus
     if z == 1 then
@@ -1029,7 +1084,7 @@ v.gridkey[vREC] = function(x, y, z)
         event(e)
       elseif held[y] == 1 then
         first[y] = x
-        local cut = x-1
+        local cut = x - 1
         e = {} e.t = eCUT e.i = i e.pos = cut
         event(e)
       elseif held[y] == 2 then
@@ -1051,13 +1106,13 @@ end
 
 v.gridredraw[vREC] = function()
   g:all(0)
-  g:led(3, focus+1, 7) g:led(4, focus+1, 7) g:led(5, focus+1, 3) g:led(6, focus+1, 3)
+  g:led(3, focus + 1, 7) g:led(4, focus + 1, 7) g:led(5, focus + 1, 3) g:led(6, focus + 1, 3)
   for i = 1, TRACKS do
-    local y = i+1
+    local y = i + 1
     g:led(1, y, 3) --rec
-    --if track[i].rec == 1 and track[i].oneshot == 1 then g:led(1, y, 15)  end
+    if track[i].rec == 1 and track[i].oneshot == 1 then g:led(1, y, 15)  end
     if track[i].rec == 1 and track[i].oneshot == 0 then g:led(1, y, 15)  end
-    --if track[i].rec == 0 and track[i].oneshot == 1 then g:led(1, y, 5)  end
+    if track[i].rec == 0 and track[i].oneshot == 1 then g:led(1, y, 6)  end
     if track[i].tempo_map == 1 then g:led(5, y, 7) g:led(6, y, 7) end
     g:led(8, y, 3) --rev
     g:led(16, y, 3) --stop
@@ -1066,7 +1121,7 @@ v.gridredraw[vREC] = function()
     if track[i].rev == 1 then g:led(8, y, 8) end
     if track[i].play == 1 and track[i].sel == 1 then g:led(16, y, 15) end
     if track[i].play == 1 and track[i].sel == 0 then g:led(16, y, 10) end
-    if track[i].play == 0 and track[i].sel == 1 then g:led(16, y, 5) end
+    if track[i].play == 0 and track[i].sel == 1 then g:led(16, y, 6) end
   end
   if track[focus].loop == 1 then
     for x = track[focus].loop_start, track[focus].loop_end do
@@ -1075,12 +1130,12 @@ v.gridredraw[vREC] = function()
   end
   if track[focus].play == 1 then
     if track[focus].rev == 0 then
-      g:led((track[focus].pos_grid+1)%16, 8, 15)
+      g:led((track[focus].pos_grid + 1) %16, 8, 15)
     elseif track[focus].rev == 1 then
       if track[focus].loop == 1 then
-        g:led((track[focus].pos_grid+1)%16, 8, 15)
+        g:led((track[focus].pos_grid + 1) %16, 8, 15)
       else
-        g:led((track[focus].pos_grid+2)%16, 8, 15)
+        g:led((track[focus].pos_grid + 2) %16, 8, 15)
       end
     end
   end
@@ -1096,30 +1151,30 @@ v.redraw[vCUT] = v.redraw[vREC]
 v.gridkey[vCUT] = function(x, y, z)
   --set range logic
   if z == 1 and held[y] then heldmax[y] = 0 end
-  held[y] = held[y] + (z*2-1)
+  held[y] = held[y] + (z * 2 - 1)
   if held[y] > heldmax[y] then heldmax[y] = held[y] end
 
-  if y == 1 then gridkey_nav(x,z)
-  elseif y == 8 then
-    if x >= 1 and x <=8 then params:set(focus.."transpose",x) end -- pattern and recall not working for transpose
-    if x >= 9 and x <=16 then params:set(focus.."transpose",x-1) end
+  if y == 1 then gridkey_nav(x, z)
+  elseif y == 8 and z == 1 then
+    if x >= 1 and x <=8 then params:set(focus.."transpose", x) end -- pattern and recall not working for transpose
+    if x >= 9 and x <=16 then params:set(focus.."transpose", x - 1) end
     dirtygrid = true
     redraw()
   else
-    i = y-1
+    local i = y - 1
     if z == 1 then
       if focus ~= i then
         focus = i
         redraw()
       end
-      if alt == 1 and y<TRACKS+2 then
+      if alt == 1 and y < 8 then
         if track[i].play == 1 then
           e = {} e.t = eSTOP e.i = i
         else
           e = {} e.t = eSTART e.i = i
         end
         event(e)
-      elseif alt2 == 1 and y<TRACKS+2 then --"hold" mode
+      elseif alt2 == 1 and y < 8 then --"hold" mode
           heldmax[y] = x
           e = {}
           e.t = eLOOP
@@ -1128,22 +1183,22 @@ v.gridkey[vCUT] = function(x, y, z)
           e.loop_start = x
           e.loop_end = x
           event(e)
-      elseif y<TRACKS+2 and held[y] == 1 then
+      elseif y < 8 and held[y] == 1 then
         first[y] = x
         local cut = x-1
         e = {} e.t = eCUT e.i = i e.pos = cut
         event(e)
-      elseif y<TRACKS+2 and held[y] == 2 then
+      elseif y < 8 and held[y] == 2 then
         second[y] = x
       end
     elseif z == 0 then
-      if y<TRACKS+2 and held[y] == 1 and heldmax[y] == 2 then
+      if y < 8 and held[y] == 1 and heldmax[y] == 2 then
         e = {}
         e.t = eLOOP
         e.i = i
         e.loop = 1
-        e.loop_start = math.min(first[y],second[y])
-        e.loop_end = math.max(first[y],second[y])
+        e.loop_start = math.min(first[y], second[y])
+        e.loop_end = math.max(first[y], second[y])
         event(e)
       end
     end
@@ -1156,28 +1211,244 @@ v.gridredraw[vCUT] = function()
   for i = 1, TRACKS do
     if track[i].loop == 1 then
       for x = track[i].loop_start, track[i].loop_end do
-        g:led(x, i+1, 4)
+        g:led(x, i + 1, 4)
       end
     end
     --bugfix? when track rev then led was offset by one.
     if track[i].play == 1 then
       if track[i].rev == 0 then
-        g:led((track[i].pos_grid+1)%16, i+1, 15)
+        g:led((track[i].pos_grid + 1) %16, i + 1, 15)
       elseif track[i].rev == 1 then
         if track[i].loop == 1 then
-          g:led((track[i].pos_grid+1)%16, i+1, 15) --if not added there is an offest of 1 when in loop and rev
+          g:led((track[i].pos_grid + 1) %16, i + 1, 15) --if not added there is an offest of 1 when in loop and rev
         else
-          g:led((track[i].pos_grid+2)%16, i+1, 15)
+          g:led((track[i].pos_grid + 2) %16, i + 1, 15)
         end
       end
     end
   end
-  g:led(8,8,6)
-  g:led(9,8,6)
+  g:led(8, 8, 6)
+  g:led(9, 8, 6)
   if track[focus].transpose < 0 then
     g:led(params:get(focus.."transpose"), 8, 10)
   elseif track[focus].transpose > 0 then
-    g:led(params:get(focus.."transpose")+1, 8, 10)
+    g:led(params:get(focus.."transpose") + 1, 8, 10)
+  end
+  g:refresh();
+end
+
+--------------------TRANSPOSE--------------------
+v.key[vTRANS] = v.key[vREC]
+v.enc[vTRANS] = v.enc[vREC]
+v.redraw[vTRANS] = v.redraw[vREC]
+
+v.gridkey[vTRANS] = function(x, y, z)
+  if y == 1 then gridkey_nav(x, z)
+  elseif y > 1 and y < 8 then
+    if z == 1 then
+      local i = y - 1
+      if focus ~= i then
+        focus = i
+        redraw()
+      end
+      if x >= 1 and x <=8 then params:set(i.."transpose", x) end
+      if x >= 9 and x <=16 then params:set(i.."transpose", x - 1) end
+    dirtygrid = true
+    end
+  elseif y == 8 then
+    if z == 1 and held[y] then heldmax[y] = 0 end
+    held[y] = held[y] + (z * 2 - 1)
+    if held[y] > heldmax[y] then heldmax[y] = held[y] end
+    local i = focus
+    if z == 1 then
+      if alt2 == 1 then --"hold" mode as on cut page
+        heldmax[y] = x
+        e = {}
+        e.t = eLOOP
+        e.i = i
+        e.loop = 1
+        e.loop_start = x
+        e.loop_end = x
+        event(e)
+      elseif held[y] == 1 then
+        first[y] = x
+        local cut = x - 1
+        e = {} e.t = eCUT e.i = i e.pos = cut
+        event(e)
+      elseif held[y] == 2 then
+        second[y] = x
+      end
+    elseif z == 0 then
+      if held[y] == 1 and heldmax[y] == 2 then
+        e = {}
+        e.t = eLOOP
+        e.i = i
+        e.loop = 1
+        e.loop_start = math.min(first[y], second[y])
+        e.loop_end = math.max(first[y], second[y])
+        event(e)
+      end
+    end
+  end
+end
+
+v.gridredraw[vTRANS] = function()
+  g:all(0)
+  gridredraw_nav()
+  for i = 1, 6 do
+    g:led(8, i + 1, 6)
+    g:led(9, i + 1, 6)
+    if track[i].transpose < 0 then
+      g:led(params:get(i.."transpose"), i + 1, 10)
+    elseif track[i].transpose > 0 then
+      g:led(params:get(i.."transpose") + 1, i + 1, 10)
+    end
+  end
+    if track[focus].loop == 1 then
+    for x = track[focus].loop_start, track[focus].loop_end do
+      g:led(x, 8, 4)
+    end
+  end
+  if track[focus].play == 1 then
+    if track[focus].rev == 0 then
+      g:led((track[focus].pos_grid + 1) %16, 8, 15)
+    elseif track[focus].rev == 1 then
+      if track[focus].loop == 1 then
+        g:led((track[focus].pos_grid + 1) %16, 8, 15)
+      else
+        g:led((track[focus].pos_grid + 2) %16, 8, 15)
+      end
+    end
+  end
+  g:refresh();
+end
+
+-------------------- LFO -------------------------
+v.key[vLFO] = function(n, z)
+  if n == 2 and z == 1 then
+    viewinfo[vLFO] = 1 - viewinfo[vLFO]
+    redraw()
+  end
+end
+
+v.enc[vLFO] = function(n, d)
+  if n == 1 then
+    if key1_hold == 0 then
+      pageLFO = util.clamp(pageLFO + d, 1, 6)
+    elseif key1_hold == 1 then
+      params:delta("output_level", d)
+    end
+  end
+  if viewinfo[vLFO] == 0 then
+    if n == 2 then
+      params:delta(pageLFO.."lfo_target", d)
+    elseif n == 3 then
+      params:delta(pageLFO.."lfo_freq", d)
+    end
+  else
+    if n == 2 then
+      params:delta(pageLFO.."lfo_shape", d)
+    elseif n == 3 then
+      params:delta(pageLFO.."offset", d)
+    end
+  end
+  redraw()
+end
+
+v.redraw[vLFO] = function()
+  screen.clear()
+  screen.level(15)
+  screen.move(10, 16)
+  screen.text("LFO "..pageLFO)
+  local sel = viewinfo[vLFO] == 0
+
+  screen.level(sel and 15 or 4)
+  screen.move(10, 32)
+  screen.text(params:string(pageLFO.."lfo_target"))
+  screen.move(70, 32)
+  screen.text(params:string(pageLFO.."lfo_freq"))
+  screen.level(3)
+  screen.move(10, 40)
+  screen.text("lfo target")
+  screen.move(70, 40)
+  screen.text("freq")
+
+  screen.level(not sel and 15 or 4)
+  screen.move(10, 52)
+  screen.text(params:string(pageLFO.."lfo_shape"))
+  screen.move(70, 52)
+  screen.text(params:string(pageLFO.."offset"))
+  screen.level(3)
+  screen.move(10, 60)
+  screen.text("lfo shape")
+  screen.move(70, 60)
+  screen.text("offset")
+
+  screen.update()
+end
+
+v.gridkey[vLFO] = function(x, y, z)
+  if y == 1 then gridkey_nav(x, z) end
+  if z == 1 then
+    if y > 1 and y < 8 then
+    local lfo_index = y - 1
+      if pageLFO ~= lfo_index then
+        pageLFO = lfo_index
+        redraw()
+      end
+      if x == 1 then
+        lfo[lfo_index].active = 1 - lfo[lfo_index].active
+        if lfo[lfo_index].active == 1 then
+          params:set(lfo_index .. "lfo", 2)
+        else
+          params:set(lfo_index .. "lfo", 1)
+        end
+      end
+      if x > 1 and x <= 16 then
+        params:set(lfo_index.."lfo_depth",(x - 2) * util.round_up((100 / 14), 0.1))
+      end
+    end
+    if y == 8 then
+      if x >= 1 and x <= 3 then
+        params:set(pageLFO.."lfo_shape", x)
+      end
+      if x > 3 and x < 10 then
+        trksel = 6 * (x - 4)
+      end
+      if x == 10 then
+        params:set(pageLFO.."lfo_target", 1)
+      end
+      if x > 10 and x <= 16 then
+        dstview = 1
+        params:set(pageLFO.."lfo_target", trksel + x - 9)
+      end
+    end
+  elseif z == 0 then
+    if x > 10 and x <= 16 then
+      dstview = 0
+    end
+  dirtygrid = true
+  redraw()
+  end
+end
+
+v.gridredraw[vLFO] = function()
+  g:all(0)
+  gridredraw_nav()
+  for i = 1, 6 do
+    g:led(1, i + 1, params:get(i.. "lfo") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3)
+    local range = math.floor(util.linlin(0, 100, 2, 16, params:get(i.."lfo_depth")))
+    g:led(range, i + 1, 7)
+    for x = 2, range -1 do
+      g:led(x, i + 1, 3)
+    end
+    g:led(i + 3, 8, 4)
+    g:led(i + 10, 8, 4)
+  end
+  g:led(params:get(pageLFO.."lfo_shape"), 8, 5)
+  g:led(trksel/6 + 4, 8, 12)
+  if dstview == 1 then
+    g:led((params:get(pageLFO.."lfo_target") + 9) - trksel, 8, 12)
   end
   g:refresh();
 end
@@ -1189,15 +1460,15 @@ clip_sel = 1
 clip_clear_mult = 6
 
 function fileselect_callback(path, c)
-  print("FILESELECT "..c)
+  --print("FILESELECT "..c)
   if path ~= "cancel" and path ~= "" then
     local ch, len = audio.file_info(path)
     if ch > 0 and len > 0 then
       print("file > "..path.." "..clip[track[c].clip].s)
-      print("file length > "..len/48000)
+      print("file length > "..len / 48000)
       --softcut.buffer_read_mono(path, 0, clip[track[clip_sel].clip].s, len/48000, 1, 1)
       softcut.buffer_read_mono(path, 0, clip[track[c].clip].s, CLIP_LEN_SEC, 1, 1)
-      local l = math.min(len/48000, CLIP_LEN_SEC)
+      local l = math.min(len / 48000, CLIP_LEN_SEC)
       set_clip_length(track[c].clip, l)
       clip[track[c].clip].name = path:match("[^/]*$") -- TODO: STRIP extension
       set_clip(c,track[c].clip)
@@ -1244,7 +1515,7 @@ v.key[vCLIP] = function(n,z)
       textentry.enter(textentry_callback, "mlr-" .. (math.random(9000)+1000))
     end
   elseif n == 3 and z == 1 then
-    clip_reset(clip_sel, 60/params:get("clock_tempo")*(2^(clip_clear_mult-2)))
+    clip_reset(clip_sel, 60 / params:get("clock_tempo") * (2^ (clip_clear_mult - 2)))
     set_clip(clip_sel, track[clip_sel].clip)
     update_rate(clip_sel)
   end
@@ -1279,21 +1550,32 @@ end
 v.redraw[vCLIP] = function()
   screen.clear()
   screen.level(15)
-  screen.move(10,16)
+  screen.move(10, 16)
   screen.text("TRACK "..clip_sel)
 
-  screen.move(10,38)
+  screen.move(10, 32)
   screen.text(">> "..truncateMiddle(clip[track[clip_sel].clip].name, 18))
   screen.level(3)
-  screen.move(10,60)
-  screen.text("clip "..track[clip_sel].clip .. " " .. clip_actions[clip_action])
+  screen.move(10, 60)
+  screen.text("clip "..track[clip_sel].clip)
+  screen.level(15)
+  screen.move(34, 60)
+  screen.text(clip_actions[clip_action])
 
   screen.level(15)
-  screen.move(95,60)
-  screen.text_right(2^(clip_clear_mult-2))
+  screen.move(95, 60)
+  screen.text_right(2^ (clip_clear_mult - 2))
   screen.level(3)
-  screen.move(100,60)
+  screen.move(100, 60)
   screen.text("resize")
+
+  screen.level(15)
+  screen.move(95, 50)
+  local d = params:get("quant_div")
+  screen.text_right(div_options[d])
+  screen.level(3)
+  screen.move(100, 50)
+  screen.text("quant")
 
   screen.update()
 end
@@ -1301,7 +1583,7 @@ end
 v.gridkey[vCLIP] = function(x, y, z)
   if y == 1 then gridkey_nav(x, z)
   elseif z == 1 then
-    if y < TRACKS+2 and x < MAX_CLIPS+1 then
+    if y < 8 and x < MAX_CLIPS+1 then
       clip_sel = y-1
       if x ~= track[clip_sel].clip then
         set_clip(clip_sel, x)
@@ -1323,24 +1605,24 @@ v.gridkey[vCLIP] = function(x, y, z)
     elseif y == 7 and x == 16 then
       route.tape = 1 - route.tape
       set_track_source()
+    elseif y == 8 then
+      params:set("quant_div", x)
     end
-    redraw()
-    dirtygrid = true
   end
 end
 
 v.gridredraw[vCLIP] = function()
   g:all(0)
   gridredraw_nav()
-  for i = 1, MAX_CLIPS do g:led(i, clip_sel+1, 4) end --changed to MAX_CLIPS instead of 16
-  for i = 1, TRACKS do g:led(track[i].clip, i+1, 10) end
+  for i = 1, MAX_CLIPS do g:led(i, clip_sel + 1, 4) end --changed to MAX_CLIPS instead of 16
+  for i = 1, TRACKS do g:led(track[i].clip, i + 1, 10) end
   for i = 10, 13 do
     for j = 2, 7 do
       g:led(i, j, 3)
     end
   end
   for i = 1, 6 do
-    g:led(params:get(i.."input_options") + 9, i+1, 9)
+    g:led(params:get(i.."input_options") + 9, i + 1, 9)
   end
   for i = 15, 16 do
     for j = 2, 5 do
@@ -1349,13 +1631,13 @@ v.gridredraw[vCLIP] = function()
   end
   g:led(16, 6, 2)
   for i = 1, 4 do
-    local y = i+1
+    local y = i + 1
     if route[i].t5 == 1 then
       g:led(15,y,9)
     end
   end
   for i = 1, 5 do
-    local y = i+1
+    local y = i + 1
     if route[i].t6 == 1 then
       g:led(16,y,9)
     end
@@ -1367,152 +1649,7 @@ v.gridredraw[vCLIP] = function()
   if route.tape == 1 then
     g:led(16, 7, 11)
   end
-  g:refresh();
-end
-
--------------------- LFO -------------------------
-v.key[vLFO] = function(n, z)
-  if n == 2 and z == 1 then
-    viewinfo[vLFO] = 1 - viewinfo[vLFO]
-    redraw()
-  end
-end
-
-v.enc[vLFO] = function(n, d)
-  if n == 1 then
-    if key1_hold == 0 then
-      pageLFO = util.clamp(pageLFO+d, 1, 6)
-    elseif key1_hold == 1 then
-      params:delta("output_level", d)
-    end
-  end
-  if viewinfo[vLFO] == 0 then
-    if n == 2 then
-      params:delta(pageLFO.."lfo_target", d)
-    elseif n == 3 then
-      params:delta(pageLFO.."lfo_freq", d)
-    end
-  else
-    if n == 2 then
-      params:delta(pageLFO.."lfo_shape", d)
-    elseif n == 3 then
-      params:delta(pageLFO.."offset", d)
-    end
-  end
-  redraw()
-end
-
-v.redraw[vLFO] = function()
-  screen.clear()
-  screen.level(15)
-  screen.move(10,16)
-  screen.text("LFO "..pageLFO)
-  local sel = viewinfo[vLFO] == 0
-
-  screen.level(sel and 15 or 4)
-  screen.move(10,32)
-  screen.text(params:string(pageLFO.."lfo_target"))
-  screen.move(70,32)
-  screen.text(params:string(pageLFO.."lfo_freq"))
-  screen.level(3)
-  screen.move(10,40)
-  screen.text("lfo target")
-  screen.move(70,40)
-  screen.text("freq")
-
-  screen.level(not sel and 15 or 4)
-  screen.move(10,52)
-  screen.text(params:string(pageLFO.."lfo_shape"))
-  screen.move(70,52)
-  screen.text(params:string(pageLFO.."offset"))
-  screen.level(3)
-  screen.move(10,60)
-  screen.text("lfo shape")
-  screen.move(70,60)
-  screen.text("offset")
-
-  screen.update()
-end
-
-v.gridkey[vLFO] = function(x, y, z)
-  if y == 1 then gridkey_nav(x, z)
-    dirtygrid = true
-  end
-  if y > 1 and y < 8 then
-    local lfo_index = y - 1
-    if z == 1 then
-      if x == 1 then
-        lfo[lfo_index].active = 1 - lfo[lfo_index].active
-        if lfo[lfo_index].active == 1 then
-          params:set(lfo_index .. "lfo", 2)
-        else
-          params:set(lfo_index .. "lfo", 1)
-        end
-      end
-      if x > 1 and x <= 16 then
-        params:set(lfo_index.."lfo_depth",(x-2) * util.round_up((100/14),0.1))
-      end
-    end
-    dirtygrid = true
-  end
-  redraw()
-end
-
-v.gridredraw[vLFO] = function()
-  g:all(0)
-  gridredraw_nav()
-  for i = 1, 6 do
-    g:led(1, i + 1, params:get(i.. "lfo") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3)
-    local range = math.floor(util.linlin(0, 100, 2, 16, params:get(i.."lfo_depth")))
-    g:led(range,i + 1, 7)
-    for x = 2, range -1 do
-      g:led(x, i + 1, 3)
-    end
-  end
-  g:refresh();
-end
-
---------------------TIME--------------------
-v.key[vTIME] = function(n, z)
-  --print("I have no function yet")
-end
-
-v.enc[vTIME] = function(n, d)
-  if n == 2 then
-    params:delta("clock_tempo", d)
-  elseif n == 3 then
-    params:delta("quant_div", d)
-  end
-  redraw()
-end
-
-v.redraw[vTIME] = function()
-  screen.clear()
-  screen.level(15)
-  screen.move(10,16)
-  screen.text("TIME SETTINGS")
-  if viewinfo[vTIME] == 0 then
-    screen.move(10,50)
-    screen.text(params:get("clock_tempo"))
-    screen.move(70,50)
-    local d = params:get("quant_div")
-    screen.text(div_options[d])
-    screen.level(3)
-    screen.move(10,60)
-    screen.text("tempo")
-    screen.move(70,60)
-    screen.text("quant div")
-  end
-  screen.update()
-end
-
-v.gridkey[vTIME] = function(x, y, z)
-  if y == 1 then gridkey_nav(x, z) end
-end
-
-v.gridredraw[vTIME] = function()
-  g:all(0)
-  gridredraw_nav()
+  g:led(params:get("quant_div"), 8, 10)
   g:refresh();
 end
 
