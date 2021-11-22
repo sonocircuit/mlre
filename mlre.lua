@@ -567,10 +567,10 @@ function arm_thresh_rec()
   amp_in[2]:start()
 end
 
--- oneshot recording ** oneshot part not implemented yet... have to figure that out
-function oneshot_rec()
+-- threshold recording
+function thresh_rec()
   --play any track before using otherwise we get an error "attempt to index a nil value (local 'e')"
-  --addressed this issue by adding track[1].play = 1 track[1].play = 0 in init() function (is this ok?)
+  --addressed this issue by adding track[1].play = 1 and track[1].play = 0 in sequence in init() function (is this ok?)
   for i = 1, TRACKS do
     if track[i].oneshot == 1 then
       track[i].rec = 1
@@ -584,6 +584,25 @@ function oneshot_rec()
     end
   end
 end
+
+--** oneshot part not implemented yet. get error -> attempt to yield from outside a coroutine... have to wrap my head around clock stuff
+--[[function oneshot_rec()
+  for i = 1, TRACKS do
+    if track[i].rec == 1 then
+      if track[i].tempo_map == 1 then
+        local mcalc = 8 * math.abs(track[i].speed)
+        clock.sync(mcalc)
+        print("track "..i.." MAP off")
+        track[i].rec = 0
+      elseif track[i].tempo_map == 0 then
+        local ncalc = 60/params:get("clock_tempo") * 16 * math.abs(track[i].speed)
+        clock.sync(ncalc)
+        track[i].rec = 0
+        print("track "..i.." noMap off")
+      end
+    end
+  end
+end]]--
 
 --init
 init = function()
@@ -724,6 +743,7 @@ init = function()
   softcut.poll_start_phase()
 
   clock.run(clock_update_tempo)
+  --clock.run(oneshot_rec)
 
   track[1].play = 1 -- added this to set
   track[1].play = 0
@@ -739,7 +759,8 @@ init = function()
       if val > util.dbamp(params:get("rec_threshold"))/10 then
         for i = 1, TRACKS do
           if track[i].oneshot == 1 then
-            oneshot_rec()
+            thresh_rec()
+            --oneshot_rec()
             track[i].oneshot = 0
           end
         end
@@ -1253,8 +1274,18 @@ v.gridkey[vTRANS] = function(x, y, z)
         focus = i
         redraw()
       end
-      if x >= 1 and x <=8 then params:set(i.."transpose", x) end
-      if x >= 9 and x <=16 then params:set(i.."transpose", x - 1) end
+      if alt == 0 then
+        if x >= 1 and x <=8 then params:set(i.."transpose", x) end
+        if x >= 9 and x <=16 then params:set(i.."transpose", x - 1) end
+      end
+      if alt == 1 then
+        if track[i].play == 1 then
+          e = {} e.t = eSTOP e.i = i
+        else
+          e = {} e.t = eSTART e.i = i
+        end
+      end
+    event(e)
     dirtygrid = true
     end
   elseif y == 8 then
