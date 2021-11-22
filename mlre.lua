@@ -601,7 +601,8 @@ init = function()
   params:set_action("quant_div",function() update_tempo() end)
 
   --params for rec threshold
-  params:add_control("rec_threshold", "rec threshold", controlspec.new(1, 1000, 'exp', 1, 200, ''))
+  params:add_control("rec_threshold", "rec threshold", controlspec.new(-40, 6, 'lin', 0.01, -12, "dB"))
+  --not as much fine control with db but it's more intuitive to me (increment of 0.01 doesn't work when neg values involved)
 
 --params for tracks
   params:add_separator("tracks")
@@ -734,7 +735,8 @@ init = function()
     amp_in[ch] = poll.set(amp_src[ch])
     amp_in[ch].time = 0.01
     amp_in[ch].callback = function(val)
-      if val > params:get("rec_threshold")/10000 then
+      --print(ch.." in > "..string.format("%.2f", val))
+      if val > util.dbamp(params:get("rec_threshold"))/10 then
         for i = 1, TRACKS do
           if track[i].oneshot == 1 then
             oneshot_rec()
