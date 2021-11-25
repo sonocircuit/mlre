@@ -42,6 +42,7 @@ local key1_hold = 0
 local scale_idx = 1
 local trksel = 0
 local dstview = 0
+local dur = 0
 
 -- for transpose scales
 local scale_options = {"semitones", "minor", "major", "custom a", "custom b"}
@@ -562,15 +563,15 @@ function clock.transport.stop()
   stopall()
 end
 
+-- threshold recording
 function arm_thresh_rec()
   amp_in[1]:start()
   amp_in[2]:start()
 end
 
--- threshold recording
 function thresh_rec()
   --play any track before using otherwise we get an error "attempt to index a nil value (local 'e')"
-  --addressed this issue by adding track[1].play = 1 and track[1].play = 0 in sequence in init() function (is this ok?)
+  --addressed this issue by adding track[1].play = 1 and track[1].play = 0 in sequence within the init() function (is this ok?)
   for i = 1, TRACKS do
     if track[i].oneshot == 1 then
       track[i].rec = 1
@@ -585,24 +586,30 @@ function thresh_rec()
   end
 end
 
---** oneshot part not implemented yet. get error -> attempt to yield from outside a coroutine... have to wrap my head around clock stuff
---[[function oneshot_rec()
+--for oneshot length
+function update_cycle() --if oneshot active sets dur variable
   for i = 1, TRACKS do
-    if track[i].rec == 1 then
-      if track[i].tempo_map == 1 then
-        local mcalc = 8 * math.abs(track[i].speed)
-        clock.sync(mcalc)
-        print("track "..i.." MAP off")
-        track[i].rec = 0
-      elseif track[i].tempo_map == 0 then
-        local ncalc = 60/params:get("clock_tempo") * 16 * math.abs(track[i].speed)
-        clock.sync(ncalc)
-        track[i].rec = 0
-        print("track "..i.." noMap off")
+    if track[i].oneshot == 1 then
+      if track[i].tempo_map == 0 then
+        dur = 4 / math.pow(2,track[i].speed)
+      elseif track[i].tempo_map == 1 then
+        dur = (60/params:get("clock_tempo")*4) / math.pow(2,track[i].speed)
       end
     end
   end
-end]]--
+  --print(dur)
+end
+
+--triggerd when rec thresh is reached (poll callback)
+function oneshot(cycle)
+  clock.sleep(cycle) -- hold for time interval specified by 'dur'
+    for i = 1, TRACKS do
+    if track[i].rec == 1 then
+      track[i].rec = 0
+    end
+  set_rec(i)
+  end
+end
 
 --init
 init = function()
@@ -760,7 +767,7 @@ init = function()
         for i = 1, TRACKS do
           if track[i].oneshot == 1 then
             thresh_rec()
-            --oneshot_rec()
+            clock.run(oneshot, dur) --when rec starts, clock coroutine is called
             track[i].oneshot = 0
           end
         end
@@ -1061,9 +1068,10 @@ v.gridkey[vREC] = function(x, y, z)
         track[i].rec = 1 - track[i].rec
         set_rec(i)
       elseif x == 1 and y < 8 and alt == 1 then
-        track[i].oneshot = 1 - track[i].oneshot
+        track[i].oneshot = 1 - track[i].oneshot -- need to figure out how to toggle AND have only one active at a time
         if track[i].oneshot == 1 then
-          arm_thresh_rec()
+          arm_thresh_rec() --amp_in poll callback starts
+          update_cycle()  --duration of oneshot is set
         end
       elseif x == 16 and y < 8 and alt == 0 then
         if track[i].play == 1 then
