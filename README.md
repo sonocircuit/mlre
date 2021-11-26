@@ -45,8 +45,8 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 
 **A: Activate Recoding** for tracks 1-6. Alt + A arms a track for oneshot recording.   
 **B: Track focus** for tracks 1-6. Alt + focus maps track tempo to system clock. This is indicated when all four leds are bright.   
-**C: Track reverse** for tracks 1-6. If on track playback direction is reversed.  
-**D: Track speed** for tracks 1-6. Center position is speed = 1. Left from center x2, x4, x8. Right from /2, /4, /8.   
+**C: Track reverse** for tracks 1-6. If on, track playback direction is reversed.  
+**D: Track speed** for tracks 1-6. Left from center / 8, / 4, / 2. Center position is speed = 1. Right from center * 2, * 4, * 8.   
 **F: CUT view of focused track**     
 
 ## CUT Page
