@@ -18,7 +18,6 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 
 **TODO:**
 - [ ] cleanup code
-- [ ] implement oneshot recording
 
 # Documentation:
 
