@@ -17,7 +17,7 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 # Documentation:
 
 ## Grid Navigation
-![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_gridnav.png)
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_gridnav.png)
 
 |**Button**|**Function**|**Button**|**Function**|  
 |:---:|:---|:---:|:---|
@@ -42,7 +42,7 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 
  
 ## REC Page
-![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_recview.png)
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_recview.png)
 
 
 |**GRID**| **Description**|
@@ -64,14 +64,18 @@ When a track is in "select mode" the according LED will be lit slightly brighter
 
 
 ## CUT Page
-![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_cutview.png)
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_cutview.png)
 
 
 
-## CLIP Page
-![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_clipview.png)
+## TRANSPOSE Page
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_trspview.png)
 
 
 
 ## LFO Page
-![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_lfoview.png)
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlr_lfoview.png)
+
+
+## CLIP Page
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlr_clipview.png)
