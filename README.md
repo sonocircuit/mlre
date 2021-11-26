@@ -74,8 +74,8 @@ When a track is in "select mode" the according LED will be lit slightly brighter
 
 
 ## LFO Page
-![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlr_lfoview.png)
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_lfoview.png)
 
 
 ## CLIP Page
-![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlr_clipview.png)
+![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_clipview.png)
