@@ -32,7 +32,7 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 |**ALT + REC view**|Clear softcut buffer (for all tracks)| 
 |**ALT + MOD**|Set all playing tracks to step 1|  
 |**ALT + STOP ALL**|Alt run (see Rec Page)|  
-|**MOD + TRACK POSITION**|**HOLD MODE:** LOOP set to one single step (see CUT Page). To lock HOLD MODE press **MOD + ALT** and release **MOD before ALT**. Press **ALT** to unlock.|  
+|**MOD + TRACK POSITION**|**HOLD MODE:** LOOP set to one single step (see CUT Page).|  
  
  **PATTERNS:**
 - Description here
@@ -66,16 +66,62 @@ When a track is in "select mode" the according LED will be lit slightly brighter
 ## CUT Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_cutview.png)
 
+|**GRID**| **Description**|
+|:---:|:---|
+|**A:**| **Position** for tracks 1-6. Press button to jump to position. Press and hold two buttons of the same row to set a loop. Press MOD + position to hold.|
+|**B:**| **Transpose focused track**|   
+   
+**HOLD MODE:**
+- Press MOD + track position to create a one-step-loop (aka. HOLD).
+- To lock HOLD MODE press **MOD + ALT** and release **MOD before ALT**. All postion presses will result in a HOLD. Press **MOD** to unlock.
+
+**FOCUS**
+- Press any position of the track row to focus to the corresponding track.
+  
+**PLAY/STOP**
+- Press ALT + track row to start/stop track
 
 
 ## TRANSPOSE Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_trspview.png)
 
-
+|**GRID**| **Description**|
+|:---:|:---|
+|**A:**| **Transpose** for tracks 1-6. Transposition according to the scale set in "global parameters"|
+|**B:**| **Transpose focused track**|   
+   
+**FOCUS**
+- Press any position of the track row to focus to the corresponding track.
+  
+**PLAY/STOP**
+- Press ALT + center of track row to start/stop track
+   
 
 ## LFO Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_lfoview.png)
 
+|**GRID**| **Description**|
+|:---:|:---|
+|**A:**| **LFO ON/OFF** for LFOs 1-6.|
+|**B:**| **LFO DEPTH** for LFOs 1-6.|
+|**C:**| **LFO SHAPE** for focused LFO.|
+|**D:**| **TRACK SELECTION** tracks 1-6.|
+|**E:**| **DESTINATION** for focused LFO|
+
+**LFO PATCHING**
+- Focus an LFO by pressing anywhere within the corrresponding row.
+- Select the track of destination (D)
+- Select the destination (E)
+- Adjust Depth and turn on
+   
 
 ## CLIP Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/assets/grid_mlre_clipview.png)
+
+|**GRID**| **Description**|
+|:---:|:---|
+|**A:**| **ASSIGN CLIP** 1-8 to the correspondig track (row).|
+|**B:**| **INPUT OPTIONS** for tracks 1-6.|
+|**C:**| **ROUTE TO TRACK 5** for tracks 1-4.|
+|**D:**| **ROUTE TO TRACK 5** for tracks 1-5.|
+|**E:**| **QUATIZATION DIVISION** settings|
