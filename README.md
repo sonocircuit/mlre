@@ -28,22 +28,22 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 |:---:|:---|:---:|:---|
 |**REC view**|Set grid page to REC page|**STOP ALL**| Stop all playing tracks| 
 |**CUT view**|Set grid page to CUT page|**MOD**| Modifier for different functions (see COMBOS)|
-|**CLIP view**|Set grid page to CLIP page|**Q**| Quantize grid presses (ON/OFF)|
+|**TRSP view**|Set grid page to TRANSPOSE page|**Q**| Quantize grid presses (ON/OFF)|
 |**LFO view**|Set grid page to LFO page|**ALT**|ALT button (see COMBOS)|
 
-**PATTERNS:**
+|**COMBO**|**Function**|
+|:---:|:---|
+|**ALT + Q**|Set grid page to CLIP page| 
+|**ALT + REC view**|Clear softcut buffer (for all tracks)| 
+|**ALT + MOD**|Set all playing tracks to step 1|  
+|**MOD + TRACK POSITION**|**HOLD MODE:** LOOP set to one single step (see CUT Page). To lock HOLD MODE press **MOD + ALT** and release **MOD before ALT**. Press **ALT** to unlock.|  
+ 
+ **PATTERNS:**
 - Description here
 
 **RECALL:**
 - Description here
 
-|**COMBO**|**Function**|
-|:---:|:---|
-|**ALT + REC view**|Clear softcut buffer (for all tracks)| 
-|**ALT + Q**|Time settings page (enc 2 -> tempo, enc 3 -> quantization division)| 
-|**ALT + MOD**|Set all playing tracks to step 1|  
-|**MOD + TRACK POSITION**|**HOLD MODE:** LOOP set to one single step (see CUT Page). To lock HOLD MODE press **MOD + ALT** and release **MOD before ALT**. Press **ALT** to unlock.|  
- 
  
 ## REC Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_recview.png)
