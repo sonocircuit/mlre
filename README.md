@@ -1,10 +1,5 @@
 # mlre
 
-
-## work in progress
-
-
-
 This an adaption of tehn's mlr script.
 
 At first this started as a personal project to learn to code in lua (well to code in general actually). As I started to understand a bit more about the architecure and basics of norns scripts and softcut, many ideas came to mind, which I wanted to implement in mlr (because it is my favourite and most used script). These additional features are built around the original script, so the core of mlr remains unchanged.
@@ -48,7 +43,11 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut and answ
 ## REC Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_recview.png)
 
-
+**A: Activate Recoding** for tracks 1-6. Alt + A arms a track for oneshot recording.   
+**B: Track focus** for tracks 1-6. Alt + focus maps track tempo to system clock. This is indicated when all four leds are bright.   
+**C: Track reverse** for tracks 1-6. If on track playback direction is reversed.  
+**D: Track speed** for tracks 1-6. Center position is speed = 1. Left from center x2, x4, x8. Right from /2, /4, /8.   
+**F: CUT view of focused track**     
 
 ## CUT Page
 ![grid navigation](https://github.com/sonoCircuits/mlre/blob/main/resources/grid_mlr_cutview.png)
