@@ -45,13 +45,12 @@ local dstview = 0
 local dur = 0
 
 -- for transpose scales
-local scale_options = {"semitones", "minor", "major", "custom a", "custom b"}
+local scale_options = {"semitones", "minor", "major", "custom"}
 
 local trans_id = {
   {"-P5","-d5","-P4","-M3","-m3","-M2","-m2","P1","m2","M2","m3","M3","P4","d5","P5"},
   {"-P8","-m7","-m6","-P5","-P4","-m3","-M2","P1","M2","m3","P4","P5","m6","m7","P8"},
   {"-P8","-M7","-M6","-P5","-P4","-M3","-M2","P1","M2","M3","P4","P5","M6","M7","P8"},
-  {"-P8","-m7","-m6","-P5","-P4","-m3","-M2","P1","M2","m3","P4","P5","m6","m7","P8"},
   {"-here","-notation","-own","-your","-type","-can","-you","none","you","can","type","your","own","notation","here"},
 }
 
@@ -59,7 +58,6 @@ local trans_scale = {
   {-700, -600, -500, -400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 700},
   {-1200, -1000, -800, -700, -500, -300, -200, 0, 200, 300, 500, 700, 800, 1000, 1200},
   {-1200, -1100, -900, -700, -500, -400, -200, 0, 200, 400, 500, 700, 900, 1100, 1200},
-  {-1200, -996, -814, -702, -498, -316, -204, 0, 204, 316, 498, 702, 814, 996, 1200},
   {-3100, -2400, -1900, -1700, -1200, -700, -500, 0, 500, 700, 1200, 1700, 1900, 2400, 3100},
 }
 
@@ -336,7 +334,7 @@ end
 --interface
 local vREC = 1
 local vCUT = 2
-local vTRANS = 3
+local vTRSP = 3
 local vLFO = 4
 local vCLIP = 15
 
@@ -355,7 +353,7 @@ viewinfo[vREC] = 0
 viewinfo[vCUT] = 0
 viewinfo[vCLIP] = 0
 viewinfo[vLFO] = 0
-viewinfo[vTRANS] = 0
+viewinfo[vTRSP] = 0
 
 focus = 1
 alt = 0
@@ -496,14 +494,14 @@ function set_transpose(i, x)
 end
 
 -- transport functions
-function stopall() --stop all tracks tracks
+function stopall() --stop all tracks
   for i = 1, TRACKS do
       e = {} e.t = eSTOP e.i = i
   event(e)
   end
 end
 
-function altrun() --add alternative run function for selected tracks (see gridnav)
+function altrun() --add alt run function for selected tracks (see gridnav)
   for i = 1, TRACKS do
     if track[i].sel == 1 then
       if track[i].play == 1 then
@@ -542,27 +540,6 @@ function mstart() --MIDI START for selected tracks
   end
 end
 
--- MIDI SETUP
-m.event = function(data)
-  local d = midi.to_msg(data)
-  if d.type == "start" then
-      clock.transport.start()
-  --elseif d.type == "continue" then
-      --clock.transport.start()
-  end
-  if d.type == "stop" then
-    clock.transport.stop()
-  end
-end
-
-function clock.transport.start()
-  mstart()
-end
-
-function clock.transport.stop()
-  stopall()
-end
-
 -- threshold recording
 function arm_thresh_rec()
   amp_in[1]:start()
@@ -571,7 +548,7 @@ end
 
 function thresh_rec()
   --play any track before using otherwise we get an error "attempt to index a nil value (local 'e')"
-  --addressed this issue by adding track[1].play = 1 and track[1].play = 0 in sequence within the init() function (is this ok?)
+    --->>> addressed this issue by adding track[1].play = 1 and track[1].play = 0 in sequence within the init() function (is this ok?)
   for i = 1, TRACKS do
     if track[i].oneshot == 1 then
       track[i].rec = 1
@@ -587,29 +564,31 @@ function thresh_rec()
 end
 
 --for oneshot length
-function update_cycle() --if oneshot active sets dur variable
+function update_cycle() --if oneshot active duration of one cycle is set for armed track
   for i = 1, TRACKS do
     if track[i].oneshot == 1 then
       if track[i].tempo_map == 0 then
         dur = 4 / math.pow(2,track[i].speed)
       elseif track[i].tempo_map == 1 then
-        dur = (60/params:get("clock_tempo")*4) / math.pow(2,track[i].speed)
+        dur = 15/params:get("clock_tempo") / math.pow(2,track[i].speed)
       end
     end
   end
   --print(dur)
 end
 
---triggerd when rec thresh is reached (poll callback)
+--triggerd when rec thresh is reached (amp_in poll callback)
 function oneshot(cycle)
-  clock.sleep(cycle) -- hold for time interval specified by 'dur'
-    for i = 1, TRACKS do
+  clock.sleep(cycle) -- length of cycle for time interval specified by 'dur'
+  for i = 1, TRACKS do
     if track[i].rec == 1 then
       track[i].rec = 0
     end
   set_rec(i)
   end
 end
+
+
 
 --init
 init = function()
@@ -629,6 +608,7 @@ init = function()
   --params for rec threshold
   params:add_control("rec_threshold", "rec threshold", controlspec.new(-40, 6, 'lin', 0.01, -12, "dB"))
   --not as much fine control with db but it's more intuitive to me (increment of 0.01 doesn't work when neg values involved)
+  --it even seems to line up with the input displayed on the input vu meter (could be a coincidence though)
 
 --params for tracks
   params:add_separator("tracks")
@@ -750,9 +730,9 @@ init = function()
   softcut.poll_start_phase()
 
   clock.run(clock_update_tempo)
-  --clock.run(oneshot_rec)
 
-  track[1].play = 1 -- added this to set
+  -- added this to set "local e" to other than nil (addressed error described at thresh_rec())
+  track[1].play = 1
   track[1].play = 0
 
   --threshold rec poll
@@ -767,8 +747,8 @@ init = function()
         for i = 1, TRACKS do
           if track[i].oneshot == 1 then
             thresh_rec()
-            clock.run(oneshot, dur) --when rec starts, clock coroutine is called
-            track[i].oneshot = 0
+            clock.run(oneshot, dur) --when rec starts, clock coroutine starts
+            track[i].oneshot = 0 --and oneshot is reset
           end
         end
         amp_in[ch]:stop()
@@ -806,7 +786,7 @@ gridkey_nav = function(x, z)
       if alt == 1 then softcut.buffer_clear() end
       set_view(vREC)
     elseif x == 2 then set_view(vCUT)
-    elseif x == 3 then set_view(vTRANS)
+    elseif x == 3 then set_view(vTRSP)
     elseif x == 4 then set_view(vLFO)
     elseif x > 4 and x < 9 then
       local i = x - 4
@@ -841,11 +821,12 @@ gridkey_nav = function(x, z)
       end
     elseif x == 15 and alt == 0 then
       quantize = 1 - quantize
-      if quantize == 0 then quantizer:stop()
-      else quantizer:start()
+      if quantize == 0 then
+        quantizer:stop()
+      else
+        quantizer:start()
       end
-    elseif x == 15 and alt == 1 then
-      set_view(vCLIP)
+    elseif x == 15 and alt == 1 then set_view(vCLIP)
     elseif x == 16 then alt = 1
     elseif x == 14 and alt == 0 then alt2 = 1
     elseif x == 14 and alt == 1 then retrig()  --retrig all playing tracks to pos 1
@@ -867,20 +848,29 @@ gridredraw_nav = function()
   g:led(3, 1, 2)
   g:led(view, 1, 9)
   if alt == 1 and alt2 == 0 then g:led(16, 1, 15)
-  elseif alt == 0 then g:led(16, 1, 9) end
+  elseif alt == 0 then g:led(16, 1, 9)
+  end
   if quantize == 1 then g:led(15, 1, 9)
-  elseif quantize == 0 then g:led(15, 1, 3) end
+  elseif quantize == 0 then g:led(15, 1, 3)
+  end
   if alt2 == 1 then g:led(14, 1, 9)
-  elseif alt2 == 0 then g:led(14, 1, 2) end
+  elseif alt2 == 0 then g:led(14, 1, 2)
+  end
   for i = 1, 4 do
-    if pattern[i].rec == 1 then g:led(i + 4, 1, 15)
-    elseif pattern[i].play == 1 then g:led(i + 4, 1, 11)
-    elseif pattern[i].count > 0 then g:led(i + 4, 1, 7)
-    else g:led(i + 4, 1, 4) end
+    if pattern[i].rec == 1 then
+      g:led(i + 4, 1, 15)
+    elseif pattern[i].play == 1 then
+      g:led(i + 4, 1, 11)
+    elseif pattern[i].count > 0 then
+      g:led(i + 4, 1, 7)
+    else
+      g:led(i + 4, 1, 4)
+    end
     local b = 3
     if recall[i].recording == true then b = 15
     elseif recall[i].active == true then b = 11
-    elseif recall[i].has_data == true then b = 7 end
+    elseif recall[i].has_data == true then b = 7
+    end
     g:led(i + 8, 1, b)
   end
 end
@@ -960,11 +950,11 @@ v.redraw[vREC] = function()
 
   if pageNum == 1 then
     screen.level(15)
-    screen.rect(mp+3 ,11, 5, 5)
+    screen.rect(mp + 3 ,11, 5, 5)
     screen.fill()
     screen.level(6)
-    screen.rect(mp+11, 12, 4, 4)
-    screen.rect(mp+18, 12, 4, 4)
+    screen.rect(mp + 11, 12, 4, 4)
+    screen.rect(mp + 18, 12, 4, 4)
     screen.stroke()
     screen.level(sel and 15 or 4)
     screen.move(10, 32)
@@ -990,11 +980,11 @@ v.redraw[vREC] = function()
 
   elseif pageNum == 2 then
     screen.level(15)
-    screen.rect(mp+10, 11, 5, 5)
+    screen.rect(mp + 10, 11, 5, 5)
     screen.fill()
     screen.level(6)
-    screen.rect(mp+4, 12, 4, 4)
-    screen.rect(mp+18, 12, 4, 4)
+    screen.rect(mp + 4, 12, 4, 4)
+    screen.rect(mp + 18, 12, 4, 4)
     screen.stroke()
     screen.level(sel and 15 or 4)
     screen.move(10, 32)
@@ -1020,11 +1010,11 @@ v.redraw[vREC] = function()
 
   elseif pageNum == 3 then
     screen.level(15)
-    screen.rect(mp+17, 11, 5, 5)
+    screen.rect(mp + 17, 11, 5, 5)
     screen.fill()
     screen.level(6)
-    screen.rect(mp+4, 12, 4, 4)
-    screen.rect(mp+11, 12, 4, 4)
+    screen.rect(mp + 4, 12, 4, 4)
+    screen.rect(mp + 11, 12, 4, 4)
     screen.stroke()
     screen.level(sel and 15 or 4)
     screen.move(10, 32)
@@ -1087,7 +1077,7 @@ v.gridkey[vREC] = function(x, y, z)
         end
       elseif x == 16 and y < 8 and alt == 1 then
         track[i].sel = 1 - track[i].sel
-      elseif x > 8 and x < 16 and y<TRACKS+2 then
+      elseif x > 8 and x < 16 and y < 8 then
         local n = x - 12
         e = {} e.t = eSPEED e.i = i e.speed = n
         event(e)
@@ -1098,7 +1088,7 @@ v.gridkey[vREC] = function(x, y, z)
       end
       dirtygrid = true
     end
-  elseif y == 8 then
+  elseif y == 8 then --cut for focused track
     if z == 1 and held[y] then heldmax[y] = 0 end
     held[y] = held[y] + (z * 2 - 1)
     if held[y] > heldmax[y] then heldmax[y] = held[y] end
@@ -1269,11 +1259,11 @@ v.gridredraw[vCUT] = function()
 end
 
 --------------------TRANSPOSE--------------------
-v.key[vTRANS] = v.key[vREC]
-v.enc[vTRANS] = v.enc[vREC]
-v.redraw[vTRANS] = v.redraw[vREC]
+v.key[vTRSP] = v.key[vREC]
+v.enc[vTRSP] = v.enc[vREC]
+v.redraw[vTRSP] = v.redraw[vREC]
 
-v.gridkey[vTRANS] = function(x, y, z)
+v.gridkey[vTRSP] = function(x, y, z)
   if y == 1 then gridkey_nav(x, z)
   elseif y > 1 and y < 8 then
     if z == 1 then
@@ -1296,7 +1286,7 @@ v.gridkey[vTRANS] = function(x, y, z)
     event(e)
     dirtygrid = true
     end
-  elseif y == 8 then
+  elseif y == 8 then --cut for focused track
     if z == 1 and held[y] then heldmax[y] = 0 end
     held[y] = held[y] + (z * 2 - 1)
     if held[y] > heldmax[y] then heldmax[y] = held[y] end
@@ -1333,7 +1323,7 @@ v.gridkey[vTRANS] = function(x, y, z)
   end
 end
 
-v.gridredraw[vTRANS] = function()
+v.gridredraw[vTRSP] = function()
   g:all(0)
   gridredraw_nav()
   for i = 1, 6 do
@@ -1501,7 +1491,7 @@ clip_sel = 1
 clip_clear_mult = 6
 
 function fileselect_callback(path, c)
-  --print("FILESELECT "..c)
+  print("FILESELECT "..c)
   if path ~= "cancel" and path ~= "" then
     local ch, len = audio.file_info(path)
     if ch > 0 and len > 0 then
@@ -1624,14 +1614,14 @@ end
 v.gridkey[vCLIP] = function(x, y, z)
   if y == 1 then gridkey_nav(x, z)
   elseif z == 1 then
-    if y < 8 and x < MAX_CLIPS+1 then
+    if y < 8 and x < MAX_CLIPS + 1 then
       clip_sel = y-1
       if x ~= track[clip_sel].clip then
         set_clip(clip_sel, x)
       end
     elseif y > 1 and y < 8 and x > 9 and x < 14 then
       local i = y-1
-      params:set(i.."input_options", x-9)
+      params:set(i.."input_options", x - 9)
     elseif y > 1 and y < 6 and x == 15 then
       local i = y-1
       route[i].t5 = 1 - route[i].t5
