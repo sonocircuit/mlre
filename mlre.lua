@@ -1,4 +1,4 @@
--- mlre v1.0.0 @sonocircuit <- ????
+-- mlre v1.0.1 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -7,6 +7,8 @@
 --
 -- for docs go to:
 -- github.com/sonocircuits/mlre
+-- or smb into code/mlre/docs
+--
 --
 -- /////////
 -- ////
@@ -163,7 +165,6 @@ function event_exec(e)
     end
   elseif e.t == eSTOP then
     track[e.i].play = 0
-    --track[e.i].pos_grid = -1 --removes "glitch" where after "play" last grid button lights up (locks to last step if in "hold" mode)
     ch_toggle(e.i, 0)
     dirtygrid = true
   elseif e.t == eSTART then
@@ -271,7 +272,7 @@ end
 clip = {}
 for i = 1, MAX_CLIPS do
   clip[i] = {}
-  clip[i].s = 2 + (i - 1)*CLIP_LEN_SEC
+  clip[i].s = 2 + (i - 1) * CLIP_LEN_SEC
   clip[i].name = "-"
   set_clip_length(i, 4)
 end
@@ -287,7 +288,7 @@ set_clip = function(i, x)
 end
 
 calc_quant = function(i)
-  local q = (clip[track[i].clip].l/16)
+  local q = (clip[track[i].clip].l / 16)
   --print("q > "..q)
   return q
 end
@@ -476,7 +477,7 @@ function lfo.process()
   end
 end
 
--- set scale and transpose function
+-- set scale id
 function set_scale(n)
   for i = 1, TRACKS do
     local p = params:lookup_param(i.."transpose")
@@ -485,6 +486,7 @@ function set_scale(n)
 	end
 end
 
+--transpose track
 function set_transpose(i, x)
   local scale_idx = params:get("scale")
   track[i].transpose = trans_scale[scale_idx][x] / 1200
@@ -509,8 +511,8 @@ function altrun() --add alt run function for selected tracks (see gridnav)
       elseif track[i].play == 0 then
         e = {} e.t = eSTART e.i = i
       end
+      event(e)
     end
-  event(e)
   end
 end
 
@@ -535,8 +537,8 @@ function mstart() --MIDI START for selected tracks
       elseif track[i].rev == 1 then
         e = {} e.t = eCUT e.i = i e.pos = 15
       end
+      event(e)
     end
-  event(e)
   end
 end
 
@@ -547,8 +549,6 @@ function arm_thresh_rec()
 end
 
 function thresh_rec()
-  --play any track before using otherwise we get an error "attempt to index a nil value (local 'e')"
-    --->>> addressed this issue by adding track[1].play = 1 and track[1].play = 0 in sequence within the init() function (is this ok?)
   for i = 1, TRACKS do
     if track[i].oneshot == 1 then
       track[i].rec = 1
@@ -574,7 +574,6 @@ function update_cycle() --if oneshot active duration of one cycle is set for arm
       end
     end
   end
-  --print(dur)
 end
 
 --triggerd when rec thresh is reached (amp_in poll callback)
@@ -587,8 +586,6 @@ function oneshot(cycle)
   set_rec(i)
   end
 end
-
-
 
 --init
 init = function()
@@ -612,8 +609,6 @@ init = function()
 
 --params for tracks
   params:add_separator("tracks")
-
-  --p = {} -- is this needed? can't find any table p and can't seem to identify any missing feature when commented out
 
   audio.level_cut(1)
 
@@ -648,7 +643,7 @@ init = function()
     -- add file
     params:add_file(i.."file", i.." file", "")
     params:set_action(i.."file", function(n) fileselect_callback(n,i) end)
-    params:hide(i.."file") --I never use this as it is already present in CLIP page
+    params:hide(i.."file")
 
     params:add_separator("filter")
     -- cutoff
@@ -710,7 +705,6 @@ init = function()
   quantizer.event = event_q_clock
   quantizer:start()
 
-  --pattern_init() --can this be deleted? doesn't seem to have a function elsewhere
   set_view(vREC)
 
   update_tempo()
@@ -731,7 +725,8 @@ init = function()
 
   clock.run(clock_update_tempo)
 
-  -- added this to set "local e" to other than nil (addressed error described at thresh_rec())
+  -- added this to set "local e" to other than nil
+  -- (addressed error that occured when thresh_rec() is called before any track is played)
   track[1].play = 1
   track[1].play = 0
 
@@ -742,7 +737,6 @@ init = function()
     amp_in[ch] = poll.set(amp_src[ch])
     amp_in[ch].time = 0.01
     amp_in[ch].callback = function(val)
-      --print(ch.." in > "..string.format("%.2f", val))
       if val > util.dbamp(params:get("rec_threshold"))/10 then
         for i = 1, TRACKS do
           if track[i].oneshot == 1 then
@@ -765,7 +759,7 @@ phase = function(n, x)
   if x ~= track[n].pos_grid then
     track[n].pos_grid = x
     if view == vCUT then dirtygrid = true end
-    if view == vREC then dirtygrid = true end --(keep grid refreshing on REC page --> CUT focused track on bottom row)
+    if view == vREC then dirtygrid = true end
   end
 end
 
@@ -829,7 +823,7 @@ gridkey_nav = function(x, z)
     elseif x == 15 and alt == 1 then set_view(vCLIP)
     elseif x == 16 then alt = 1
     elseif x == 14 and alt == 0 then alt2 = 1
-    elseif x == 14 and alt == 1 then retrig()  --retrig all playing tracks to pos 1
+    elseif x == 14 and alt == 1 then retrig()  --set all playing tracks to pos 1
     elseif x == 13 and alt == 0 then stopall() --stops all tracks
     elseif x == 13 and alt == 1 then altrun()  --stops all running tracks and runs all stopped tracks if track[i].sel == 1
     end
@@ -1235,13 +1229,12 @@ v.gridredraw[vCUT] = function()
         g:led(x, i + 1, 4)
       end
     end
-    --bugfix? when track rev then led was offset by one.
     if track[i].play == 1 then
       if track[i].rev == 0 then
         g:led((track[i].pos_grid + 1) %16, i + 1, 15)
       elseif track[i].rev == 1 then
         if track[i].loop == 1 then
-          g:led((track[i].pos_grid + 1) %16, i + 1, 15) --if not added there is an offest of 1 when in loop and rev
+          g:led((track[i].pos_grid + 1) %16, i + 1, 15)
         else
           g:led((track[i].pos_grid + 2) %16, i + 1, 15)
         end
@@ -1273,17 +1266,19 @@ v.gridkey[vTRSP] = function(x, y, z)
         redraw()
       end
       if alt == 0 then
-        if x >= 1 and x <=8 then params:set(i.."transpose", x) end
-        if x >= 9 and x <=16 then params:set(i.."transpose", x - 1) end
+        if x >= 1 and x <=8 then params:set(i.."transpose", x)
+        elseif x >= 9 and x <=16 then params:set(i.."transpose", x - 1)
+        else return
+        end
       end
-      if alt == 1 then
+      if alt == 1 and x > 7 and x < 10 then
         if track[i].play == 1 then
           e = {} e.t = eSTOP e.i = i
         else
           e = {} e.t = eSTART e.i = i
         end
+        event(e)
       end
-    event(e)
     dirtygrid = true
     end
   elseif y == 8 then --cut for focused track
@@ -1358,6 +1353,8 @@ end
 v.key[vLFO] = function(n, z)
   if n == 2 and z == 1 then
     viewinfo[vLFO] = 1 - viewinfo[vLFO]
+  elseif n == 3 and z == 1 then
+    pageLFO = (pageLFO %6) + 1
     redraw()
   end
 end
@@ -1467,10 +1464,10 @@ v.gridredraw[vLFO] = function()
   g:all(0)
   gridredraw_nav()
   for i = 1, 6 do
-    g:led(1, i + 1, params:get(i.. "lfo") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3)
+    g:led(1, i + 1, params:get(i.."lfo") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3)
     local range = math.floor(util.linlin(0, 100, 2, 16, params:get(i.."lfo_depth")))
     g:led(range, i + 1, 7)
-    for x = 2, range -1 do
+    for x = 2, range - 1 do
       g:led(x, i + 1, 3)
     end
     g:led(i + 3, 8, 4)
@@ -1490,6 +1487,7 @@ clip_action = 1
 clip_sel = 1
 clip_clear_mult = 6
 
+--TODO look into file management
 function fileselect_callback(path, c)
   print("FILESELECT "..c)
   if path ~= "cancel" and path ~= "" then
@@ -1497,18 +1495,16 @@ function fileselect_callback(path, c)
     if ch > 0 and len > 0 then
       print("file > "..path.." "..clip[track[c].clip].s)
       print("file length > "..len / 48000)
-      --softcut.buffer_read_mono(path, 0, clip[track[clip_sel].clip].s, len/48000, 1, 1)
       softcut.buffer_read_mono(path, 0, clip[track[c].clip].s, CLIP_LEN_SEC, 1, 1)
       local l = math.min(len / 48000, CLIP_LEN_SEC)
       set_clip_length(track[c].clip, l)
-      clip[track[c].clip].name = path:match("[^/]*$") -- TODO: STRIP extension
+      clip[track[c].clip].name = path:match("[^/]*$")
       set_clip(c,track[c].clip)
       update_rate(c)
       params:set(c.."file",path)
     else
       print("not a sound file")
     end
-    -- TODO re-set_clip any tracks with this clip loaded
     screenredrawtimer:start()
     redraw()
   end
@@ -1518,9 +1514,9 @@ function textentry_callback(txt)
   if txt then
     local c_start = clip[track[clip_sel].clip].s
     local c_len = clip[track[clip_sel].clip].l
-    print("SAVE " .. _path.audio .. "mlr/" .. txt .. ".wav", c_start, c_len)
-    util.make_dir(_path.audio .. "mlr")
-    softcut.buffer_write_mono(_path.audio.."mlr/"..txt..".wav", c_start, c_len, 1)
+    print("SAVE " .. _path.audio .. "mlre/" .. txt .. ".wav", c_start, c_len)
+    util.make_dir(_path.audio .. "mlre")
+    softcut.buffer_write_mono(_path.audio.."mlre/"..txt..".wav", c_start, c_len, 1)
     clip[track[clip_sel].clip].name = txt
   else
     print("save cancel")
@@ -1543,7 +1539,7 @@ v.key[vCLIP] = function(n,z)
       redraw()
     elseif clip_actions[clip_action] == "save" then
       screenredrawtimer:stop()
-      textentry.enter(textentry_callback, "mlr-" .. (math.random(9000)+1000))
+      textentry.enter(textentry_callback, "mlre-" .. (math.random(9000)+1000))
     end
   elseif n == 3 and z == 1 then
     clip_reset(clip_sel, 60 / params:get("clock_tempo") * (2^ (clip_clear_mult - 2)))
@@ -1556,10 +1552,10 @@ v.enc[vCLIP] = function(n,d)
   if n == 2 then
     clip_action = util.clamp(clip_action + d, 1, 3)
   elseif n == 3 then
-    clip_clear_mult = util.clamp(clip_clear_mult+d, 1, 6)
+    clip_clear_mult = util.clamp(clip_clear_mult + d, 1, 6)
   end
   redraw()
-  dirtygrid=true
+  dirtygrid = true
 end
 
 local function truncateMiddle (str, maxLength, separator)
