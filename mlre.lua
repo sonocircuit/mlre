@@ -1,4 +1,4 @@
--- mlre v1.0.1 @sonocircuit
+-- mlre v1.0.2 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -36,8 +36,6 @@ local fileselect = require 'fileselect'
 local textentry = require 'textentry'
 local pattern_time = require 'pattern_time'
 
-local TRACKS = 6
-local FADE = 0.01
 local pageNum = 1
 local pageLFO = 1
 local key1_hold = 0
@@ -67,7 +65,7 @@ local trans_scale = {
 local lfo = include 'lib/hnds_mlre'
 
 local lfo_targets = {"none"}
-for i = 1, TRACKS do
+for i = 1, 6 do
   table.insert(lfo_targets, i.. "vol")
   table.insert(lfo_targets, i.. "pan")
   table.insert(lfo_targets, i.. "dub")
@@ -99,7 +97,7 @@ local function update_tempo()
   local interval = (60/t) / div_options[d]
   --print("q > "..interval)
   quantizer.time = interval
-  for i=1,TRACKS do
+  for i = 1, 6 do
     if track[i].tempo_map == 1 then
       update_rate(i)
     end
@@ -119,7 +117,7 @@ function clock_update_tempo()
 end
 
 function event_record(e)
-  for i=1,4 do
+  for i = 1, 4 do
     pattern[i]:watch(e)
   end
   recall_watch(e)
@@ -158,7 +156,7 @@ function event_exec(e)
       softcut.loop_end(e.i,clip[track[e.i].clip].e)
     end
     local cut = (e.pos / 16) * clip[track[e.i].clip].l + clip[track[e.i].clip].s
-    softcut.position(e.i,cut)
+    softcut.position(e.i, cut)
     if track[e.i].play == 0 then
       track[e.i].play = 1
       ch_toggle(e.i, 1)
@@ -175,10 +173,10 @@ function event_exec(e)
     track[e.i].loop = 1
     track[e.i].loop_start = e.loop_start
     track[e.i].loop_end = e.loop_end
-    local lstart = clip[track[e.i].clip].s + (track[e.i].loop_start-1) / 16 * clip[track[e.i].clip].l
+    local lstart = clip[track[e.i].clip].s + (track[e.i].loop_start - 1) / 16 * clip[track[e.i].clip].l
     local lend = clip[track[e.i].clip].s + (track[e.i].loop_end) / 16 * clip[track[e.i].clip].l
-    softcut.loop_start(e.i,lstart)
-    softcut.loop_end(e.i,lend)
+    softcut.loop_start(e.i, lstart)
+    softcut.loop_end(e.i, lend)
     dirtygrid = true
   elseif e.t == eSPEED then
     track[e.i].speed = e.speed
@@ -232,7 +230,7 @@ end
 
 --for tracks and clips
 track = {}
-for i = 1,TRACKS do
+for i = 1, 6 do
   track[i] = {}
   track[i].head = (i - 1) %4 + 1
   track[i].play = 0
@@ -241,6 +239,7 @@ for i = 1,TRACKS do
   track[i].oneshot = 0
   track[i].rec_level = 1
   track[i].pre_level = 0
+  track[i].dry_level = 0
   track[i].loop = 0
   track[i].loop_start = 0
   track[i].loop_end = 16
@@ -398,6 +397,7 @@ end
 route = {}
 route.adc = 1
 route.tape = 0
+--route.eng = 0
 for i = 1, 5 do
   route[i] = {}
   route[i].t5 = 0
@@ -436,7 +436,7 @@ end
 
 --select input
 function update_softcut_input()
-  for i = 1, TRACKS do
+  for i = 1, 6 do
     if params:get(i.."input_options") == 1 then -- L&R
       softcut.level_input_cut(1, i, 0.5)
       softcut.level_input_cut(2, i, 0.5)
@@ -449,6 +449,43 @@ function update_softcut_input()
     elseif params:get(i.."input_options") == 4 then -- OFF
       softcut.level_input_cut(1, i, 0)
       softcut.level_input_cut(2, i, 0)
+    end
+  end
+end
+
+--select filter type
+function filter_select()
+  for i = 1, 6 do
+    if params:get(i.."filter_type") == 1 then --lpf
+      softcut.post_filter_lp(i, 1)
+      softcut.post_filter_hp(i, 0)
+      softcut.post_filter_bp(i, 0)
+      softcut.post_filter_br(i, 0)
+      softcut.post_filter_dry(i, track[i].dry_level)
+    elseif params:get(i.."filter_type") == 2 then --hpf
+      softcut.post_filter_lp(i, 0)
+      softcut.post_filter_hp(i, 1)
+      softcut.post_filter_bp(i, 0)
+      softcut.post_filter_br(i, 0)
+      softcut.post_filter_dry(i, track[i].dry_level)
+    elseif params:get(i.."filter_type") == 3 then --bpf
+      softcut.post_filter_lp(i, 0)
+      softcut.post_filter_hp(i, 0)
+      softcut.post_filter_bp(i, 1)
+      softcut.post_filter_br(i, 0)
+      softcut.post_filter_dry(i, track[i].dry_level)
+    elseif params:get(i.."filter_type") == 4 then --brf
+      softcut.post_filter_lp(i, 0)
+      softcut.post_filter_hp(i, 0)
+      softcut.post_filter_bp(i, 0)
+      softcut.post_filter_br(i, 1)
+      softcut.post_filter_dry(i, track[i].dry_level)
+    elseif params:get(i.."filter_type") == 5 then --off
+      softcut.post_filter_lp(i, 0)
+      softcut.post_filter_hp(i, 0)
+      softcut.post_filter_bp(i, 0)
+      softcut.post_filter_br(i, 0)
+      softcut.post_filter_dry(i, 1)
     end
   end
 end
@@ -479,7 +516,7 @@ end
 
 -- set scale id
 function set_scale(n)
-  for i = 1, TRACKS do
+  for i = 1, 6 do
     local p = params:lookup_param(i.."transpose")
 	  p.options = trans_id[n]
 	  p:bang()
@@ -497,14 +534,14 @@ end
 
 -- transport functions
 function stopall() --stop all tracks
-  for i = 1, TRACKS do
+  for i = 1, 6 do
       e = {} e.t = eSTOP e.i = i
   event(e)
   end
 end
 
-function altrun() --add alt run function for selected tracks (see gridnav)
-  for i = 1, TRACKS do
+function altrun() --alt run function for selected tracks
+  for i = 1, 6 do
     if track[i].sel == 1 then
       if track[i].play == 1 then
         e = {} e.t = eSTOP e.i = i
@@ -516,8 +553,8 @@ function altrun() --add alt run function for selected tracks (see gridnav)
   end
 end
 
-function retrig() --add retrig function for playing tracks (see gridnav)
-  for i = 1, TRACKS do
+function retrig() --retrig function for playing tracks
+  for i = 1, 6 do
     if track[i].play == 1 then
       if track[i].rev == 0 then
         e = {} e.t = eCUT e.i = i e.pos = 0
@@ -530,7 +567,7 @@ function retrig() --add retrig function for playing tracks (see gridnav)
 end
 
 function mstart() --MIDI START for selected tracks
-  for i = 1, TRACKS do
+  for i = 1, 6 do
     if track[i].sel == 1 then
       if track[i].rev == 0 then
         e = {} e.t = eCUT e.i = i e.pos = 0
@@ -549,7 +586,7 @@ function arm_thresh_rec()
 end
 
 function thresh_rec()
-  for i = 1, TRACKS do
+  for i = 1, 6 do
     if track[i].oneshot == 1 then
       track[i].rec = 1
       set_rec(i)
@@ -563,9 +600,9 @@ function thresh_rec()
   end
 end
 
---for oneshot length
+--for oneshot cycle length
 function update_cycle() --if oneshot active duration of one cycle is set for armed track
-  for i = 1, TRACKS do
+  for i = 1, 6 do
     if track[i].oneshot == 1 then
       if track[i].tempo_map == 0 then
         dur = 4 / math.pow(2,track[i].speed)
@@ -579,12 +616,32 @@ end
 --triggerd when rec thresh is reached (amp_in poll callback)
 function oneshot(cycle)
   clock.sleep(cycle) -- length of cycle for time interval specified by 'dur'
-  for i = 1, TRACKS do
-    if track[i].rec == 1 then
+  for i = 1, 6 do
+    if track[i].oneshot == 1 then
       track[i].rec = 0
+      track[i].oneshot = 0
     end
-  set_rec(i)
+    set_rec(i)
+    if track[i].sel == 1 and params:get("auto_rand") == 2 then --randomize selected tracks
+      randomize(i)
+    end
   end
+end
+
+function randomize(i)
+  --print(" randomized track "..i)
+  params:set(i.. "pan", (math.random() * 20 - 10) / 10)
+  --params:set(i.. "transpose", math.random(1, 15))
+  track[i].speed = math.random(-2, 2)
+  track[i].rev = math.random(0, 1)
+  e = {}
+  e.t = eLOOP
+  e.i = i
+  e.loop = 1
+  e.loop_start = math.random(1, 15)
+  e.loop_end = math.random(e.loop_start, 16)
+  event(e)
+  update_rate(i)
 end
 
 --init
@@ -600,19 +657,22 @@ init = function()
   --params for quant division
   params:set_action("clock_tempo", function() update_tempo() end)
   params:add_option("quant_div", "quant div", div_options, 5)
-  params:set_action("quant_div",function() update_tempo() end)
+  params:set_action("quant_div", function() update_tempo() end)
 
   --params for rec threshold
   params:add_control("rec_threshold", "rec threshold", controlspec.new(-40, 6, 'lin', 0.01, -12, "dB"))
   --not as much fine control with db but it's more intuitive to me (increment of 0.01 doesn't work when neg values involved)
   --it even seems to line up with the input displayed on the input vu meter (could be a coincidence though)
 
+  --randomize on/off
+  params:add_option("auto_rand","auto-randomize", {"off", "on"}, 1)
+
 --params for tracks
   params:add_separator("tracks")
 
   audio.level_cut(1)
 
-  for i = 1,TRACKS do
+  for i = 1, 6 do
     params:add_group("track "..i, 16)
 
     params:add_separator("tape / buffer")
@@ -642,25 +702,26 @@ init = function()
     params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) end)
     -- add file
     params:add_file(i.."file", i.." file", "")
-    params:set_action(i.."file", function(n) fileselect_callback(n,i) end)
+    params:set_action(i.."file", function(n) fileselect_callback(n, i) end)
     params:hide(i.."file")
 
     params:add_separator("filter")
     -- cutoff
     params:add_control(i.."cutoff", i.." cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
-    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) softcut.post_filter_fc(i, x) end)
+    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) end)
     -- filter q
     params:add_control(i.."filter_q", i.." filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
-    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) softcut.post_filter_rq(i, x) end)
-    -- low pass
-    params:add_control(i.."low_pass", i.." lp level", controlspec.new(0, 1, 'lin', 0.01, 1, ""))
-    params:set_action(i.."low_pass", function(x) softcut.post_filter_lp(i, x) softcut.post_filter_lp(i, x) end)
-    -- high pass
-    params:add_control(i.."high_pass", i.." hp level", controlspec.new(0, 1, 'lin', 0.01, 0, ""))
-    params:set_action(i.."high_pass", function(x) softcut.post_filter_hp(i, x) softcut.post_filter_hp(i, x) end)
+    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) end)
+    --filter type
+    params:add_option(i.."filter_type", i.." type", {"low pass", "high pass", "band pass", "band reject", "off"}, 1)
+    params:set_action(i.."filter_type", function() filter_select(i) end)
+    -- post filter dry level
+    params:add_control(i.."post_dry", i.." dry level", controlspec.new(0, 1, 'lin', 0, 0, ""))
+    params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) end)
+    --print("track "..i.." dry level: "..track[i].dry_level)
     --input options
     params:add_option(i.."input_options", i.." input options",{"L+R", "L IN", "R IN", "OFF"}, 1)
-    params:set_action(i.."input_options", function(x) update_softcut_input(i) end)
+    params:set_action(i.."input_options", function() update_softcut_input(i) end)
     params:hide(i.."input_options")
 
     --softcut settings
@@ -676,15 +737,15 @@ init = function()
     softcut.pre_level(i, 1)
     softcut.rec_level(i, 0)
 
-    softcut.fade_time(i, FADE)
+    softcut.fade_time(i, 0.01)
     softcut.level_slew_time(i, 0.1)
     softcut.rate_slew_time(i, 0)
 
     softcut.pre_filter_dry(i, 0)
-    softcut.post_filter_dry(i, 0)
+    --softcut.post_filter_dry(i, 0)
 
-    softcut.loop_start(i,clip[track[i].clip].s)
-    softcut.loop_end(i,clip[track[i].clip].e)
+    softcut.loop_start(i, clip[track[i].clip].s)
+    softcut.loop_end(i, clip[track[i].clip].e)
     softcut.loop(i, 1)
     softcut.position(i, clip[track[i].clip].s)
 
@@ -738,11 +799,11 @@ init = function()
     amp_in[ch].time = 0.01
     amp_in[ch].callback = function(val)
       if val > util.dbamp(params:get("rec_threshold"))/10 then
-        for i = 1, TRACKS do
+        for i = 1, 6 do
           if track[i].oneshot == 1 then
             thresh_rec()
             clock.run(oneshot, dur) --when rec starts, clock coroutine starts
-            track[i].oneshot = 0 --and oneshot is reset
+            --track[i].oneshot = 0 --and oneshot is reset
           end
         end
         amp_in[ch]:stop()
@@ -910,9 +971,13 @@ v.enc[vREC] = function(n, d)
       end
     else
       if n == 2 then
-        params:delta(focus.."high_pass", d)
+        params:delta(focus.."filter_type", d)
       elseif n == 3 then
-        params:delta(focus.."low_pass", d)
+        if params:get(focus.."filter_type") == 5 then
+          return
+        else
+          params:delta(focus.."post_dry", d)
+        end
       end
     end
  elseif pageNum == 3 then
@@ -993,14 +1058,18 @@ v.redraw[vREC] = function()
 
     screen.level(not sel and 15 or 4)
     screen.move(10, 52)
-    screen.text(params:string(focus.."high_pass"))
+    screen.text(params:string(focus.."filter_type"))
     screen.move(70, 52)
-    screen.text(params:string(focus.."low_pass"))
+    if params:get(focus.."filter_type") == 5 then
+      screen.text("max")
+    else
+      screen.text(params:string(focus.."post_dry"))
+    end
     screen.level(3)
     screen.move(10, 60)
-    screen.text("hp level")
+    screen.text("type")
     screen.move(70, 60)
-    screen.text("lp level")
+    screen.text("dry level")
 
   elseif pageNum == 3 then
     screen.level(15)
@@ -1071,14 +1140,17 @@ v.gridkey[vREC] = function(x, y, z)
         end
       elseif x == 16 and y < 8 and alt == 1 then
         track[i].sel = 1 - track[i].sel
-      elseif x > 8 and x < 16 and y < 8 then
+      elseif x > 8 and x < 16 and y < 8  and alt == 0 then
         local n = x - 12
         e = {} e.t = eSPEED e.i = i e.speed = n
         event(e)
-      elseif x == 8 and y < 8 then
+      elseif x == 8 and y < 8 and alt == 0 then
         local n = 1 - track[i].rev
         e = {} e.t = eREV e.i = i e.rev = n
         event(e)
+      elseif x == 12 and y < 8 and alt == 1 then
+        i = y - 1
+        randomize(i)
       end
       dirtygrid = true
     end
@@ -1122,7 +1194,7 @@ end
 v.gridredraw[vREC] = function()
   g:all(0)
   g:led(3, focus + 1, 7) g:led(4, focus + 1, 7) g:led(5, focus + 1, 3) g:led(6, focus + 1, 3)
-  for i = 1, TRACKS do
+  for i = 1, 6 do
     local y = i + 1
     g:led(1, y, 3) --rec
     if track[i].rec == 1 and track[i].oneshot == 1 then g:led(1, y, 15)  end
@@ -1223,7 +1295,7 @@ end
 v.gridredraw[vCUT] = function()
   g:all(0)
   gridredraw_nav()
-  for i = 1, TRACKS do
+  for i = 1, 6 do
     if track[i].loop == 1 then
       for x = track[i].loop_start, track[i].loop_end do
         g:led(x, i + 1, 4)
@@ -1369,15 +1441,15 @@ v.enc[vLFO] = function(n, d)
   end
   if viewinfo[vLFO] == 0 then
     if n == 2 then
-      params:delta(pageLFO.."lfo_target", d)
-    elseif n == 3 then
       params:delta(pageLFO.."lfo_freq", d)
+    elseif n == 3 then
+      params:delta(pageLFO.."offset", d)
     end
   else
     if n == 2 then
-      params:delta(pageLFO.."lfo_shape", d)
+      params:delta(pageLFO.."lfo_target", d)
     elseif n == 3 then
-      params:delta(pageLFO.."offset", d)
+      params:delta(pageLFO.."lfo_shape", d)
     end
   end
   redraw()
@@ -1392,25 +1464,25 @@ v.redraw[vLFO] = function()
 
   screen.level(sel and 15 or 4)
   screen.move(10, 32)
-  screen.text(params:string(pageLFO.."lfo_target"))
-  screen.move(70, 32)
   screen.text(params:string(pageLFO.."lfo_freq"))
+  screen.move(70, 32)
+  screen.text(params:string(pageLFO.."offset"))
   screen.level(3)
   screen.move(10, 40)
-  screen.text("lfo target")
-  screen.move(70, 40)
   screen.text("freq")
+  screen.move(70, 40)
+  screen.text("offset")
 
   screen.level(not sel and 15 or 4)
   screen.move(10, 52)
-  screen.text(params:string(pageLFO.."lfo_shape"))
+  screen.text(params:string(pageLFO.."lfo_target"))
   screen.move(70, 52)
-  screen.text(params:string(pageLFO.."offset"))
+  screen.text(params:string(pageLFO.."lfo_shape"))
   screen.level(3)
   screen.move(10, 60)
-  screen.text("lfo shape")
+  screen.text("lfo target")
   screen.move(70, 60)
-  screen.text("offset")
+  screen.text("shape")
 
   screen.update()
 end
@@ -1525,7 +1597,7 @@ function textentry_callback(txt)
   redraw()
 end
 
-v.key[vCLIP] = function(n,z)
+v.key[vCLIP] = function(n, z)
   if n == 2 and z == 0 then
     if clip_actions[clip_action] == "load" then
       screenredrawtimer:stop()
@@ -1548,7 +1620,7 @@ v.key[vCLIP] = function(n,z)
   end
 end
 
-v.enc[vCLIP] = function(n,d)
+v.enc[vCLIP] = function(n, d)
   if n == 2 then
     clip_action = util.clamp(clip_action + d, 1, 3)
   elseif n == 3 then
@@ -1642,7 +1714,7 @@ v.gridredraw[vCLIP] = function()
   g:all(0)
   gridredraw_nav()
   for i = 1, MAX_CLIPS do g:led(i, clip_sel + 1, 4) end --changed to MAX_CLIPS instead of 16
-  for i = 1, TRACKS do g:led(track[i].clip, i + 1, 10) end
+  for i = 1, 6 do g:led(track[i].clip, i + 1, 10) end
   for i = 10, 13 do
     for j = 2, 7 do
       g:led(i, j, 3)
