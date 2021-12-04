@@ -1,4 +1,4 @@
--- mlre v1.0.2 @sonocircuit
+-- mlre v1.0.1 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -47,14 +47,14 @@ local dur = 0
 -- for transpose scales
 local scale_options = {"semitones", "minor", "major", "custom"}
 
-local trans_id = {
+local trsp_id = {
   {"-P5","-d5","-P4","-M3","-m3","-M2","-m2","P1","m2","M2","m3","M3","P4","d5","P5"},
   {"-P8","-m7","-m6","-P5","-P4","-m3","-M2","P1","M2","m3","P4","P5","m6","m7","P8"},
   {"-P8","-M7","-M6","-P5","-P4","-M3","-M2","P1","M2","M3","P4","P5","M6","M7","P8"},
   {"-here","-notation","-own","-your","-type","-can","-you","none","you","can","type","your","own","notation","here"},
 }
 
-local trans_scale = {
+local trsp_scale = {
   {-700, -600, -500, -400, -300, -200, -100, 0, 100, 200, 300, 400, 500, 600, 700},
   {-1200, -1000, -800, -700, -500, -300, -200, 0, 200, 300, 500, 700, 800, 1000, 1200},
   {-1200, -1100, -900, -700, -500, -400, -200, 0, 200, 400, 500, 700, 900, 1100, 1200},
@@ -196,14 +196,14 @@ function event_exec(e)
   end
 end
 
--- patterns
+--patterns
 pattern = {}
 for i = 1, 4 do
   pattern[i] = pattern_time.new()
   pattern[i].process = event_exec
 end
 
--- recalls
+--recalls
 recall = {}
 for i = 1, 4 do
   recall[i] = {}
@@ -393,7 +393,7 @@ set_view = function(x)
   dirtygrid = true
 end
 
--- for track routing
+--for track routing
 route = {}
 route.adc = 1
 route.tape = 0
@@ -518,15 +518,15 @@ end
 function set_scale(n)
   for i = 1, 6 do
     local p = params:lookup_param(i.."transpose")
-	  p.options = trans_id[n]
-	  p:bang()
-	end
+    p.options = trsp_id[n]
+    p:bang()
+  end
 end
 
 --transpose track
 function set_transpose(i, x)
   local scale_idx = params:get("scale")
-  track[i].transpose = trans_scale[scale_idx][x] / 1200
+  track[i].transpose = trsp_scale[scale_idx][x] / 1200
   if track[i].play == 1 then --not sure if this condition is really needed
     update_rate(i)
   end
@@ -615,11 +615,11 @@ end
 
 --triggerd when rec thresh is reached (amp_in poll callback)
 function oneshot(cycle)
-  clock.sleep(cycle) -- length of cycle for time interval specified by 'dur'
+  clock.sleep(cycle) --length of cycle for time interval specified by 'dur'
   for i = 1, 6 do
     if track[i].oneshot == 1 then
-      track[i].rec = 0
-      track[i].oneshot = 0
+      track[i].rec = 0 --rec off
+      track[i].oneshot = 0 --oneshot reset
     end
     set_rec(i)
     if track[i].sel == 1 and params:get("auto_rand") == 2 then --randomize selected tracks
@@ -629,7 +629,6 @@ function oneshot(cycle)
 end
 
 function randomize(i)
-  --print(" randomized track "..i)
   params:set(i.. "pan", (math.random() * 20 - 10) / 10)
   --params:set(i.. "transpose", math.random(1, 15))
   track[i].speed = math.random(-2, 2)
@@ -678,10 +677,10 @@ init = function()
     params:add_separator("tape / buffer")
     -- track volume
     params:add_control(i.."vol", i.." vol", controlspec.new(0, 1, 'lin', 0, 1, ""))
-    params:set_action(i.."vol", function(x) softcut.level(i,x) end)
+    params:set_action(i.."vol", function(x) softcut.level(i, x) end)
     -- track pan
     params:add_control(i.."pan", i.." pan", controlspec.new(-1, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."pan", function(x) softcut.pan(i,x) end)
+    params:set_action(i.."pan", function(x) softcut.pan(i, x) end)
     -- record level
     params:add_control(i.."rec", i.." rec", controlspec.new(0, 1, 'lin', 0, 1, ""))
     params:set_action(i.."rec", function(x) track[i].rec_level = x set_rec(i) end)
@@ -692,8 +691,8 @@ init = function()
     params:add_control(i.."detune", i.." detune", controlspec.BIPOLAR)
     params:set_action(i.."detune", function() update_rate(i) end)
     -- transpose
-    params:add_option(i.."transpose", i.." transpose", trans_id[params:get("scale")], 8)
-    params:set_action(i.."transpose", function(x) set_transpose(i,x) end)
+    params:add_option(i.."transpose", i.." transpose", trsp_id[params:get("scale")], 8)
+    params:set_action(i.."transpose", function(x) set_transpose(i, x) end)
     -- rate slew
     params:add_control(i.."rate_slew", i.." rate slew", controlspec.new(0, 1, 'lin', 0, 0, ""))
     params:set_action(i.."rate_slew", function(x) softcut.rate_slew_time(i, x) end)
@@ -742,7 +741,6 @@ init = function()
     softcut.rate_slew_time(i, 0)
 
     softcut.pre_filter_dry(i, 0)
-    --softcut.post_filter_dry(i, 0)
 
     softcut.loop_start(i, clip[track[i].clip].s)
     softcut.loop_end(i, clip[track[i].clip].e)
@@ -754,12 +752,12 @@ init = function()
 
   end
 
--- params for modulation (hnds_mlre)
+--params for modulation (hnds_mlre)
   params:add_separator("modulation")
   for i = 1, 6 do lfo[i].lfo_targets = lfo_targets end
   lfo.init()
 
-  --quantizer init
+--quantizer init
   quantizer = metro.init()
   quantizer.time = 0.125
   quantizer.count = -1
@@ -786,8 +784,8 @@ init = function()
 
   clock.run(clock_update_tempo)
 
-  -- added this to set "local e" to other than nil
-  -- (addressed error that occured when thresh_rec() is called before any track is played)
+  --required to set "local e" to other than nil
+  --(addressed error that occured when thresh_rec() is called before any track is played)
   track[1].play = 1
   track[1].play = 0
 
@@ -803,13 +801,14 @@ init = function()
           if track[i].oneshot == 1 then
             thresh_rec()
             clock.run(oneshot, dur) --when rec starts, clock coroutine starts
-            --track[i].oneshot = 0 --and oneshot is reset
           end
         end
         amp_in[ch]:stop()
       end
     end
   end
+
+print("mlre loaded and ready. enjoy!")
 
 end -- end of init
 
@@ -1061,7 +1060,7 @@ v.redraw[vREC] = function()
     screen.text(params:string(focus.."filter_type"))
     screen.move(70, 52)
     if params:get(focus.."filter_type") == 5 then
-      screen.text("max")
+      screen.text("-")
     else
       screen.text(params:string(focus.."post_dry"))
     end
@@ -1121,10 +1120,10 @@ v.gridkey[vREC] = function(x, y, z)
         track[i].rec = 1 - track[i].rec
         set_rec(i)
       elseif x == 1 and y < 8 and alt == 1 then
-        track[i].oneshot = 1 - track[i].oneshot -- need to figure out how to toggle AND have only one active at a time
+        track[i].oneshot = 1 - track[i].oneshot --figure out how to toggle AND have only one active at a time
         if track[i].oneshot == 1 then
-          arm_thresh_rec() --amp_in poll callback starts
-          update_cycle()  --duration of oneshot is set
+          arm_thresh_rec() --amp_in poll starts
+          update_cycle()  --duration of oneshot is set (dur)
         end
       elseif x == 16 and y < 8 and alt == 0 then
         if track[i].play == 1 then
@@ -1149,7 +1148,6 @@ v.gridkey[vREC] = function(x, y, z)
         e = {} e.t = eREV e.i = i e.rev = n
         event(e)
       elseif x == 12 and y < 8 and alt == 1 then
-        i = y - 1
         randomize(i)
       end
       dirtygrid = true
@@ -1160,7 +1158,7 @@ v.gridkey[vREC] = function(x, y, z)
     if held[y] > heldmax[y] then heldmax[y] = held[y] end
     local i = focus
     if z == 1 then
-      if alt2 == 1 then --"hold" mode as on cut page
+      if alt2 == 1 then --"hold mode" as on cut page
         heldmax[y] = x
         e = {}
         e.t = eLOOP
@@ -1201,10 +1199,10 @@ v.gridredraw[vREC] = function()
     if track[i].rec == 1 and track[i].oneshot == 0 then g:led(1, y, 15)  end
     if track[i].rec == 0 and track[i].oneshot == 1 then g:led(1, y, 6)  end
     if track[i].tempo_map == 1 then g:led(5, y, 7) g:led(6, y, 7) end
-    g:led(8, y, 3) --rev
-    g:led(16, y, 3) --stop
+    g:led(8, y, 3) --reverse playback
+    g:led(16, y, 3) --start/stop
     g:led(12, y, 3) --speed = 1
-    g:led(12+track[i].speed, y, 9)
+    g:led(12 + track[i].speed, y, 9)
     if track[i].rev == 1 then g:led(8, y, 8) end
     if track[i].play == 1 and track[i].sel == 1 then g:led(16, y, 15) end
     if track[i].play == 1 and track[i].sel == 0 then g:led(16, y, 10) end
@@ -1261,7 +1259,7 @@ v.gridkey[vCUT] = function(x, y, z)
           e = {} e.t = eSTART e.i = i
         end
         event(e)
-      elseif alt2 == 1 and y < 8 then --"hold" mode
+      elseif alt2 == 1 and y < 8 then --"hold mode"
           heldmax[y] = x
           e = {}
           e.t = eLOOP
@@ -1536,7 +1534,7 @@ v.gridredraw[vLFO] = function()
   g:all(0)
   gridredraw_nav()
   for i = 1, 6 do
-    g:led(1, i + 1, params:get(i.."lfo") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3)
+    g:led(1, i + 1, params:get(i.."lfo") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3) --nice one mat!
     local range = math.floor(util.linlin(0, 100, 2, 16, params:get(i.."lfo_depth")))
     g:led(range, i + 1, 7)
     for x = 2, range - 1 do
@@ -1546,7 +1544,7 @@ v.gridredraw[vLFO] = function()
     g:led(i + 10, 8, 4)
   end
   g:led(params:get(pageLFO.."lfo_shape"), 8, 5)
-  g:led(trksel/6 + 4, 8, 12)
+  g:led(trksel / 6 + 4, 8, 12)
   if dstview == 1 then
     g:led((params:get(pageLFO.."lfo_target") + 9) - trksel, 8, 12)
   end
@@ -1561,7 +1559,7 @@ clip_clear_mult = 6
 
 --TODO look into file management
 function fileselect_callback(path, c)
-  print("FILESELECT "..c)
+  --print("FILESELECT "..c)
   if path ~= "cancel" and path ~= "" then
     local ch, len = audio.file_info(path)
     if ch > 0 and len > 0 then
@@ -1683,19 +1681,19 @@ v.gridkey[vCLIP] = function(x, y, z)
   if y == 1 then gridkey_nav(x, z)
   elseif z == 1 then
     if y < 8 and x < MAX_CLIPS + 1 then
-      clip_sel = y-1
+      clip_sel = y - 1
       if x ~= track[clip_sel].clip then
         set_clip(clip_sel, x)
       end
     elseif y > 1 and y < 8 and x > 9 and x < 14 then
-      local i = y-1
+      local i = y - 1
       params:set(i.."input_options", x - 9)
     elseif y > 1 and y < 6 and x == 15 then
-      local i = y-1
+      local i = y - 1
       route[i].t5 = 1 - route[i].t5
       set_track_route()
     elseif y > 1 and y < 7 and x == 16 then
-      local i = y-1
+      local i = y - 1
       route[i].t6 = 1 - route[i].t6
       set_track_route()
     elseif y == 7 and x == 15 then
@@ -1713,7 +1711,7 @@ end
 v.gridredraw[vCLIP] = function()
   g:all(0)
   gridredraw_nav()
-  for i = 1, MAX_CLIPS do g:led(i, clip_sel + 1, 4) end --changed to MAX_CLIPS instead of 16
+  for i = 1, MAX_CLIPS do g:led(i, clip_sel + 1, 4) end
   for i = 1, 6 do g:led(track[i].clip, i + 1, 10) end
   for i = 10, 13 do
     for j = 2, 7 do
