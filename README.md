@@ -10,6 +10,4 @@ Also, this wouldn't have been possible without the countless contributions made 
 
 A special thanks to **tehn** for creating mlr and **zebra** for softcut, answering questions and some helpful lines of code, **justmat** for hnds and bits of code from "otis" and **infiniate digits** for answering questions and some bits of code from "oooooo".
 
-# Documentation:
-
-[MLRE USER GUIDE](https://github.com/sonoCircuits/mlre/blob/main/docs/mlre%20user%20guide.pdf)
+### Documentation: [mlre user guide](https://github.com/sonoCircuits/mlre/blob/main/docs/mlre%20user%20guide.pdf)
