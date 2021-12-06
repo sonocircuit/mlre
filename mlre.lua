@@ -579,6 +579,27 @@ function mstart() --MIDI START for selected tracks
   end
 end
 
+-- MIDI SETUP
+m.event = function(data)
+  local d = midi.to_msg(data)
+  if d.type == "start" then
+      clock.transport.start()
+  --elseif d.type == "continue" then
+      --clock.transport.start()
+  end
+  if d.type == "stop" then
+    clock.transport.stop()
+  end
+end
+
+function clock.transport.start()
+  mstart()
+end
+
+function clock.transport.stop()
+  stopall()
+end
+
 -- threshold recording
 function arm_thresh_rec()
   amp_in[1]:start()
@@ -602,12 +623,14 @@ end
 
 --for oneshot cycle length
 function update_cycle() --if oneshot active duration of one cycle is set for armed track
+  local tempo = params:get("clock_tempo")
   for i = 1, 6 do
     if track[i].oneshot == 1 then
       if track[i].tempo_map == 0 then
-        dur = 4 / math.pow(2,track[i].speed)
+        dur = 4 / math.pow(2, track[i].speed)
       elseif track[i].tempo_map == 1 then
-        dur = 15/params:get("clock_tempo") / math.pow(2,track[i].speed)
+        dur = (240 / tempo) / math.pow(2, track[i].speed)
+        print(dur)
       end
     end
   end
