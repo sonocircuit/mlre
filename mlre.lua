@@ -1,4 +1,4 @@
--- mlre v1.0.2 @sonocircuit
+-- mlre v1.0.1_fade @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -630,7 +630,7 @@ function randomize(i)
     params:set(i.. "transpose", math.random(1, 15))
   end
   if params:get("rnd_speed") == 2 then
-    track[i].speed = math.random(- params:get("rnd_oct"), params:get("rnd_oct"))
+    track[i].speed = math.random(- params:get("rnd_loct"), params:get("rnd_uoct"))
   end
   if params:get("rnd_dir") == 2 then
     track[i].rev = math.random(0, 1)
@@ -670,9 +670,10 @@ init = function()
   --randomize on/off
   params:add_option("auto_rand","auto-randomize", {"off", "on"}, 1)
 
-  params:add_group("set parameters", 6)
-  params:add_option("rnd_speed", "speed", {"off", "on"}, 2)
-  params:add_number("rnd_oct", "speed range (oct)", 1, 3, 2)
+  params:add_group("rnd settings", 7)
+  params:add_option("rnd_speed", "octaves", {"off", "on"}, 2)
+  params:add_number("rnd_uoct", "+ oct range", 0, 3, 2)
+  params:add_number("rnd_loct", "- oct range", 0, 3, 2)
   params:add_option("rnd_dir", "direction", {"off", "on"}, 2)
   params:add_option("rnd_loop", "loop", {"off", "on"}, 2)
   params:add_option("rnd_pan", "pan", {"off", "on"}, 1)
@@ -1127,18 +1128,18 @@ v.gridkey[vREC] = function(x, y, z)
           focus = i
           redraw()
         end
-      elseif x == 1 and alt == 0 and alt2 == 0 then
+      elseif x == 1 and alt == 0 then
         track[i].rec = 1 - track[i].rec
         set_rec(i)
-      elseif x == 1 and alt == 1 and alt2 == 0 then
+      elseif x == 1 and alt == 1 then
+        track[i].fade = 1 - track[i].fade
+        set_rec(i)
+      elseif x == 2 then
         track[i].oneshot = 1 - track[i].oneshot --figure out how to toggle AND have only one active at a time
         if track[i].oneshot == 1 then
           arm_thresh_rec() --amp_in poll starts
           update_cycle()  --duration of oneshot is set (dur)
         end
-      elseif x == 1 and alt == 0 and alt2 == 1 then
-        track[i].fade = 1 - track[i].fade
-        set_rec(i)
       elseif x == 16 and alt == 0 then
         if track[i].play == 1 then
           e = {}
@@ -1205,15 +1206,15 @@ end
 
 v.gridredraw[vREC] = function()
   g:all(0)
-  g:led(3, focus + 1, 5) g:led(4, focus + 1, 5) g:led(5, focus + 1, 5) g:led(6, focus + 1, 5)
+  g:led(3, focus + 1, 7) g:led(4, focus + 1, 7) g:led(5, focus + 1, 5) g:led(6, focus + 1, 5)
   for i = 1, 6 do
     local y = i + 1
     g:led(1, y, 3) --rec
-    if track[i].rec == 1 and track[i].oneshot == 1 then g:led(1, y, 15)  end
-    if track[i].rec == 1 and track[i].oneshot == 0 then g:led(1, y, 15)  end
-    if track[i].rec == 0 and track[i].oneshot == 1 then g:led(1, y, 6)  end
-    if track[i].fade == 1 then g:led(3, y, 9) end
-    if track[i].tempo_map == 1 then g:led(6, y, 9) end
+    if track[i].rec == 1 and track[i].fade == 1 then g:led(1, y, 15)  end
+    if track[i].rec == 1 and track[i].fade == 0 then g:led(1, y, 15)  end
+    if track[i].rec == 0 and track[i].fade == 1 then g:led(1, y, 6)  end
+    if track[i].oneshot == 1 then g:led(2, y, 10) end
+    if track[i].tempo_map == 1 then g:led(5, y, 7) g:led(6, y, 7) end
     g:led(8, y, 5) --reverse playback
     if track[i].rev == 1 then g:led(8, y, 10) end
     g:led(16, y, 3) --start/stop
