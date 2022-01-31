@@ -2,7 +2,7 @@
 
 This an adaption of tehn's mlr script.
 
-mlre started as a personal project to learn to code. Understanding more about the architecure and basics of lua, norns scripts and softcut sparked many ideas, which were implemented, trying to put a focus on live performance. These additional features are built around the original script, so the core of mlr remains unchanged.
+mlre started as a personal project to learn to code. Understanding more about the architecure and basics of lua, norns scripts and softcut sparked many ideas. These additional features are built around the original script, so the core of mlr remains unchanged.
 
 I'd like to point out that there might be some bits of code that might be messy/redundant or features that could be coded more efficiently/elegantly. PR's are welcome.
 
