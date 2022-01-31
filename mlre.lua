@@ -1,4 +1,4 @@
--- mlre v1.0.1_fade @sonocircuit
+-- mlre v1.0.2 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -42,6 +42,7 @@ local scale_idx = 1
 local trksel = 0
 local dstview = 0
 local dur = 0
+local ledview = 1
 
 -- for transpose scales
 local scale_options = {"semitones", "minor", "major", "custom"}
@@ -599,9 +600,9 @@ function update_cycle() --if oneshot active duration of one cycle is set for arm
   for i = 1, 6 do
     if track[i].oneshot == 1 then
       if track[i].tempo_map == 0 then
-        dur = 4 / math.pow(2, track[i].speed)
+        dur = 4 / math.pow(2, track[i].speed + track[i].transpose + params:get(i.."detune"))
       elseif track[i].tempo_map == 1 then
-        dur = (240 / tempo) / math.pow(2, track[i].speed)
+        dur = (240 / tempo) / math.pow(2, track[i].speed + track[i].transpose + params:get(i.."detune"))
       end
     end
   end
@@ -623,14 +624,14 @@ function oneshot(cycle)
 end
 
 function randomize(i)
-  if params:get("rnd_pan") == 2 then
-    params:set(i.. "pan", (math.random() * 20 - 10) / 10)
-  end
   if params:get("rnd_transpose") == 2 then
     params:set(i.. "transpose", math.random(1, 15))
   end
-  if params:get("rnd_speed") == 2 then
-    track[i].speed = math.random(- params:get("rnd_loct"), params:get("rnd_uoct"))
+  if params:get("rnd_vol") == 2 then
+    params:set(i.. "vol", math.random(2, 10) / 10)
+  end
+  if params:get("rnd_pan") == 2 then
+    params:set(i.. "pan", (math.random() * 20 - 10) / 10)
   end
   if params:get("rnd_dir") == 2 then
     track[i].rev = math.random(0, 1)
@@ -644,6 +645,12 @@ function randomize(i)
     e.loop_end = math.random(e.loop_start, 16)
     event(e)
     update_rate(i)
+  end
+  if params:get("rnd_speed") == 2 then
+    track[i].speed = math.random(- params:get("rnd_loct"), params:get("rnd_uoct"))
+  end
+    if params:get("rnd_cut") == 2 then
+    params:set(i.. "cutoff", math.random(params:get("rnd_lcut"), params:get("rnd_ucut")) )
   end
 end
 
@@ -670,14 +677,20 @@ init = function()
   --randomize on/off
   params:add_option("auto_rand","auto-randomize", {"off", "on"}, 1)
 
-  params:add_group("rnd settings", 7)
+  params:add_group("rnd settings", 13)
+  params:add_option("rnd_transpose", "transpose", {"off", "on"}, 1)
+  params:add_option("rnd_vol", "volume", {"off", "on"}, 1)
+  params:add_option("rnd_pan", "pan", {"off", "on"}, 1)
+  params:add_option("rnd_dir", "direction", {"off", "on"}, 2)
+  params:add_option("rnd_loop", "loop", {"off", "on"}, 2)
+  params:add_separator("")
   params:add_option("rnd_speed", "octaves", {"off", "on"}, 2)
   params:add_number("rnd_uoct", "+ oct range", 0, 3, 2)
   params:add_number("rnd_loct", "- oct range", 0, 3, 2)
-  params:add_option("rnd_dir", "direction", {"off", "on"}, 2)
-  params:add_option("rnd_loop", "loop", {"off", "on"}, 2)
-  params:add_option("rnd_pan", "pan", {"off", "on"}, 1)
-  params:add_option("rnd_transpose", "transpose", {"off", "on"}, 1)
+  params:add_separator("")
+  params:add_option("rnd_cut", "cutoff", {"off", "on"}, 1)
+  params:add_control("rnd_ucut", "upper freq", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
+  params:add_control("rnd_lcut", "lower freq", controlspec.new(20, 18000, 'exp', 1, 20, "Hz"))
 
 --params for tracks
   params:add_separator("tracks")
@@ -769,12 +782,16 @@ init = function()
   for i = 1, 6 do lfo[i].lfo_targets = lfo_targets end
   lfo.init()
 
---quantizer init
+--quantizer metro
   quantizer = metro.init()
   quantizer.time = 0.125
   quantizer.count = -1
   quantizer.event = event_q_clock
   quantizer:start()
+
+--led metro
+  ledcounter = metro.init(ledpulse, 0.1, -1)
+  ledcounter:start()
 
   set_view(vREC)
 
@@ -843,6 +860,10 @@ update_rate = function(i)
     n = n * bpmmod
   end
   softcut.rate(i, n)
+end
+
+function ledpulse()
+  ledview = (ledview % 8) + 4
 end
 
 --user interface
@@ -1213,7 +1234,7 @@ v.gridredraw[vREC] = function()
     if track[i].rec == 1 and track[i].fade == 1 then g:led(1, y, 15)  end
     if track[i].rec == 1 and track[i].fade == 0 then g:led(1, y, 15)  end
     if track[i].rec == 0 and track[i].fade == 1 then g:led(1, y, 6)  end
-    if track[i].oneshot == 1 then g:led(2, y, 10) end
+    if track[i].oneshot == 1 then g:led(2, y, ledview) end
     if track[i].tempo_map == 1 then g:led(5, y, 7) g:led(6, y, 7) end
     g:led(8, y, 5) --reverse playback
     if track[i].rev == 1 then g:led(8, y, 10) end
@@ -1594,6 +1615,7 @@ function fileselect_callback(path, c)
     screenredrawtimer:start()
     redraw()
   end
+  redraw()
 end
 
 function textentry_callback(txt)
