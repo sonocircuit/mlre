@@ -1,4 +1,4 @@
--- mlre v1.0.1 @sonocircuit
+-- mlre v1.0.2 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -30,7 +30,6 @@
 --
 
 local g = grid.connect()
-local m = midi.connect()
 
 local fileselect = require 'fileselect'
 local textentry = require 'textentry'
@@ -48,10 +47,10 @@ local dur = 0
 local scale_options = {"semitones", "minor", "major", "custom"}
 
 local trsp_id = {
-  {"-P5","-d5","-P4","-M3","-m3","-M2","-m2","P1","m2","M2","m3","M3","P4","d5","P5"},
-  {"-P8","-m7","-m6","-P5","-P4","-m3","-M2","P1","M2","m3","P4","P5","m6","m7","P8"},
-  {"-P8","-M7","-M6","-P5","-P4","-M3","-M2","P1","M2","M3","P4","P5","M6","M7","P8"},
-  {"-here","-notation","-own","-your","-type","-can","-you","none","you","can","type","your","own","notation","here"},
+  {"-perf5","-dim5","-perf4","-maj3","-min3","-maj2","-min2","none","min2","maj2","min3","maj3","perf4","dim5","perf5"},
+  {"-oct","-min7","-min6","-perf5","-perf4","-min3","-maj2","none","maj2","min3","perf4","perf5","min6","min7","oct"},
+  {"-oct","-maj7","-maj6","-perf5","-perf4","-maj3","-maj2","none","maj2","maj3","perf4","perf5","maj6","maj7","oct"},
+  {"-p4+2oct","-2oct","-p5+oct","-p4+oct","-oct","-p5","-p4","none","p4","p5","oct","p4+oct","p5+oct","2oct","p4+2oct"},
 }
 
 local trsp_scale = {
@@ -95,7 +94,6 @@ local function update_tempo()
   local t = params:get("clock_tempo")
   local d = params:get("quant_div")
   local interval = (60/t) / div_options[d]
-  --print("q > "..interval)
   quantizer.time = interval
   for i = 1, 6 do
     if track[i].tempo_map == 1 then
@@ -250,6 +248,7 @@ for i = 1, 6 do
   track[i].rev = 0
   track[i].tempo_map = 0
   track[i].transpose = 0
+  track[i].fade = 0
 end
 
 set_clip_length = function(i, len)
@@ -258,7 +257,6 @@ set_clip_length = function(i, len)
   local bpm = 60 / len
   while bpm < 60 do
     bpm = bpm * 2
-    --print("bpm > "..bpm)
   end
   clip[i].bpm = bpm
 end
@@ -288,7 +286,6 @@ end
 
 calc_quant = function(i)
   local q = (clip[track[i].clip].l / 16)
-  --print("q > "..q)
   return q
 end
 
@@ -298,17 +295,26 @@ calc_quant_off = function(i, q)
     off = off + q
   end
   off = off - clip[track[i].clip].s
-  --print("off > "..off)
   return off
 end
 
 set_rec = function(n)
-  if track[n].rec == 1 then
-    softcut.pre_level(n, track[n].pre_level)
-    softcut.rec_level(n, track[n].rec_level)
-  else
-    softcut.pre_level(n, 1)
-    softcut.rec_level(n, 0)
+  if track[n].fade == 0 then
+    if track[n].rec == 1 then
+      softcut.pre_level(n, track[n].pre_level)
+      softcut.rec_level(n, track[n].rec_level)
+    else
+      softcut.pre_level(n, 1)
+      softcut.rec_level(n, 0)
+    end
+  elseif track[n].fade == 1 then
+    if track[n].rec == 1 then
+      softcut.pre_level(n, track[n].pre_level)
+      softcut.rec_level(n, track[n].rec_level)
+    else
+      softcut.pre_level(n, track[n].pre_level)
+      softcut.rec_level(n, 0)
+    end
   end
 end
 
@@ -566,40 +572,6 @@ function retrig() --retrig function for playing tracks
   end
 end
 
-function mstart() --MIDI START for selected tracks
-  for i = 1, 6 do
-    if track[i].sel == 1 then
-      if track[i].rev == 0 then
-        e = {} e.t = eCUT e.i = i e.pos = 0
-      elseif track[i].rev == 1 then
-        e = {} e.t = eCUT e.i = i e.pos = 15
-      end
-      event(e)
-    end
-  end
-end
-
--- MIDI SETUP
-m.event = function(data)
-  local d = midi.to_msg(data)
-  if d.type == "start" then
-      clock.transport.start()
-  --elseif d.type == "continue" then
-      --clock.transport.start()
-  end
-  if d.type == "stop" then
-    clock.transport.stop()
-  end
-end
-
-function clock.transport.start()
-  mstart()
-end
-
-function clock.transport.stop()
-  stopall()
-end
-
 -- threshold recording
 function arm_thresh_rec()
   amp_in[1]:start()
@@ -630,7 +602,6 @@ function update_cycle() --if oneshot active duration of one cycle is set for arm
         dur = 4 / math.pow(2, track[i].speed)
       elseif track[i].tempo_map == 1 then
         dur = (240 / tempo) / math.pow(2, track[i].speed)
-        print(dur)
       end
     end
   end
@@ -652,18 +623,28 @@ function oneshot(cycle)
 end
 
 function randomize(i)
-  params:set(i.. "pan", (math.random() * 20 - 10) / 10)
-  --params:set(i.. "transpose", math.random(1, 15))
-  track[i].speed = math.random(-2, 2)
-  track[i].rev = math.random(0, 1)
-  e = {}
-  e.t = eLOOP
-  e.i = i
-  e.loop = 1
-  e.loop_start = math.random(1, 15)
-  e.loop_end = math.random(e.loop_start, 16)
-  event(e)
-  update_rate(i)
+  if params:get("rnd_pan") == 2 then
+    params:set(i.. "pan", (math.random() * 20 - 10) / 10)
+  end
+  if params:get("rnd_transpose") == 2 then
+    params:set(i.. "transpose", math.random(1, 15))
+  end
+  if params:get("rnd_speed") == 2 then
+    track[i].speed = math.random(- params:get("rnd_oct"), params:get("rnd_oct"))
+  end
+  if params:get("rnd_dir") == 2 then
+    track[i].rev = math.random(0, 1)
+  end
+  if params:get("rnd_loop") == 2 then
+    e = {}
+    e.t = eLOOP
+    e.i = i
+    e.loop = 1
+    e.loop_start = math.random(1, 15)
+    e.loop_end = math.random(e.loop_start, 16)
+    event(e)
+    update_rate(i)
+  end
 end
 
 --init
@@ -688,6 +669,14 @@ init = function()
 
   --randomize on/off
   params:add_option("auto_rand","auto-randomize", {"off", "on"}, 1)
+
+  params:add_group("set parameters", 6)
+  params:add_option("rnd_speed", "speed", {"off", "on"}, 2)
+  params:add_number("rnd_oct", "speed range (oct)", 1, 3, 2)
+  params:add_option("rnd_dir", "direction", {"off", "on"}, 2)
+  params:add_option("rnd_loop", "loop", {"off", "on"}, 2)
+  params:add_option("rnd_pan", "pan", {"off", "on"}, 1)
+  params:add_option("rnd_transpose", "transpose", {"off", "on"}, 1)
 
 --params for tracks
   params:add_separator("tracks")
@@ -740,7 +729,6 @@ init = function()
     -- post filter dry level
     params:add_control(i.."post_dry", i.." dry level", controlspec.new(0, 1, 'lin', 0, 0, ""))
     params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) end)
-    --print("track "..i.." dry level: "..track[i].dry_level)
     --input options
     params:add_option(i.."input_options", i.." input options",{"L+R", "L IN", "R IN", "OFF"}, 1)
     params:set_action(i.."input_options", function() update_softcut_input(i) end)
@@ -1131,7 +1119,7 @@ v.gridkey[vREC] = function(x, y, z)
   elseif y > 1 and y < 8 then
     if z == 1 then
       i = y - 1
-      if x > 2 and x < 7 then
+      if x > 2 and x < 6 then
         if alt == 1 then
           track[i].tempo_map = 1 - track[i].tempo_map
           update_rate(i)
@@ -1139,16 +1127,19 @@ v.gridkey[vREC] = function(x, y, z)
           focus = i
           redraw()
         end
-      elseif x == 1 and y < 8 and alt == 0 then
+      elseif x == 1 and alt == 0 and alt2 == 0 then
         track[i].rec = 1 - track[i].rec
         set_rec(i)
-      elseif x == 1 and y < 8 and alt == 1 then
+      elseif x == 1 and alt == 1 and alt2 == 0 then
         track[i].oneshot = 1 - track[i].oneshot --figure out how to toggle AND have only one active at a time
         if track[i].oneshot == 1 then
           arm_thresh_rec() --amp_in poll starts
           update_cycle()  --duration of oneshot is set (dur)
         end
-      elseif x == 16 and y < 8 and alt == 0 then
+      elseif x == 1 and alt == 0 and alt2 == 1 then
+        track[i].fade = 1 - track[i].fade
+        set_rec(i)
+      elseif x == 16 and alt == 0 then
         if track[i].play == 1 then
           e = {}
           e.t = eSTOP
@@ -1160,17 +1151,17 @@ v.gridkey[vREC] = function(x, y, z)
           e.i = i
           event(e)
         end
-      elseif x == 16 and y < 8 and alt == 1 then
+      elseif x == 16 and alt == 1 then
         track[i].sel = 1 - track[i].sel
-      elseif x > 8 and x < 16 and y < 8  and alt == 0 then
+      elseif x > 8 and x < 16 and alt == 0 then
         local n = x - 12
         e = {} e.t = eSPEED e.i = i e.speed = n
         event(e)
-      elseif x == 8 and y < 8 and alt == 0 then
+      elseif x == 8 and alt == 0 then
         local n = 1 - track[i].rev
         e = {} e.t = eREV e.i = i e.rev = n
         event(e)
-      elseif x == 12 and y < 8 and alt == 1 then
+      elseif x == 12 and alt == 1 then
         randomize(i)
       end
       dirtygrid = true
@@ -1214,22 +1205,23 @@ end
 
 v.gridredraw[vREC] = function()
   g:all(0)
-  g:led(3, focus + 1, 7) g:led(4, focus + 1, 7) g:led(5, focus + 1, 3) g:led(6, focus + 1, 3)
+  g:led(3, focus + 1, 5) g:led(4, focus + 1, 5) g:led(5, focus + 1, 5) g:led(6, focus + 1, 5)
   for i = 1, 6 do
     local y = i + 1
     g:led(1, y, 3) --rec
     if track[i].rec == 1 and track[i].oneshot == 1 then g:led(1, y, 15)  end
     if track[i].rec == 1 and track[i].oneshot == 0 then g:led(1, y, 15)  end
     if track[i].rec == 0 and track[i].oneshot == 1 then g:led(1, y, 6)  end
-    if track[i].tempo_map == 1 then g:led(5, y, 7) g:led(6, y, 7) end
-    g:led(8, y, 3) --reverse playback
+    if track[i].fade == 1 then g:led(3, y, 9) end
+    if track[i].tempo_map == 1 then g:led(6, y, 9) end
+    g:led(8, y, 5) --reverse playback
+    if track[i].rev == 1 then g:led(8, y, 10) end
     g:led(16, y, 3) --start/stop
-    g:led(12, y, 3) --speed = 1
-    g:led(12 + track[i].speed, y, 9)
-    if track[i].rev == 1 then g:led(8, y, 8) end
     if track[i].play == 1 and track[i].sel == 1 then g:led(16, y, 15) end
     if track[i].play == 1 and track[i].sel == 0 then g:led(16, y, 10) end
-    if track[i].play == 0 and track[i].sel == 1 then g:led(16, y, 6) end
+    if track[i].play == 0 and track[i].sel == 1 then g:led(16, y, 5) end
+    g:led(12, y, 3) --speed = 1
+    g:led(12 + track[i].speed, y, 9)
   end
   if track[focus].loop == 1 then
     for x = track[focus].loop_start, track[focus].loop_end do
@@ -1264,7 +1256,7 @@ v.gridkey[vCUT] = function(x, y, z)
 
   if y == 1 then gridkey_nav(x, z)
   elseif y == 8 and z == 1 then
-    if x >= 1 and x <=8 then params:set(focus.."transpose", x) end -- pattern and recall not working for transpose
+    if x >= 1 and x <=8 then params:set(focus.."transpose", x) end
     if x >= 9 and x <=16 then params:set(focus.."transpose", x - 1) end
     dirtygrid = true
     redraw()
