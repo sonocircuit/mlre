@@ -1,4 +1,4 @@
--- mlre v1.0.2 @sonocircuit
+-- mlre v1.0.3 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -51,7 +51,7 @@ local trsp_id = {
   {"-perf5","-dim5","-perf4","-maj3","-min3","-maj2","-min2","none","min2","maj2","min3","maj3","perf4","dim5","perf5"},
   {"-oct","-min7","-min6","-perf5","-perf4","-min3","-maj2","none","maj2","min3","perf4","perf5","min6","min7","oct"},
   {"-oct","-maj7","-maj6","-perf5","-perf4","-maj3","-maj2","none","maj2","maj3","perf4","perf5","maj6","maj7","oct"},
-  {"-p4+2oct","-2oct","-p5+oct","-p4+oct","-oct","-p5","-p4","none","p4","p5","oct","p4+oct","p5+oct","2oct","p4+2oct"},
+  {"-p4+2oct","-2oct","-p5+oct","-p4+oct","-oct","-perf5","-perf4","none","perf4","perf5","oct","p4+oct","p5+oct","2oct","p4+2oct"},
 }
 
 local trsp_scale = {
@@ -88,14 +88,12 @@ local eREV = 6
 local ePATTERN = 7
 
 local quantize = 0
-local quantizer
-local div_options = {1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 30, 32}
+local div_options = {"1bar", "1/2", "1/3", "1/4", "1/6", "1/8", "1/16", "1/32"}
+local div_values = {1, 2, 3, 4, 6, 8, 16, 32}
 
 local function update_tempo()
-  local t = params:get("clock_tempo")
   local d = params:get("quant_div")
-  local interval = (60/t) / div_options[d]
-  quantizer.time = interval
+  div = div_values[d] / 4
   for i = 1, 6 do
     if track[i].tempo_map == 1 then
       update_rate(i)
@@ -135,6 +133,13 @@ local quantize_events = {}
 
 function event_q(e)
   table.insert(quantize_events, e)
+end
+
+function update_q_clock()
+  while true do
+    clock.sync(1/div)
+    event_q_clock()
+  end
 end
 
 function event_q_clock()
@@ -191,6 +196,8 @@ function event_exec(e)
     elseif e.action == "rec_stop" then pattern[e.i]:rec_stop()
     elseif e.action == "rec_start" then pattern[e.i]:rec_start()
     elseif e.action == "clear" then pattern[e.i]:clear()
+    elseif e.action == "overdub_on" then pattern[e.i]:set_overdub(1)
+    elseif e.action == "overdub_off" then pattern[e.i]:set_overdub(0)
     end
   end
 end
@@ -666,7 +673,7 @@ init = function()
 
   --params for quant division
   params:set_action("clock_tempo", function() update_tempo() end)
-  params:add_option("quant_div", "quant div", div_options, 5)
+  params:add_option("quant_div", "quant div", div_options, 7)
   params:set_action("quant_div", function() update_tempo() end)
 
   --params for rec threshold
@@ -782,13 +789,6 @@ init = function()
   for i = 1, 6 do lfo[i].lfo_targets = lfo_targets end
   lfo.init()
 
---quantizer metro
-  quantizer = metro.init()
-  quantizer.time = 0.125
-  quantizer.count = -1
-  quantizer.event = event_q_clock
-  quantizer:start()
-
 --led metro
   ledcounter = metro.init(ledpulse, 0.1, -1)
   ledcounter:start()
@@ -881,6 +881,12 @@ gridkey_nav = function(x, z)
         local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
         local e = {t = ePATTERN, i = i, action = "stop"} event(e)
         local e = {t = ePATTERN, i = i, action = "clear"} event(e)
+      elseif alt2 == 1 then
+        if pattern[i].overdub == 1 then
+          local e = {t = ePATTERN, i = i, action = "overdub_off"} event(e)
+        else
+          local e = {t = ePATTERN, i = i, action = "overdub_on"} event(e)
+        end
       elseif pattern[i].rec == 1 then
         local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
         local e = {t = ePATTERN, i = i, action = "start"} event(e)
@@ -891,6 +897,7 @@ gridkey_nav = function(x, z)
       else
         local e = {t = ePATTERN, i = i, action = "start"} event(e)
       end
+
     elseif x > 8 and x < 13 then
       local i = x - 8
       if alt == 1 then
@@ -909,9 +916,9 @@ gridkey_nav = function(x, z)
     elseif x == 15 and alt == 0 then
       quantize = 1 - quantize
       if quantize == 0 then
-        quantizer:stop()
+        clock.cancel(quantizer)
       else
-        quantizer:start()
+        quantizer = clock.run(update_q_clock)
       end
     elseif x == 15 and alt == 1 then set_view(vCLIP)
     elseif x == 16 then alt = 1
@@ -946,6 +953,8 @@ gridredraw_nav = function()
   for i = 1, 4 do
     if pattern[i].rec == 1 then
       g:led(i + 4, 1, 15)
+    elseif pattern[i].overdub == 1 then
+      g:led(i + 4, 1, ledview)
     elseif pattern[i].play == 1 then
       g:led(i + 4, 1, 11)
     elseif pattern[i].count > 0 then
@@ -1141,7 +1150,7 @@ v.gridkey[vREC] = function(x, y, z)
   elseif y > 1 and y < 8 then
     if z == 1 then
       i = y - 1
-      if x > 2 and x < 6 then
+      if x > 2 and x < 7 then
         if alt == 1 then
           track[i].tempo_map = 1 - track[i].tempo_map
           update_rate(i)
@@ -1227,7 +1236,7 @@ end
 
 v.gridredraw[vREC] = function()
   g:all(0)
-  g:led(3, focus + 1, 7) g:led(4, focus + 1, 7) g:led(5, focus + 1, 5) g:led(6, focus + 1, 5)
+  g:led(3, focus + 1, 7) g:led(4, focus + 1, 7) g:led(5, focus + 1, 3) g:led(6, focus + 1, 3)
   for i = 1, 6 do
     local y = i + 1
     g:led(1, y, 3) --rec
@@ -1462,8 +1471,8 @@ v.key[vLFO] = function(n, z)
     viewinfo[vLFO] = 1 - viewinfo[vLFO]
   elseif n == 3 and z == 1 then
     pageLFO = (pageLFO %6) + 1
-    redraw()
   end
+  redraw()
 end
 
 v.enc[vLFO] = function(n, d)
@@ -1740,9 +1749,10 @@ v.gridkey[vCLIP] = function(x, y, z)
     elseif y == 7 and x == 16 then
       route.tape = 1 - route.tape
       set_track_source()
-    elseif y == 8 then
+    elseif y == 8 and x < 9 then
       params:set("quant_div", x)
     end
+  redraw()
   end
 end
 
@@ -1783,6 +1793,9 @@ v.gridredraw[vCLIP] = function()
   end
   if route.tape == 1 then
     g:led(16, 7, 11)
+  end
+  for i = 1, 8 do
+    g:led(i, 8, 4)
   end
   g:led(params:get("quant_div"), 8, 10)
   g:refresh();
