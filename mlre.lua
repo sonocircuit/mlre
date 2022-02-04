@@ -9,7 +9,6 @@
 -- github.com/sonocircuits/mlre
 -- or smb into code/mlre/docs
 --
---
 -- /////////
 -- ////
 -- ////////////
@@ -30,6 +29,7 @@
 --
 
 local g = grid.connect()
+local m = midi.connect()
 
 local fileselect = require 'fileselect'
 local textentry = require 'textentry'
@@ -43,6 +43,7 @@ local trksel = 0
 local dstview = 0
 local dur = 0
 local ledview = 1
+local transport_run = false
 
 -- for transpose scales
 local scale_options = {"semitones", "minor", "major", "custom"}
@@ -137,7 +138,7 @@ end
 
 function update_q_clock()
   while true do
-    clock.sync(1/div)
+    clock.sync(1 / div)
     event_q_clock()
   end
 end
@@ -549,12 +550,18 @@ end
 -- transport functions
 function stopall() --stop all tracks
   for i = 1, 6 do
-      e = {} e.t = eSTOP e.i = i
-  event(e)
+    e = {} e.t = eSTOP e.i = i
+    event(e)
   end
+  m:stop()
+  transport_run = false
 end
 
 function altrun() --alt run function for selected tracks
+  if transport_run == false then
+    m:start()
+    transport_run = true
+  end
   for i = 1, 6 do
     if track[i].sel == 1 then
       if track[i].play == 1 then
@@ -635,7 +642,7 @@ function randomize(i)
     params:set(i.. "transpose", math.random(1, 15))
   end
   if params:get("rnd_vol") == 2 then
-    params:set(i.. "vol", math.random(2, 10) / 10)
+    params:set(i.. "vol", math.random(20, 100) / 100)
   end
   if params:get("rnd_pan") == 2 then
     params:set(i.. "pan", (math.random() * 20 - 10) / 10)
@@ -897,7 +904,6 @@ gridkey_nav = function(x, z)
       else
         local e = {t = ePATTERN, i = i, action = "start"} event(e)
       end
-
     elseif x > 8 and x < 13 then
       local i = x - 8
       if alt == 1 then
@@ -920,8 +926,8 @@ gridkey_nav = function(x, z)
       else
         quantizer = clock.run(update_q_clock)
       end
-    elseif x == 15 and alt == 1 then set_view(vCLIP)
     elseif x == 16 then alt = 1
+    elseif x == 15 and alt == 1 then set_view(vCLIP)
     elseif x == 14 and alt == 0 then alt2 = 1
     elseif x == 14 and alt == 1 then retrig()  --set all playing tracks to pos 1
     elseif x == 13 and alt == 0 then stopall() --stops all tracks
