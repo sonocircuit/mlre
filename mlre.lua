@@ -1131,17 +1131,17 @@ v.redraw[vREC] = function()
     screen.level(sel and 15 or 4)
     screen.move(10, 32)
     screen.text(params:string(focus.."vol"))
-    screen.move(30, 32)
-    if track[focus].mute == 1 then
-      screen.text("mute")
-    else
-      screen.text("")
-    end
     screen.move(70, 32)
     screen.text(params:string(focus.."pan"))
-    screen.level(3)
     screen.move(10, 40)
-    screen.text("volume")
+    if track[focus].mute == 1 then
+      screen.level(15)
+      screen.text("[muted]")
+    else
+      screen.level(3)
+      screen.text("volume")
+    end
+    screen.level(3)
     screen.move(70, 40)
     screen.text("pan")
 
