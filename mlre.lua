@@ -1,4 +1,4 @@
--- mlre v1.0.4 @sonocircuit
+-- mlre v1.0.6 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -44,6 +44,7 @@ local trksel = 0
 local dstview = 0
 local dur = 0
 local ledview = 1
+local counter = false
 local transport_run = false
 
 -- for transpose scales
@@ -296,6 +297,15 @@ calc_quant_off = function(i, q)
   end
   off = off - clip[track[i].clip].s
   return off
+end
+
+function clear_clip()
+  local buffer = params:get(focus.."buffer_sel")
+  softcut.buffer_clear_region_channel(buffer, clip[track[focus].clip].s, clip[track[focus].clip].s + CLIP_LEN_SEC)
+  set_clip_length(track[focus].clip, 4)
+  set_clip(focus,track[focus].clip)
+  update_rate(focus)
+  print("clip "..focus.." cleared")
 end
 
 set_rec = function(n)
@@ -607,8 +617,13 @@ end
 
 -- threshold recording
 function arm_thresh_rec()
-  amp_in[1]:start()
-  amp_in[2]:start()
+  if track[i].oneshot == 1 then
+    amp_in[1]:start()
+    amp_in[2]:start()
+  else
+    amp_in[1]:stop()
+    amp_in[2]:stop()
+  end
 end
 
 function thresh_rec()
@@ -645,12 +660,33 @@ function oneshot(cycle)
   clock.sleep(cycle) --length of cycle for time interval specified by 'dur'
   for i = 1, 6 do
     if track[i].oneshot == 1 then
-      track[i].rec = 0 --rec off
-      track[i].oneshot = 0 --oneshot reset
+      track[i].rec = 0
+      track[i].oneshot = 0
     end
     set_rec(i)
-    if track[i].sel == 1 and params:get("auto_rand") == 2 then --randomize selected tracks
+    if track[i].sel == 1 and params:get("auto_rand") == 2 and counter == true then --randomize selected tracks
       randomize(i)
+    end
+    counter = false
+  end
+end
+
+ --called when rec is toggled
+function chop()
+  for i = 1, 6 do
+    if counter == true and track[i].oneshot == 1 then
+      e = {}
+      e.t = eLOOP
+      e.i = i
+      e.loop = 1
+      e.loop_start = 1
+      e.loop_end = track[i].pos_grid
+      event(e)
+      track[i].oneshot = 0
+      counter = false
+      if track[i].sel == 1 and params:get("auto_rand") == 2 then --randomize selected tracks
+        randomize(i)
+      end
     end
   end
 end
@@ -858,12 +894,9 @@ init = function()
     amp_in[ch].time = 0.01
     amp_in[ch].callback = function(val)
       if val > util.dbamp(params:get("rec_threshold"))/10 then
-        for i = 1, 6 do
-          if track[i].oneshot == 1 then
-            thresh_rec()
-            clock.run(oneshot, dur) --when rec starts, clock coroutine starts
-          end
-        end
+        thresh_rec()
+        clock.run(oneshot, dur) --when rec starts, clock coroutine starts
+        counter = true
         amp_in[ch]:stop()
       end
     end
@@ -902,9 +935,7 @@ end
 gridkey_nav = function(x, z)
   if z == 1 then
     if x == 1 then
-      if alt == 1 then
-        local buffer = params:get(focus.."buffer_sel")
-        softcut.buffer_clear_region_channel(buffer, clip[track[focus].clip].s, clip[track[focus].clip].e) end
+      if alt == 1 then clear_clip() end
       if alt2 == 1 then softcut.buffer_clear() end
       set_view(vREC)
     elseif x == 2 then set_view(vCUT)
@@ -1211,15 +1242,14 @@ v.gridkey[vREC] = function(x, y, z)
       elseif x == 1 and alt == 0 then
         track[i].rec = 1 - track[i].rec
         set_rec(i)
+        chop()
       elseif x == 1 and alt == 1 then
         track[i].fade = 1 - track[i].fade
         set_rec(i)
       elseif x == 2 then
         track[i].oneshot = 1 - track[i].oneshot --figure out how to toggle AND have only one active at a time
-        if track[i].oneshot == 1 then
-          arm_thresh_rec() --amp_in poll starts
-          update_cycle()  --duration of oneshot is set (dur)
-        end
+        arm_thresh_rec() --amp_in poll starts
+        update_cycle()  --duration of oneshot is set (dur)
       elseif x == 16 and alt == 0 and alt2 == 0 then
         if track[i].play == 1 then
           e = {}
