@@ -75,7 +75,6 @@ local eLOOP = 4
 local eSPEED = 5
 local eREV = 6
 local ePATTERN = 7
-local eTRSP = 8
 
 local quantize = 0
 local div_options = {"1bar", "1/2", "1/3", "1/4", "1/6", "1/8", "1/16", "1/32"}
@@ -264,7 +263,7 @@ end
 
 clip_resize = function(i, length)
   set_clip_length(i, length)
-    clip[i].name = "resized"
+    clip[i].name = "resized to " .. 2^ (clip_clear_mult - 2)
 end
 
 clip = {}
@@ -1705,11 +1704,14 @@ v.key[vCLIP] = function(n, z)
       screenredrawtimer:stop()
       fileselect.enter(os.getenv("HOME").."/dust/audio",
         function(n) fileselect_callback(n,clip_sel) end)
-    elseif clip_actions[clip_action] == "clear" then
-      local c_start = clip[track[clip_sel].clip].s * 48000
-      print("clear_start: " .. c_start)
-      --softcut.clear_range(c_start, CLIP_LEN_SEC * 48000) -- two minutes
+    elseif clip_actions[clip_action] == "clear" then --TODO: reset clip length
+      local buffer = params:get(clip_sel.."buffer_sel")
+      softcut.buffer_clear_region_channel(buffer, clip[track[clip_sel].clip].s, clip[track[clip_sel].clip].s + CLIP_LEN_SEC)
+      set_clip_length(track[clip_sel].clip, 4)
+      set_clip(clip_sel,track[clip_sel].clip)
+      update_rate(clip_sel)
       clip[track[clip_sel].clip].name = '-'
+      print("clip "..track[clip_sel].clip.." cleared")
       redraw()
     elseif clip_actions[clip_action] == "save" then
       screenredrawtimer:stop()
