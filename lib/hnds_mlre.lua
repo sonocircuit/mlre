@@ -1,10 +1,10 @@
 -- hnds
 --
--- Lua lfo's for script
--- parameters.
--- ----------
+-- Lua lfo's for script parameters.
 --
--- v0.4 @justmat slightly adapted by @sonocircuit
+-- v0.4 @justmat
+--
+-- slightly adapted by @sonocircuit
 
 local number_of_outputs = 6
 
@@ -40,7 +40,6 @@ function lfo.process()
 end
 ------------------------------------
 
-
 function lfo.scale(old_value, old_min, old_max, new_min, new_max)
   -- scale ranges
   local old_range = old_max - old_min
@@ -60,11 +59,9 @@ local function make_sine(n)
   return 1 * math.sin(((tau / 100) * (lfo[n].counter)) - (tau / (lfo[n].freq)))
 end
 
-
 local function make_square(n)
   return make_sine(n) >= 0 and 1 or -1
 end
-
 
 local function make_sh(n)
   local polarity = make_square(n)
@@ -75,7 +72,6 @@ local function make_sh(n)
     return lfo[n].prev
   end
 end
-
 
 function lfo.init()
     --params:add_separator("modulation")
@@ -94,7 +90,7 @@ function lfo.init()
     params:add_control(i .."offset", "offset", controlspec.new(-1, 1, "lin", 0.1, 0.0, ""))
     params:set_action(i .. "offset", function(value) lfo[i].offset = value end)
     -- lfo speed
-    params:add_control(i .. "lfo_freq", "lfo freq", controlspec.new(0.1, 10.0, "lin", 0.1, 0.1, ""))
+    params:add_control(i .. "lfo_freq", "lfo freq", controlspec.new(0.1, 10.0, "lin", 0.1, 0.5, ""))
     params:set_action(i .. "lfo_freq", function(value) lfo[i].freq = value end)
     -- lfo on/off
     params:add_option(i .. "lfo", "lfo on/off", {"off", "on"}, 1)
@@ -120,10 +116,9 @@ function lfo.init()
       end
     end
     lfo.process()
-    dirtygrid = true --for blinkenlights (lfo slope on "on" grid button)
+    dirtygrid = true --for blinkenlights (lfo slope on "on" grid key)
   end
   lfo_metro:start()
 end
-
 
 return lfo
