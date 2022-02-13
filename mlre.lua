@@ -552,6 +552,7 @@ end
 
 function update_cycle(n) --calculate cycle length when oneshot == 1
   local tempo = params:get("clock_tempo")
+  oneshot_rec = false
   if track[n].oneshot == 1 then
     if track[n].tempo_map == 0 then
       dur = 4 / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
@@ -572,7 +573,6 @@ function oneshot(cycle) --triggerd when rec thresh is reached (amp_in poll callb
     if track[i].sel == 1 and params:get("auto_rand") == 2 and oneshot_rec == true then --randomize selected tracks
       randomize(i)
     end
-    oneshot_rec = false
   end
 end
 
@@ -720,7 +720,8 @@ init = function()
   params:set_action("clock_tempo", function() update_tempo() end)
   params:add_option("quant_div", "quant div", div_options, 7)
   params:set_action("quant_div", function() update_tempo() end)
-
+  params:hide("quant_div")
+  
   --params for rec threshold
   params:add_control("rec_threshold", "rec threshold", controlspec.new(-40, 6, 'lin', 0.01, -12, "dB"))
   --not as much fine control with db but it's more intuitive to me (increment of 0.01 doesn't work when neg values involved)
@@ -732,7 +733,7 @@ init = function()
   --randomize on/off
   params:add_option("auto_rand","auto-randomize", {"off", "on"}, 1)
 
-  params:add_group("randomize settings", 13)
+  params:add_group("settings", 13)
   params:add_option("rnd_transpose", "transpose", {"off", "on"}, 1)
   params:add_option("rnd_vol", "volume", {"off", "on"}, 1)
   params:add_option("rnd_pan", "pan", {"off", "on"}, 1)
