@@ -531,9 +531,18 @@ function arm_thresh_rec() --start poll if oneshot == 1
     amp_in[1]:stop()
     amp_in[2]:stop()
   end
+  if track[i].play == 0 then
+    if track[i].rev == 1 then
+      loop_pos = 16
+      track[i].pos_grid = 15
+    else
+      loop_pos = 1
+      track[i].pos_grid = 0
+    end
+  end
 end
 
-function thresh_rec() --start rec and playback when threshold is reached
+function thresh_rec() --start rec and clear loop when threshold is reached
   for i = 1, 6 do
     if track[i].oneshot == 1 then
       track[i].rec = 1
@@ -576,14 +585,30 @@ function oneshot(cycle) --triggerd when rec thresh is reached (amp_in poll callb
   end
 end
 
+function loop_point()
+  if track[i].rev == 1 then
+    if track[i].pos_grid == 15 then
+      loop_pos = 16
+    else
+      loop_pos = track[i].pos_grid + 1
+    end
+  else
+    if track[i].pos_grid == 0 then
+      loop_pos = 1
+    else
+      loop_pos = track[i].pos_grid + 1
+    end
+  end
+end
+
 function chop(i)  --called when rec is toggled
   if oneshot_rec == true and track[i].oneshot == 1 then
     e = {}
     e.t = eLOOP
     e.i = i
     e.loop = 1
-    e.loop_start = loop_pos
-    e.loop_end = track[i].pos_grid + 1
+    e.loop_start = math.min(loop_pos, track[i].pos_grid + 1)
+    e.loop_end = math.max(loop_pos, track[i].pos_grid + 1)
     event(e)
     track[i].oneshot = 0
     oneshot_rec = false
@@ -721,7 +746,7 @@ init = function()
   params:add_option("quant_div", "quant div", div_options, 7)
   params:set_action("quant_div", function() update_tempo() end)
   params:hide("quant_div")
-  
+
   --params for rec threshold
   params:add_control("rec_threshold", "rec threshold", controlspec.new(-40, 6, 'lin', 0.01, -12, "dB"))
   --not as much fine control with db but it's more intuitive to me (increment of 0.01 doesn't work when neg values involved)
@@ -881,9 +906,10 @@ init = function()
     amp_in[ch].time = 0.01
     amp_in[ch].callback = function(val)
       if val > util.dbamp(params:get("rec_threshold")) / 10 then
-        thresh_rec()
+        loop_point()
         clock.run(oneshot, dur) --when rec starts, clock coroutine starts
         oneshot_rec = true
+        thresh_rec()
         amp_in[ch]:stop()
       end
     end
@@ -1348,11 +1374,9 @@ v.enc[vCUT] = v.enc[vREC]
 v.redraw[vCUT] = v.redraw[vREC]
 
 v.gridkey[vCUT] = function(x, y, z)
-  --set range logic
   if z == 1 and held[y] then heldmax[y] = 0 end
   held[y] = held[y] + (z * 2 - 1)
   if held[y] > heldmax[y] then heldmax[y] = held[y] end
-
   if y == 1 then gridkey_nav(x, z)
   elseif y == 8 and z == 1 then
     if x >= 1 and x <=8 then params:set(focus.."transpose", x) end
