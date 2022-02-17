@@ -322,10 +322,10 @@ function clip_resize(i)
   set_clip_length(track[i].clip, resize, r_val)
   set_clip(i, track[i].clip)
   update_rate(i)
-  if params:get("t_map_mode") == 1 then
-    clip[i].info = "length "..string.format("%.2f", resize).."s"
-  elseif params:get("t_map_mode") == 2 then
-    clip[i].info = "repitched by "..string.format("%.2f", tempo / clip[track[i].clip].bpm).."x"
+  if params:get("t_map_mode") == 2 and track[i].tempo_map == 1 then
+    clip[track[i].clip].info = "repitched by "..string.format("%.2f", tempo / clip[track[i].clip].bpm).."x"
+  else
+    clip[track[i].clip].info = "length "..string.format("%.2f", resize).."s"
   end
 end
 
