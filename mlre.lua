@@ -1,4 +1,4 @@
--- mlre v1.0.8 @sonocircuit
+-- mlre v1.0.9 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -54,10 +54,10 @@ local max_cliplength = 40
 local scale_options = {"semitones", "minor", "major", "custom"}
 
 local trsp_id = {
-  {"-perf5","-dim5","-perf4","-maj3","-min3","-maj2","-min2","none","min2","maj2","min3","maj3","perf4","dim5","perf5"},
-  {"-oct","-min7","-min6","-perf5","-perf4","-min3","-maj2","none","maj2","min3","perf4","perf5","min6","min7","oct"},
-  {"-oct","-maj7","-maj6","-perf5","-perf4","-maj3","-maj2","none","maj2","maj3","perf4","perf5","maj6","maj7","oct"},
-  {"-p4+2oct","-2oct","-p5+oct","-p4+oct","-oct","-perf5","-perf4","none","perf4","perf5","oct","p4+oct","p5+oct","2oct","p4+2oct"},
+  {"-perf5", "-dim5", "-perf4", "-maj3", "-min3","-maj2", "-min2", "none", "min2", "maj2", "min3", "maj3", "perf4", "dim5", "perf5"},
+  {"-oct", "-min7", "-min6", "-perf5", "-perf4", "-min3", "-maj2", "none", "maj2", "min3", "perf4", "perf5", "min6", "min7", "oct"},
+  {"-oct", "-maj7", "-maj6", "-perf5", "-perf4", "-maj3", "-maj2", "none", "maj2", "maj3", "perf4", "perf5", "maj6", "maj7", "oct"},
+  {"-p4+2oct", "-2oct", "-p5+oct", "-p4+oct", "-oct", "-perf5", "-perf4", "none", "perf4", "perf5", "oct", "p4+oct", "p5+oct", "2oct", "p4+2oct"},
 }
 
 local trsp_scale = {
@@ -140,12 +140,13 @@ function event_q_clock()
   end
 end
 
+--exec function
 function event_exec(e)
   if e.t == eCUT then
     if track[e.i].loop == 1 then
       track[e.i].loop = 0
-      softcut.loop_start(e.i,clip[track[e.i].clip].s)
-      softcut.loop_end(e.i,clip[track[e.i].clip].e)
+      softcut.loop_start(e.i, clip[track[e.i].clip].s)
+      softcut.loop_end(e.i, clip[track[e.i].clip].e)
     end
     local cut = (e.pos / 16) * clip[track[e.i].clip].l + clip[track[e.i].clip].s
     softcut.position(e.i, cut)
@@ -263,6 +264,7 @@ for i = 1, 8 do
   clip[i].s = 2 + (i - 1) * max_cliplength
   clip[i].name = "-"
   clip[i].info = "length 4.00s"
+  clip[i].reset = 4
   set_clip_length(i, 4, 4)
 end
 
@@ -292,11 +294,13 @@ end
 
 function clear_clip(i) --clear active buffer of clip and set clip length
   local buffer = params:get(i.."buffer_sel")
-  local r_idx = params:get(track[i].clip.."clip_length")
   local tempo = params:get("clock_tempo")
+  local r_idx = params:get(track[i].clip.."clip_length")
   local r_val = resize_values[r_idx]
-  if track[i].tempo_map == 1 then
+  if track[i].tempo_map == 1 and params:get("t_map_mode") == 1 then
     resize = (60 / tempo) * r_val
+  elseif track[i].tempo_map == 1 and params:get("t_map_mode") == 2 then
+    resize = clip[track[i].clip].l
   else
     resize = r_val
   end
@@ -306,6 +310,14 @@ function clear_clip(i) --clear active buffer of clip and set clip length
   update_rate(i)
   clip[track[i].clip].name = "-"
   clip[track[i].clip].info = "length "..string.format("%.2f", resize).."s"
+end
+
+function clip_reset(i)
+  resize = clip[track[i].clip].reset
+  clip[track[i].clip].info = "length "..string.format("%.2f", clip[track[i].clip].l).."s"
+  set_clip_length(track[i].clip, resize, 4)
+  set_clip(i, track[i].clip)
+  update_rate(i)
 end
 
 function clip_resize(i)
@@ -498,10 +510,8 @@ end
 
 function set_transpose(i, x) --transpose track
   local scale_idx = params:get("scale")
-  track[i].transpose = trsp_scale[scale_idx][x] / 1200
-  if track[i].play == 1 then --not sure if this condition is really needed
-    update_rate(i)
-  end
+    track[i].transpose = trsp_scale[scale_idx][x] / 1200
+  update_rate(i)
 end
 
 --transport functions
@@ -587,10 +597,10 @@ function update_cycle(n) --calculate cycle length when oneshot == 1
   local tempo = params:get("clock_tempo")
   oneshot_rec = false
   if track[n].oneshot == 1 then
-    if track[n].tempo_map == 0 then
-      dur = 4 / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
-    elseif track[n].tempo_map == 1 then
-      dur = (240 / tempo) / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
+    if track[n].tempo_map == 1 and params:get("t_map_mode") == 2 then
+      dur = ((60 / tempo) * clip[track[n].clip].l) / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
+    else
+      dur = clip[track[n].clip].l / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
     end
   end
 end
@@ -669,7 +679,6 @@ function randomize(i) --randomize parameters
   if params:get("rnd_speed") == 2 then
     e = {} e.t = eSPEED e.i = i e.speed = math.random(- params:get("rnd_loct"), params:get("rnd_uoct"))
     event(e)
-    update_rate(i)
   end
     if params:get("rnd_cut") == 2 then
     params:set(i.. "cutoff", math.random(params:get("rnd_lcut"), params:get("rnd_ucut")) )
@@ -762,7 +771,7 @@ init = function()
   params:add_separator("global")
 
   --params for scales
-  params:add_option("scale","scale", scale_options,1)
+  params:add_option("scale","scale", scale_options,4)
   params:set_action("scale", function(n) set_scale(n) end)
 
   --params for rec threshold
@@ -944,8 +953,10 @@ init = function()
   clock.run(clock_update_tempo)
 
   --set "local e" to other than nil (addressed error that occured when thresh_rec() is called before any track is played)
-  track[1].play = 1
-  track[1].play = 0
+  for i = 1, 6 do
+    track[i].play = 1
+    track[i].play = 0
+  end
 
 print("mlre loaded and ready. enjoy!")
 
@@ -1504,10 +1515,8 @@ v.gridkey[vTRSP] = function(x, y, z)
         redraw()
       end
       if alt == 0 then
-        if x >= 1 and x <=8 then params:set(i.."transpose", x)
-        elseif x >= 9 and x <=16 then params:set(i.."transpose", x - 1)
-        else return
-        end
+        if x >= 1 and x <=8 then params:set(i.."transpose", x) end
+        if x >= 9 and x <=16 then params:set(i.."transpose", x - 1) end
       end
       if alt == 1 and x > 7 and x < 10 then
         if track[i].play == 1 then
@@ -1720,7 +1729,7 @@ v.gridredraw[vLFO] = function()
 end
 
 ---------------------CLIP-----------------------
-clip_actions = {"load", "clear", "save"}
+clip_actions = {"load", "clear", "save", "reset"}
 clip_action = 1
 clip_sel = 1
 resize_values = {1, 2, 3, 4, 6, 8, 12, 16}
@@ -1739,9 +1748,10 @@ function fileselect_callback(path, c)
       set_clip_length(track[c].clip, l, r_val)
       clip[track[c].clip].name = path:match("[^/]*$")
       clip[track[c].clip].info = "length "..string.format("%.2f", l).."s"
+      clip[track[c].clip].reset = l
       set_clip(c,track[c].clip)
       update_rate(c)
-      params:set(c.."file",path)
+      params:set(c.."file", path)
     else
       print("not a sound file")
     end
@@ -1752,13 +1762,15 @@ function fileselect_callback(path, c)
 end
 
 function textentry_callback(txt)
+  local buffer = params:get(clip_sel.."buffer_sel")
   if txt then
     local c_start = clip[track[clip_sel].clip].s
     local c_len = clip[track[clip_sel].clip].l
     print("SAVE " .. _path.audio .. "mlre/" .. txt .. ".wav", c_start, c_len)
     util.make_dir(_path.audio .. "mlre")
-    softcut.buffer_write_mono(_path.audio.."mlre/"..txt..".wav", c_start, c_len, 1)
+    softcut.buffer_write_mono(_path.audio.."mlre/"..txt..".wav", c_start, c_len, buffer)
     clip[track[clip_sel].clip].name = txt
+    --params:set(clip_sel.."file", --)
   else
     print("save cancel")
   end
@@ -1771,13 +1783,15 @@ v.key[vCLIP] = function(n, z)
     if clip_actions[clip_action] == "load" then
       screenredrawtimer:stop()
       fileselect.enter(os.getenv("HOME").."/dust/audio",
-        function(n) fileselect_callback(n,clip_sel) end)
+        function(n) fileselect_callback(n, clip_sel) end)
     elseif clip_actions[clip_action] == "clear" then
       clear_clip(clip_sel)
       redraw()
     elseif clip_actions[clip_action] == "save" then
       screenredrawtimer:stop()
       textentry.enter(textentry_callback, "mlre-" .. (math.random(9000)+1000))
+    elseif clip_actions[clip_action] == "reset" then
+      clip_reset(clip_sel)
     end
   elseif n == 3 and z == 1 then
     clip_resize(clip_sel)
@@ -1786,7 +1800,7 @@ end
 
 v.enc[vCLIP] = function(n, d)
   if n == 2 then
-    clip_action = util.clamp(clip_action + d, 1, 3)
+    clip_action = util.clamp(clip_action + d, 1, 4)
   elseif n == 3 then
     params:delta(track[clip_sel].clip.."clip_length", d)
   end
