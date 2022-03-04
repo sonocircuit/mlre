@@ -791,7 +791,7 @@ init = function()
  params:add_separator("global")
 
  --params for scales
- params:add_option("scale","scale", scale_options,4)
+ params:add_option("scale", "scale", scale_options, 1)
  params:set_action("scale", function(n) set_scale(n) end)
 
  --params for rec threshold
