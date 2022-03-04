@@ -188,12 +188,16 @@ function event_exec(e)
  elseif e.t == eMUTE then
    track[e.i].mute = e.mute
    set_level(e.i)
+   redraw()
  elseif e.t == eTRSP then
    track[e.i].trsp = e.trsp
    params:set(e.i.."transpose", track[e.i].trsp)
+   dirtygrid = true
+   redraw()
  elseif e.t == eBUFF then
    track[e.i].buffer = e.buffer
    params:set(e.i.."buffer_sel", track[e.i].buffer)
+   if view == vREC then dirtygrid = true end
  elseif e.t == ePATTERN then
    if e.action == "stop" then pattern[e.i]:stop()
    elseif e.action == "start" then pattern[e.i]:start()
@@ -633,7 +637,7 @@ function oneshot(cycle) --triggerd when rec thresh is reached (amp_in poll callb
  end
 end
 
-function loop_point() --set loop start point if rec pressed before end of cycle
+function loop_point() --set loop start point (loop_pos) for chop function
   if track[i].oneshot == 1 then
    if track[i].rev == 1 then
      if track[i].pos_grid == 15 then
@@ -820,12 +824,14 @@ init = function()
  params:add_control("rnd_lcut", "lower freq", controlspec.new(20, 18000, 'exp', 1, 20, "Hz"))
 
  --params for quant division
- params:set_action("clock_tempo", function() update_tempo() end)
  params:add_option("quant_div", "quant div", div_options, 7)
  params:set_action("quant_div", function() update_tempo() end)
  params:hide("quant_div")
 
---params for tracks
+ --params for clock tempo
+ params:set_action("clock_tempo", function() update_tempo() end)
+
+ --params for tracks
  params:add_separator("tracks")
 
  audio.level_cut(1)
@@ -1116,8 +1122,8 @@ v.key[vREC] = function(n, z)
    viewinfo[vREC] = 1 - viewinfo[vREC]
  elseif n == 3 and z == 1 then
    pageNum = (pageNum %3) + 1
-   redraw()
  end
+redraw()
 end
 
 v.enc[vREC] = function(n, d)
@@ -1195,6 +1201,7 @@ v.redraw[vREC] = function()
    screen.rect(mp + 11, 12, 4, 4)
    screen.rect(mp + 18, 12, 4, 4)
    screen.stroke()
+
    screen.level(sel and 15 or 4)
    screen.move(10, 32)
    screen.text(params:string(focus.."vol"))
@@ -1231,6 +1238,7 @@ v.redraw[vREC] = function()
    screen.rect(mp + 4, 12, 4, 4)
    screen.rect(mp + 18, 12, 4, 4)
    screen.stroke()
+
    screen.level(sel and 15 or 4)
    screen.move(10, 32)
    screen.text(params:string(focus.."cutoff"))
@@ -1265,6 +1273,7 @@ v.redraw[vREC] = function()
    screen.rect(mp + 4, 12, 4, 4)
    screen.rect(mp + 11, 12, 4, 4)
    screen.stroke()
+
    screen.level(sel and 15 or 4)
    screen.move(10, 32)
    screen.text(params:string(focus.."detune"))
@@ -1441,8 +1450,6 @@ v.gridkey[vCUT] = function(x, y, z)
    local i = focus
    if x >= 1 and x <=8 then e = {} e.t = eTRSP e.i = i e.trsp = x event(e) end
    if x >= 9 and x <=16 then e = {} e.t = eTRSP e.i = i e.trsp = x - 1 event(e) end
-   dirtygrid = true
-   redraw()
  else
    local i = y - 1
    if z == 1 then
@@ -1545,7 +1552,6 @@ v.gridkey[vTRSP] = function(x, y, z)
        end
        event(e)
      end
-   dirtygrid = true
    end
  elseif y == 8 then --cut for focused track
    if z == 1 and held[y] then heldmax[y] = 0 end
@@ -1721,9 +1727,9 @@ v.gridkey[vLFO] = function(x, y, z)
    if x > 10 and x <= 16 then
      dstview = 0
    end
+ end
  dirtygrid = true
  redraw()
- end
 end
 
 v.gridredraw[vLFO] = function()
@@ -1812,9 +1818,11 @@ v.key[vCLIP] = function(n, z)
      textentry.enter(textentry_callback, "mlre-" .. (math.random(9000)+1000))
    elseif clip_actions[clip_action] == "reset" then
      clip_reset(clip_sel)
+     redraw()
    end
  elseif n == 3 and z == 1 then
    clip_resize(clip_sel)
+   redraw()
  end
 end
 
@@ -1825,7 +1833,6 @@ v.enc[vCLIP] = function(n, d)
    params:delta(track[clip_sel].clip.."clip_length", d)
  end
  redraw()
- dirtygrid = true
 end
 
 local function truncateMiddle(str, maxLength, separator)
@@ -1907,6 +1914,7 @@ v.gridkey[vCLIP] = function(x, y, z)
      params:set("quant_div", x)
    end
  redraw()
+ dirtygrid = true
  end
 end
 
