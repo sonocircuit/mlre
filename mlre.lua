@@ -46,6 +46,7 @@ local dur = 0
 local trsp = 1
 local ledview = 1
 local quantize = 0
+local oneshot_on = 1
 local oneshot_rec = false
 local transport_run = false
 local loop_pos = 1
@@ -330,7 +331,7 @@ function clear_clip(i) --clear active buffer of clip and set clip length
  clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
 end
 
-function clip_reset(i)
+function clip_reset(i) --reset clip to default length
  resize = clip[track[i].clip].reset
  set_clip_length(track[i].clip, resize, 4)
  set_clip(i, track[i].clip)
@@ -338,7 +339,7 @@ function clip_reset(i)
  clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
 end
 
-function clip_resize(i)
+function clip_resize(i) --resize clip length oder track speed according to t_map settings
  local tempo = params:get("clock_tempo")
  local r_idx = params:get(track[i].clip.."clip_length")
  local r_val = resize_values[r_idx]
@@ -420,7 +421,7 @@ function set_track_route(n) --internal softcut routing
  end
 end
 
-function set_track_source() --seclect audio source
+function set_track_source() --select audio source
  if route.adc == 1 then
    audio.level_adc_cut(1)
  else
@@ -574,9 +575,14 @@ function retrig() --retrig function for playing tracks
  end
 end
 
--- threshold recording
-function arm_thresh_rec() --start poll if oneshot == 1
+function arm_thresh_rec(i) --start poll if oneshot == 1
  if track[i].oneshot == 1 then
+  for n = 1, 6 do
+    if n ~= i then
+      track[n].oneshot = 0
+    end
+  end
+  oneshot_on = i
    amp_in[1]:start()
    amp_in[2]:start()
  else
@@ -595,7 +601,7 @@ function arm_thresh_rec() --start poll if oneshot == 1
 end
 
 function thresh_rec() --start rec and clear loop when threshold is reached
- for i = 1, 6 do
+local i = oneshot_on
    if track[i].oneshot == 1 then
      track[i].rec = 1
      set_rec(i)
@@ -608,7 +614,6 @@ function thresh_rec() --start rec and clear loop when threshold is reached
        event(e)
      end
    end
- end
 end
 
 function update_cycle(n) --calculate cycle length when oneshot == 1
@@ -625,31 +630,29 @@ end
 
 function oneshot(cycle) --triggerd when rec thresh is reached (amp_in poll callback)
  clock.sleep(cycle) --length of cycle for time interval specified by 'dur'
- for i = 1, 6 do
-   if track[i].oneshot == 1 then
-     track[i].rec = 0
-     track[i].oneshot = 0
+   if track[oneshot_on].oneshot == 1 then
+     track[oneshot_on].rec = 0
+     track[oneshot_on].oneshot = 0
    end
-   set_rec(i)
-   if track[i].sel == 1 and params:get("auto_rand") == 2 and oneshot_rec == true then --randomize selected tracks
-     randomize(i)
+   set_rec(oneshot_on)
+   if track[oneshot_on].sel == 1 and params:get("auto_rand") == 2 and oneshot_rec == true then --randomize selected tracks
+     randomize(oneshot_on)
    end
- end
 end
 
 function loop_point() --set loop start point (loop_pos) for chop function
-  if track[i].oneshot == 1 then
-   if track[i].rev == 1 then
-     if track[i].pos_grid == 15 then
+  if track[oneshot_on].oneshot == 1 then
+   if track[oneshot_on].rev == 1 then
+     if track[oneshot_on].pos_grid == 15 then
        loop_pos = 16
      else
-       loop_pos = track[i].pos_grid + 1
+       loop_pos = track[oneshot_on].pos_grid + 1
      end
    else
-     if track[i].pos_grid == 0 then
+     if track[oneshot_on].pos_grid == 0 then
        loop_pos = 1
      else
-       loop_pos = track[i].pos_grid + 1
+       loop_pos = track[oneshot_on].pos_grid + 1
      end
    end
   end
@@ -867,7 +870,7 @@ init = function()
    -- select buffer
    params:add_option(i.."buffer_sel", i.." side", {"A", "B"}, 1)
    params:set_action(i.."buffer_sel", function(x) track[i].side = x - 1 set_buffer(i) end)
-   -- add file
+   -- store loaded or saved file in pset
    params:add_file(i.."file", i.." file", "")
    params:set_action(i.."file", function(n) fileselect_callback(n, i) end)
    params:hide(i.."file")
@@ -954,8 +957,8 @@ init = function()
      if val > util.dbamp(params:get("rec_threshold")) / 10 then
        loop_point()
        clock.run(oneshot, dur) --when rec starts, clock coroutine starts
-       oneshot_rec = true
        thresh_rec()
+       oneshot_rec = true
        amp_in[ch]:stop()
      end
    end
@@ -1008,11 +1011,12 @@ end
 gridkey_nav = function(x, z)
  if z == 1 then
    if x == 1 then
-     if alt == 1 then clear_clip(focus) end
-     if alt2 == 1 then softcut.buffer_clear() end
-     set_view(vREC)
+     if alt == 1 then clear_clip(focus) print("clip "..track[focus].clip.." cleared")
+     else set_view(vREC) end
    elseif x == 2 then set_view(vCUT)
-   elseif x == 3 then set_view(vTRSP)
+   elseif x == 3 then
+     if alt == 1 then softcut.buffer_clear() print("both buffers cleared")
+     else set_view(vTRSP) end
    elseif x == 4 then set_view(vLFO)
    elseif x > 4 and x < 9 then
      local i = x - 4
@@ -1323,7 +1327,7 @@ v.gridkey[vREC] = function(x, y, z)
        set_rec(i)
      elseif x == 2 then
        track[i].oneshot = 1 - track[i].oneshot --need to figure out how to toggle AND have only one active at a time
-       arm_thresh_rec() --amp_in poll starts
+       arm_thresh_rec(i) --amp_in poll starts
        update_cycle(i)  --duration of oneshot is set (dur)
      elseif x == 16 and alt == 0 and alt2 == 0 then
        if track[i].play == 1 then
