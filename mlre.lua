@@ -281,7 +281,7 @@ for i = 1, 8 do
  clip[i] = {}
  clip[i].s = 2 + (i - 1) * max_cliplength
  clip[i].name = "-"
- clip[i].info = "length 4.00s"
+ clip[i].info = "length: 4.00s"
  clip[i].reset = 4
  set_clip_length(i, 4, 4)
 end
@@ -327,7 +327,7 @@ function clear_clip(i) --clear active buffer of clip and set clip length
  set_clip(i, track[i].clip)
  update_rate(i)
  clip[track[i].clip].name = "-"
- clip[track[i].clip].info = "length "..string.format("%.2f", resize).."s"
+ clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
 end
 
 function clip_reset(i)
@@ -335,7 +335,7 @@ function clip_reset(i)
  set_clip_length(track[i].clip, resize, 4)
  set_clip(i, track[i].clip)
  update_rate(i)
- clip[track[i].clip].info = "length "..string.format("%.2f", resize).."s"
+ clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
 end
 
 function clip_resize(i)
@@ -353,9 +353,9 @@ function clip_resize(i)
  set_clip(i, track[i].clip)
  update_rate(i)
  if track[i].tempo_map == 1 and params:get("t_map_mode") == 2 then
-   clip[track[i].clip].info = "repitched by "..string.format("%.2f", tempo / clip[track[i].clip].bpm).."x"
+   clip[track[i].clip].info = "repitch factor: "..string.format("%.2f", tempo / clip[track[i].clip].bpm)
  else
-   clip[track[i].clip].info = "length "..string.format("%.2f", resize).."s"
+   clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
  end
 end
 
