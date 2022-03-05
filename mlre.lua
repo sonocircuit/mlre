@@ -401,7 +401,6 @@ end
 route = {}
 route.adc = 1
 route.tape = 0
---route.eng = 0
 for i = 1, 5 do
  route[i] = {}
  route[i].t5 = 0
@@ -595,7 +594,7 @@ function arm_thresh_rec(i) --start poll if oneshot == 1
  end
 end
 
-function thresh_rec() --start rec and clear loop when threshold is reached
+function thresh_rec() --start rec when threshold is reached
 local i = oneshot_on
    if track[i].oneshot == 1 then
      track[i].rec = 1
