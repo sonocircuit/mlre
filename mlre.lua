@@ -575,14 +575,9 @@ function retrig() --retrig function for playing tracks
  end
 end
 
+-- threshold recording
 function arm_thresh_rec(i) --start poll if oneshot == 1
  if track[i].oneshot == 1 then
-  for n = 1, 6 do
-    if n ~= i then
-      track[n].oneshot = 0
-    end
-  end
-  oneshot_on = i
    amp_in[1]:start()
    amp_in[2]:start()
  else
@@ -1327,6 +1322,12 @@ v.gridkey[vREC] = function(x, y, z)
        set_rec(i)
      elseif x == 2 then
        track[i].oneshot = 1 - track[i].oneshot --need to figure out how to toggle AND have only one active at a time
+       for n = 1, 6 do
+         if n ~= i then
+           track[n].oneshot = 0
+         end
+       end
+       oneshot_on = i
        arm_thresh_rec(i) --amp_in poll starts
        update_cycle(i)  --duration of oneshot is set (dur)
      elseif x == 16 and alt == 0 and alt2 == 0 then
