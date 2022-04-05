@@ -8,6 +8,6 @@ I'd like to point out that there might be some bits of code that might be messy/
 
 Also, this wouldn't have been possible without the countless contributions made by many members of ////////! Studying other scripts and comments on the forum and discord channel have been, and will continue to be, **an immense source of knowlage**! 
 
-A special thanks to **tehn** for creating mlr and **zebra** for softcut, answering questions and some helpful lines of code, **justmat** for hnds and bits of code from "otis" and **infinitedigits** for answering questions and some bits of code from "oooooo".
+A special thanks to **tehn** for creating mlr and **zebra** for softcut, answering questions and some very helpful lines of code. Also a great thanks to **justmat**, **infinitedigits** and **dan_derks** for inspiration, support, answering questions and some very helpful lines of code.
 
 ### Documentation: [mlre user guide](https://github.com/sonoCircuits/mlre/blob/main/docs/mlre%20user%20guide.pdf)
