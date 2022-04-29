@@ -14,4 +14,4 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut, answeri
 
 ## Roadmap:
 - cleanup and bugfixes   
-- ~~session save and load (session includes pattern data, audio buffer and psets)~~   
+- ~~session save and load (session includes pattern data, audio buffer and psets)~~   DONE!
