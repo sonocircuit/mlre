@@ -1,4 +1,4 @@
--- mlre v1.1.0 @sonocircuit
+-- mlre v1.2.0 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -33,6 +33,7 @@ local oneshot_rec = false
 local transport_run = false
 local loop_pos = 1
 local max_cliplength = 42 -- seconds per clip per buffer (max 8 clips in total)
+local click_time = 0.06 -- 60ms delay
 
 --for transpose scales
 local scale_options = {"semitones", "minor", "major", "custom"}
@@ -140,17 +141,39 @@ function event_exec(e)
      track[e.i].play = 1
      softcut.play(e.i, 1)
      softcut.rec(e.i, 1)
+     clock.run(
+     function()
+       clock.sleep(click_time)
+       if track[e.i].mute == 0 then
+         softcut.level(e.i, track[e.i].level)
+       end
+     end
+   )
    end
  elseif e.t == eSTOP then
-   track[e.i].play = 0
-   softcut.play(e.i, 0)
-   softcut.rec(e.i, 0)
-   dirtygrid = true
+   softcut.level(e.i, 0)
+   clock.run(
+     function()
+       clock.sleep(click_time)
+       track[e.i].play = 0
+       softcut.play(e.i, 0)
+       softcut.rec(e.i, 0)
+       dirtygrid = true
+     end
+   )
  elseif e.t == eSTART then
    track[e.i].play = 1
    softcut.play(e.i, 1)
    softcut.rec(e.i, 1)
-   dirtygrid = true
+   clock.run(
+     function()
+       clock.sleep(click_time)
+       if track[e.i].mute == 0 then
+         softcut.level(e.i, track[e.i].level)
+       end
+       dirtygrid = true
+     end
+   )
  elseif e.t == eLOOP then
    track[e.i].loop = 1
    track[e.i].loop_start = e.loop_start
@@ -163,11 +186,11 @@ function event_exec(e)
  elseif e.t == eSPEED then
    track[e.i].speed = e.speed
    update_rate(e.i)
-   if view == vREC then dirtygrid = true end
+   dirtygrid = true
  elseif e.t == eREV then
    track[e.i].rev = e.rev
    update_rate(e.i)
-   if view == vREC then dirtygrid = true end
+   dirtygrid = true
  elseif e.t == eMUTE then
    track[e.i].mute = e.mute
    set_level(e.i)
@@ -180,7 +203,7 @@ function event_exec(e)
  elseif e.t == eBUFF then
    track[e.i].buffer = e.buffer
    params:set(e.i.."buffer_sel", track[e.i].buffer)
-   if view == vREC then dirtygrid = true end
+   dirtygrid = true
  elseif e.t == ePATTERN then
    if e.action == "stop" then pattern[e.i]:stop()
    elseif e.action == "start" then pattern[e.i]:start()
@@ -379,6 +402,20 @@ function set_buffer(n) -- select softcut buffer to record to
  end
 end
 
+function copy_buffer(i)
+  local src_ch
+  local dst_ch
+  if params:get(i.."buffer_sel") == 1 then
+    src_ch = 1
+    dst_ch = 2
+  else
+    src_ch = 2
+    dst_ch = 1
+  end
+  softcut.buffer_copy_mono(src_ch, dst_ch, clip[i].s, clip[i].s, max_cliplength)
+  print("clip "..i.." buffer "..src_ch.." copied to buffer ".. dst_ch)
+end
+
 -- for track routing
 route = {}
 route.adc = 1
@@ -497,6 +534,7 @@ function lfo.process()
      end
    end
  end
+ if view == 4 then dirtygrid = true end -- for blinkenlights (lfo slope on "on" grid key)
 end
 
 -- scale and transpose functions
@@ -760,6 +798,11 @@ end
 
 function ledpulse()
  ledview = (ledview % 8) + 4
+ for i = 1, 4 do
+   if (track[i].oneshot == 1 or pattern[i].overdub == 1) then
+     dirtygrid = true
+   end
+ end
 end
 
 -- init
@@ -845,10 +888,6 @@ init = function()
    -- select buffer
    params:add_option(i.."buffer_sel", i.." side", {"A", "B"}, 1)
    params:set_action(i.."buffer_sel", function(x) track[i].side = x - 1 set_buffer(i) end)
-   -- store loaded or saved file in pset
-   params:add_file(i.."file", i.." file", "")
-   params:set_action(i.."file", function(n) fileselect_callback(n, i) end)
-   params:hide(i.."file")
 
    -- filter params
    params:add_separator("filter")
@@ -897,16 +936,137 @@ init = function()
 
  end
 
+ -- params for modulation (hnds_mlre)
+ params:add_separator("modulation")
+ for i = 1, 6 do lfo[i].lfo_targets = lfo_targets end
+ lfo.init()
+
  -- params for clip resize
  for i = 1, 8 do
    params:add_option(i.."clip_length", i.." clip length", {"1/4", "2/4", "3/4", "4/4", "6/4", "8/4", "12/4", "16/4"}, 4)
    params:hide(i.."clip_length")
  end
 
- -- params for modulation (hnds_mlre)
- params:add_separator("modulation")
- for i = 1, 6 do lfo[i].lfo_targets = lfo_targets end
- lfo.init()
+ -- pset callback
+ params.action_write = function(filename, name)
+   os.execute("mkdir -p "..norns.state.data.."sessions/")
+
+   -- save buffer content
+   softcut.buffer_write_mono(norns.state.data.."sessions/"..name.."_buffer.wav", 0, -1, 1)
+
+   -- save data in one big table
+   local sesh_data = {}
+   -- clip data
+   for i = 1, 8 do
+     sesh_data[i] = {}
+     sesh_data[i].clip_name = clip[i].name
+     sesh_data[i].clip_info = clip[i].info
+     sesh_data[i].clip_reset = clip[i].reset
+     sesh_data[i].clip_e = clip[i].e
+     sesh_data[i].clip_l = clip[i].l
+     sesh_data[i].clip_bpm = clip[i].bpm
+   end
+   -- route data
+   for i = 1, 5 do
+     sesh_data[i].route_t5 = route[i].t5
+     sesh_data[i].route_t6 = route[i].t6
+   end
+   -- track data
+   for i = 1, 6 do
+     sesh_data[i].track_sel = track[i].sel
+     sesh_data[i].track_fade = track[i].fade
+     sesh_data[i].track_mute = track[i].mute
+     sesh_data[i].track_speed = track[i].speed
+     sesh_data[i].track_rev = track[i].rev
+     sesh_data[i].track_tempo_map = track[i].tempo_map
+     sesh_data[i].track_loop = track[i].loop
+     sesh_data[i].track_loop_start = track[i].loop_start
+     sesh_data[i].track_loop_end = track[i].loop_end
+     sesh_data[i].track_clip = track[i].clip
+   end
+   -- pattern and recall data
+   for i = 1, 4 do
+     sesh_data[i].pattern_count = pattern[i].count
+     sesh_data[i].pattern_time = pattern[i].time
+     sesh_data[i].pattern_event = pattern[i].event
+     sesh_data[i].pattern_time_factor = pattern[i].time_factor
+     sesh_data[i].recall_has_data = recall[i].has_data
+     sesh_data[i].recall_event = recall[i].event
+   end
+
+   -- and save the chunk
+   tab.save(sesh_data, norns.state.data.."sessions/"..name.."_session.data")
+
+   print("finished writing '"..filename.."' as '"..name.."'")
+ end
+
+ params.action_read = function(filename)
+   local loaded_file = io.open(filename, "r")
+   if loaded_file then
+     io.input(loaded_file)
+     local pset_id = string.sub(io.read(), 4, -1)
+     io.close(loaded_file)
+
+     -- load buffer content
+     softcut.buffer_clear ()
+     softcut.buffer_read_mono(norns.state.data.."sessions/"..pset_id.."_buffer.wav", 0, 0, -1, 1, 1)
+
+     -- load sesh data
+     sesh_data = tab.load(norns.state.data.."sessions/"..pset_id.."_session.data")
+     -- load clip data
+     for i = 1, 8 do
+       clip[i].name = sesh_data[i].clip_name
+       clip[i].info = sesh_data[i].clip_info
+       clip[i].reset = sesh_data[i].clip_reset
+       clip[i].e = sesh_data[i].clip_e
+       clip[i].l = sesh_data[i].clip_l
+       clip[i].bpm = sesh_data[i].clip_bpm
+     end
+     -- load route data
+     for i = 1, 5 do
+       route[i].t5 = sesh_data[i].route_t5
+       route[i].t6 = sesh_data[i].route_t6
+       set_track_route(i)
+     end
+     -- load track data
+     for i = 1, 6 do
+       track[i].clip = sesh_data[i].track_clip
+       set_clip(i, track[i].clip)
+       track[i].tempo_map = sesh_data[i].track_tempo_map
+       if track[i].tempo_map == 1 then clip_resize(i) end
+       track[i].sel = sesh_data[i].track_sel
+       track[i].fade = sesh_data[i].track_fade
+       e = {} e.t = eMUTE e.i = i e.mute = sesh_data[i].track_mute event(e)
+       e = {} e.t = eREV e.i = i e.rev = sesh_data[i].track_rev event(e)
+       e = {} e.t = eSPEED e.i = i e.speed = sesh_data[i].track_speed event(e)
+       if sesh_data[i].track_loop == 1 then
+         e = {}
+         e.t = eLOOP
+         e.i = i
+         e.loop = 1
+         e.loop_start = sesh_data[i].track_loop_start
+         e.loop_end = sesh_data[i].track_loop_end
+         event(e)
+       end
+       set_rec(i)
+     end
+     -- load pattern and recall data
+     for i = 1, 4 do
+       pattern[i].count = sesh_data[i].pattern_count
+       pattern[i].time = {table.unpack(sesh_data[i].pattern_time)}
+       pattern[i].event = {table.unpack(sesh_data[i].pattern_event)}
+       pattern[i].time_factor = sesh_data[i].pattern_time_factor
+       recall[i].has_data = sesh_data[i].recall_has_data
+       recall[i].event = {table.unpack(sesh_data[i].recall_event)}
+     end
+
+     dirtygrid = true
+
+     print("finished reading '"..filename.."'")
+   else
+     print("ERROR pset callback")
+   end
+ end
 
  -- metros
  ledcounter = metro.init(ledpulse, 0.1, -1)
@@ -966,6 +1126,7 @@ phase = function(n, x)
    track[n].pos_grid = x
    if view == vCUT then dirtygrid = true end
    if view == vREC then dirtygrid = true end
+   if view == vTRSP then dirtygrid = true end
  end
 end
 
@@ -1700,7 +1861,11 @@ v.gridkey[vLFO] = function(x, y, z)
    end
    if y == 8 then
      if x >= 1 and x <= 3 then
-       params:set(pageLFO.."lfo_shape", x)
+       if alt == 0 then
+         params:set(pageLFO.."lfo_shape", x)
+       elseif alt == 1 then
+         params:set(pageLFO.."lfo_range", x)
+       end
      end
      if x > 3 and x < 10 then
        trksel = 6 * (x - 4)
@@ -1735,7 +1900,11 @@ v.gridredraw[vLFO] = function()
    g:led(i + 3, 8, 4)
    g:led(i + 10, 8, 4)
  end
- g:led(params:get(pageLFO.."lfo_shape"), 8, 5)
+ if alt == 0 then
+   g:led(params:get(pageLFO.."lfo_shape"), 8, 5)
+ elseif alt == 1 then
+   g:led(params:get(pageLFO.."lfo_range"), 8, 5)
+ end
  g:led(trksel / 6 + 4, 8, 12)
  if dstview == 1 then
    g:led((params:get(pageLFO.."lfo_target") + 9) - trksel, 8, 12)
@@ -1767,7 +1936,6 @@ function fileselect_callback(path, c)
      clip[track[c].clip].info = "length "..string.format("%.2f", l).."s"
      clip[track[c].clip].reset = l
      update_rate(c)
-     params:set(c.."file", path)
    else
      print("not a sound file")
    end
@@ -1786,8 +1954,6 @@ function textentry_callback(txt)
    util.make_dir(_path.audio .. "mlre")
    softcut.buffer_write_mono(_path.audio.."mlre/"..txt..".wav", c_start, c_len, buffer)
    clip[track[clip_sel].clip].name = txt
-   path = _path.audio.."mlre/"..txt..".wav"
-   params:set(clip_sel.."file", path) -- set path in params so it's saved in pset
  else
    print("save cancel")
  end
@@ -1879,10 +2045,14 @@ end
 v.gridkey[vCLIP] = function(x, y, z)
  if y == 1 then gridkey_nav(x, z)
  elseif z == 1 then
-   if y < 8 and x < 9 then
-     clip_sel = y - 1
-     if x ~= track[clip_sel].clip then
-       set_clip(clip_sel, x)
+   if y > 1 and y < 8 and x < 9 then
+     if alt == 0 then
+       clip_sel = y - 1
+       if x ~= track[clip_sel].clip then
+         set_clip(clip_sel, x)
+       end
+     elseif alt == 1 then
+       copy_buffer(x)
      end
    elseif y > 1 and y < 8 and x > 9 and x < 14 then
      local i = y - 1
