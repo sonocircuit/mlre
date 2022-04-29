@@ -14,5 +14,4 @@ A special thanks to **tehn** for creating mlr and **zebra** for softcut, answeri
 
 ## Roadmap:
 - cleanup and bugfixes   
-- session save and load (session includes pattern data, audio buffer and psets)   
-- alt playback behaviour (random, drunk, warble)   
+- ~~session save and load (session includes pattern data, audio buffer and psets)   ~~   
