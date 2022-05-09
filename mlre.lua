@@ -1,4 +1,4 @@
--- mlre v1.2.0 @sonocircuit
+-- mlre v1.2.1 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -412,8 +412,9 @@ function copy_buffer(i)
     src_ch = 2
     dst_ch = 1
   end
-  softcut.buffer_copy_mono(src_ch, dst_ch, clip[i].s, clip[i].s, max_cliplength)
-  print("clip "..i.." buffer "..src_ch.." copied to buffer ".. dst_ch)
+  softcut.buffer_copy_mono(src_ch, dst_ch, clip[track[i].clip].s, clip[track[i].clip].s, max_cliplength)
+  show_message("clip "..track[i].clip.." copied to buffer "..dst_ch)
+  print("clip "..track[i].clip.." buffer "..src_ch.." copied to buffer "..dst_ch)
 end
 
 -- for track routing
@@ -745,6 +746,8 @@ viewinfo[vCLIP] = 0
 viewinfo[vLFO] = 0
 viewinfo[vTRSP] = 0
 
+local view_message = ""
+
 focus = 1
 alt = 0
 alt2 = 0
@@ -803,6 +806,16 @@ function ledpulse()
      dirtygrid = true
    end
  end
+end
+
+function show_message(message)
+  clock.run(function()
+    view_message = message
+    redraw()
+    clock.sleep(0.8) -- display time
+    view_message = ""
+    redraw()
+  end)
 end
 
 -- init
@@ -996,7 +1009,6 @@ init = function()
 
    -- and save the chunk
    tab.save(sesh_data, norns.state.data.."sessions/"..name.."_session.data")
-
    print("finished writing '"..filename.."' as '"..name.."'")
  end
 
@@ -1013,6 +1025,7 @@ init = function()
 
      -- load sesh data
      sesh_data = tab.load(norns.state.data.."sessions/"..pset_id.."_session.data")
+
      -- load clip data
      for i = 1, 8 do
        clip[i].name = sesh_data[i].clip_name
@@ -1022,12 +1035,14 @@ init = function()
        clip[i].l = sesh_data[i].clip_l
        clip[i].bpm = sesh_data[i].clip_bpm
      end
+
      -- load route data
      for i = 1, 5 do
        route[i].t5 = sesh_data[i].route_t5
        route[i].t6 = sesh_data[i].route_t6
        set_track_route(i)
      end
+
      -- load track data
      for i = 1, 6 do
        track[i].clip = sesh_data[i].track_clip
@@ -1050,6 +1065,7 @@ init = function()
        end
        set_rec(i)
      end
+
      -- load pattern and recall data
      for i = 1, 4 do
        pattern[i].count = sesh_data[i].pattern_count
@@ -1059,12 +1075,8 @@ init = function()
        recall[i].has_data = sesh_data[i].recall_has_data
        recall[i].event = {table.unpack(sesh_data[i].recall_event)}
      end
-
      dirtygrid = true
-
      print("finished reading '"..filename.."'")
-   else
-     print("ERROR pset callback")
    end
  end
 
@@ -1109,7 +1121,8 @@ init = function()
 
  clock.run(clock_update_tempo)
 
- -- set "local e" to other than nil (addressed error that occured when thresh_rec() is called before any track is played)
+ -- set "local e" to other than nil:
+ -- (addressed error that occured when thresh_rec() is called before any track is played)
  for i = 1, 6 do
    track[i].play = 1
    track[i].play = 0
@@ -1144,13 +1157,23 @@ end
 gridkey_nav = function(x, z)
  if z == 1 then
    if x == 1 then
-     if alt == 1 then clear_clip(focus) print("clip "..track[focus].clip.." cleared")
-     else set_view(vREC) end
-   elseif x == 2 and alt == 0 then set_view(vCUT)
+     if alt == 1 then
+       clear_clip(focus)
+       show_message("clip "..track[focus].clip.." cleared")
+     else
+       set_view(vREC)
+     end
+   elseif x == 2 and alt == 0 then
+      set_view(vCUT)
    elseif x == 3 then
-     if alt == 1 then softcut.buffer_clear() print("both buffers cleared")
-     else set_view(vTRSP) end
-   elseif x == 4 and alt == 0 then set_view(vLFO)
+     if alt == 1 then
+       softcut.buffer_clear()
+       show_message("buffers cleared")
+     else
+       set_view(vTRSP)
+     end
+   elseif x == 4 and alt == 0 then
+     set_view(vLFO)
    elseif x > 4 and x < 9 then
      local i = x - 4
      if alt == 1 then
@@ -1434,6 +1457,21 @@ v.redraw[vREC] = function()
    screen.move(70, 60)
    screen.text("level slew")
  end
+
+ if view_message ~= "" then
+   x = 64
+   y = 28
+   screen.level(0)
+   screen.rect(0, y - 4, 129, 24)
+   screen.fill()
+   screen.level(10)
+   screen.rect(0, y, 129, 16)
+   screen.stroke()
+   screen.level(15)
+   screen.move(x, y + 10)
+   screen.text_center(view_message)
+ end
+
  screen.update()
 end
 
@@ -1835,6 +1873,20 @@ v.redraw[vLFO] = function()
  screen.move(70, 60)
  screen.text("shape")
 
+ if view_message ~= "" then
+   x = 64
+   y = 28
+   screen.level(0)
+   screen.rect(0, y - 4, 129, 24)
+   screen.fill()
+   screen.level(10)
+   screen.rect(0, y, 129, 16)
+   screen.stroke()
+   screen.level(15)
+   screen.move(x, y + 10)
+   screen.text_center(view_message)
+ end
+
  screen.update()
 end
 
@@ -1931,7 +1983,7 @@ function fileselect_callback(path, c)
      local r_idx = params:get(track[c].clip.."clip_length")
      local r_val = resize_values[r_idx]
      set_clip_length(track[c].clip, l, r_val)
-     set_clip(c,track[c].clip)
+     set_clip(c, track[c].clip)
      clip[track[c].clip].name = path:match("[^/]*$")
      clip[track[c].clip].info = "length "..string.format("%.2f", l).."s"
      clip[track[c].clip].reset = l
@@ -2039,6 +2091,20 @@ v.redraw[vCLIP] = function()
  screen.move(120, 16)
  screen.text("Q")
 
+ if view_message ~= "" then
+   x = 64
+   y = 28
+   screen.level(0)
+   screen.rect(0, y - 4, 129, 24)
+   screen.fill()
+   screen.level(10)
+   screen.rect(0, y, 129, 16)
+   screen.stroke()
+   screen.level(15)
+   screen.move(x, y + 10)
+   screen.text_center(view_message)
+ end
+
  screen.update()
 end
 
@@ -2046,13 +2112,13 @@ v.gridkey[vCLIP] = function(x, y, z)
  if y == 1 then gridkey_nav(x, z)
  elseif z == 1 then
    if y > 1 and y < 8 and x < 9 then
-     if alt == 0 then
-       clip_sel = y - 1
+     clip_sel = y - 1
+     if alt2 == 0 then
        if x ~= track[clip_sel].clip then
          set_clip(clip_sel, x)
        end
-     elseif alt == 1 then
-       copy_buffer(x)
+     elseif alt2 == 1 then
+       copy_buffer(clip_sel)
      end
    elseif y > 1 and y < 8 and x > 9 and x < 14 then
      local i = y - 1
