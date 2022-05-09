@@ -24,7 +24,6 @@ local key1_hold = 0
 local scale_idx = 1
 local trksel = 0
 local dstview = 0
-local dur = 0
 local trsp = 1
 local ledview = 1
 local quantize = 0
@@ -263,6 +262,7 @@ for i = 1, 6 do
  track[i].loop = 0
  track[i].loop_start = 0
  track[i].loop_end = 16
+ track[i].dur = 4
  track[i].clip = i
  track[i].pos = 0
  track[i].pos_grid = -1
@@ -405,16 +405,21 @@ end
 function copy_buffer(i)
   local src_ch
   local dst_ch
+  local src_name = ""
+  local dst_name = ""
   if params:get(i.."buffer_sel") == 1 then
     src_ch = 1
     dst_ch = 2
+    src_name = "main"
+    dst_name = "temp"
   else
     src_ch = 2
     dst_ch = 1
+    src_name = "temp"
+    dst_name = "main"
   end
   softcut.buffer_copy_mono(src_ch, dst_ch, clip[track[i].clip].s, clip[track[i].clip].s, max_cliplength)
-  show_message("clip "..track[i].clip.." copied to buffer "..dst_ch)
-  print("clip "..track[i].clip.." buffer "..src_ch.." copied to buffer "..dst_ch)
+  show_message("clip "..track[i].clip.." copied to "..dst_name.." buffer")
 end
 
 -- for track routing
@@ -635,15 +640,15 @@ function update_cycle(n) -- calculate cycle length when oneshot == 1
  oneshot_rec = false
  if track[n].oneshot == 1 then
    if track[n].tempo_map == 1 and params:get("t_map_mode") == 2 then
-     dur = ((60 / tempo) * clip[track[n].clip].l) / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
+     track[n].dur = ((60 / tempo) * clip[track[n].clip].l) / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
    else
-     dur = clip[track[n].clip].l / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
+     track[n].dur = clip[track[n].clip].l / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
    end
  end
 end
 
 function oneshot(cycle) -- triggerd when rec thresh is reached (amp_in poll callback)
- clock.sleep(cycle) -- length of cycle for time interval specified by 'dur'
+ clock.sleep(cycle) -- length of cycle for time interval specified by 'track[i].dur'
    if track[oneshot_on].oneshot == 1 then
      track[oneshot_on].rec = 0
      track[oneshot_on].oneshot = 0
@@ -899,7 +904,7 @@ init = function()
    params:add_control(i.."level_slew", i.." level slew", controlspec.new(0.0, 10.0, "lin", 0.1, 0.1, ""))
    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) end)
    -- select buffer
-   params:add_option(i.."buffer_sel", i.." side", {"A", "B"}, 1)
+   params:add_option(i.."buffer_sel", i.." buffer", {"main", "temp"}, 1)
    params:set_action(i.."buffer_sel", function(x) track[i].side = x - 1 set_buffer(i) end)
 
    -- filter params
@@ -910,7 +915,7 @@ init = function()
    -- filter q
    params:add_control(i.."filter_q", i.." filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) end)
-   --filter type
+   -- filter type
    params:add_option(i.."filter_type", i.." type", {"low pass", "high pass", "band pass", "band reject", "off"}, 1)
    params:set_action(i.."filter_type", function() filter_select(i) end)
    -- post filter dry level
@@ -1086,7 +1091,6 @@ init = function()
 
  gridredrawtimer = metro.init(function() gridredraw() end, 0.02, -1)
  gridredrawtimer:start()
- dirtygrid = true
 
  screenredrawtimer = metro.init(function() redraw() end, 0.1, -1)
  screenredrawtimer:start()
@@ -1100,7 +1104,7 @@ init = function()
    amp_in[ch].callback = function(val)
      if val > util.dbamp(params:get("rec_threshold")) / 10 then
        loop_point()
-       clock.run(oneshot, dur) --when rec starts, clock coroutine starts
+       clock.run(oneshot, track[oneshot_on].dur) -- when rec starts, clock coroutine starts
        thresh_rec()
        oneshot_rec = true
        amp_in[ch]:stop()
@@ -1506,7 +1510,7 @@ v.gridkey[vREC] = function(x, y, z)
        end
        oneshot_on = i
        arm_thresh_rec(i) -- amp_in poll starts
-       update_cycle(i)  -- duration of oneshot is set (dur)
+       update_cycle(i)  -- duration of oneshot is set (track[i].dur)
      elseif x == 16 and alt == 0 and alt2 == 0 then
        if track[i].play == 1 then
          e = {}
