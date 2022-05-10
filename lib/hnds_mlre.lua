@@ -7,21 +7,20 @@
 -- slightly adapted by @sonocircuit
 
 local number_of_outputs = 6
-
 local tau = math.pi * 2
+local r_factor = 1
 
-local options = {
-  lfotypes = {
-    "sine",
-    "square",
-    "s+h"
-  }
-}
+local options = {}
+options.lfotypes = {"sine", "square", "s+h"}
+options.ranges = {"low", "mid", "high"}
+options.factors = {0.25, 1, 2}
 
 local lfo = {}
 for i = 1, number_of_outputs do
   lfo[i] = {
-    freq = 0.01,
+    freq = 0.1,
+    f_val = 0.01,
+    f_range = 1,
     counter = 1,
     waveform = options.lfotypes[1],
     slope = 0,
@@ -73,11 +72,16 @@ local function make_sh(n)
   end
 end
 
+local function set_lfo_freq(i)
+  lfo[i].freq = lfo[i].f_val * lfo[i].f_range
+end
+
+
 function lfo.init()
     --params:add_separator("modulation")
   for i = 1, number_of_outputs do
     --params:add_separator("lfo " .. i)
-    params:add_group("lfo " .. i, 6)
+    params:add_group("lfo " .. i, 7)
     -- modulation destination
     params:add_option(i .. "lfo_target", "lfo target", lfo[i].lfo_targets, 1)
     -- lfo shape
@@ -91,7 +95,10 @@ function lfo.init()
     params:set_action(i .. "offset", function(value) lfo[i].offset = value end)
     -- lfo speed
     params:add_control(i .. "lfo_freq", "lfo freq", controlspec.new(0.1, 10.0, "lin", 0.1, 0.5, ""))
-    params:set_action(i .. "lfo_freq", function(value) lfo[i].freq = value end)
+    params:set_action(i .. "lfo_freq", function(value) lfo[i].f_val = value set_lfo_freq(i) end)
+    -- speed range
+    params:add_option(i .. "lfo_range", "lfo range", options.ranges, 2)
+    params:set_action(i .. "lfo_range", function(idx) lfo[i].f_range = options.factors[idx] set_lfo_freq(i) end)
     -- lfo on/off
     params:add_option(i .. "lfo", "lfo on/off", {"off", "on"}, 1)
   end
@@ -116,9 +123,10 @@ function lfo.init()
       end
     end
     lfo.process()
-    dirtygrid = true --for blinkenlights (lfo slope on "on" grid key)
   end
+
   lfo_metro:start()
+
 end
 
 return lfo
