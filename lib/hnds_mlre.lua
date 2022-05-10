@@ -19,7 +19,7 @@ local lfo = {}
 for i = 1, number_of_outputs do
   lfo[i] = {
     freq = 0.1,
-    f_val = 0.01,
+    f_val = 0.1,
     f_range = 1,
     counter = 1,
     waveform = options.lfotypes[1],
@@ -124,9 +124,7 @@ function lfo.init()
     end
     lfo.process()
   end
-
   lfo_metro:start()
-
 end
 
 return lfo
