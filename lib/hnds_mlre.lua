@@ -76,6 +76,10 @@ local function set_lfo_freq(i)
   lfo[i].freq = lfo[i].f_val * lfo[i].f_range
 end
 
+function refresh()
+  if view == 4 then dirtygrid = true end
+  if view == 4 then dirtyscreen = true end
+end
 
 function lfo.init()
     --params:add_separator("modulation")
@@ -84,23 +88,25 @@ function lfo.init()
     params:add_group("lfo " .. i, 7)
     -- modulation destination
     params:add_option(i .. "lfo_target", "lfo target", lfo[i].lfo_targets, 1)
+    params:set_action(i .. "lfo_target", function() refresh() end)
     -- lfo shape
     params:add_option(i .. "lfo_shape", "lfo shape", options.lfotypes, 1)
-    params:set_action(i .. "lfo_shape", function(value) lfo[i].waveform = options.lfotypes[value] end)
+    params:set_action(i .. "lfo_shape", function(value) lfo[i].waveform = options.lfotypes[value] refresh() end)
     -- lfo depth
     params:add_number(i .. "lfo_depth", "lfo depth", 0, 100, 0)
-    params:set_action(i .. "lfo_depth", function(value) lfo[i].depth = value end)
+    params:set_action(i .. "lfo_depth", function(value) lfo[i].depth = value refresh() end)
     -- lfo offset
     params:add_control(i .."offset", "offset", controlspec.new(-1, 1, "lin", 0.1, 0.0, ""))
-    params:set_action(i .. "offset", function(value) lfo[i].offset = value end)
+    params:set_action(i .. "offset", function(value) lfo[i].offset = value refresh() end)
     -- lfo speed
     params:add_control(i .. "lfo_freq", "lfo freq", controlspec.new(0.1, 10.0, "lin", 0.1, 0.5, ""))
-    params:set_action(i .. "lfo_freq", function(value) lfo[i].f_val = value set_lfo_freq(i) end)
+    params:set_action(i .. "lfo_freq", function(value) lfo[i].f_val = value set_lfo_freq(i) refresh() end)
     -- speed range
     params:add_option(i .. "lfo_range", "lfo range", options.ranges, 2)
-    params:set_action(i .. "lfo_range", function(idx) lfo[i].f_range = options.factors[idx] set_lfo_freq(i) end)
+    params:set_action(i .. "lfo_range", function(idx) lfo[i].f_range = options.factors[idx] set_lfo_freq(i) refresh() end)
     -- lfo on/off
     params:add_option(i .. "lfo", "lfo on/off", {"off", "on"}, 1)
+    params:set_action(i .. "lfo", function() refresh() end)
   end
 
   local lfo_metro = metro.init()
