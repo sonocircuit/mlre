@@ -35,7 +35,8 @@ local autolength = false
 local loop_pos = 1
 local trk_len = 0
 local declick = 0.06 -- 60ms delay
-local max_cliplength = 41 -- seconds per clip per buffer (max 8 clips in total)
+local clip_gap = 1 -- 1s gap between clips
+local max_cliplength = 42 -- seconds per clip per buffer (max 8 clips in total)
 
 --for transpose scales
 local scale_options = {"major", "natural minor", "harmonic minor", "melodic minor", "dorian", "phrygian", "lydian", "mixolydian", "locrian", "custom"}
@@ -86,30 +87,9 @@ local eMUTE = 7
 local eTRSP = 8
 local ePATTERN = 9
 
+local div = 16
 local div_options = {"1bar", "1/2", "1/3", "1/4", "1/6", "1/8", "1/16", "1/32"}
 local div_values = {1, 2, 3, 4, 6, 8, 16, 32}
-
-local function update_tempo()
-  local d = params:get("quant_div")
-  div = div_values[d] / 4
-  for i = 1, 6 do
-    if track[i].tempo_map == 1 then
-      clip_resize(i)
-    end
-  end
-end
-
-local prev_tempo = params:get("clock_tempo")
-function clock_update_tempo()
-  while true do
-    clock.sync(1/24)
-    local curr_tempo = params:get("clock_tempo")
-    if prev_tempo ~= curr_tempo then
-      prev_tempo = curr_tempo
-      update_tempo()
-    end
-  end
-end
 
 function event_record(e)
   for i = 1, 8 do
@@ -220,8 +200,8 @@ function event_exec(e)
   elseif e.t == eTRSP then
     track[e.i].trsp = e.trsp
     params:set(e.i.."transpose", track[e.i].trsp)
-    if view == vTRSP then dirtygrid = true end
     if view == vCUT then dirtygrid = true end
+    if view == vTRSP then dirtygrid = true end
   elseif e.t == eBUFF then
     track[e.i].buffer = e.buffer
     params:set(e.i.."buffer_sel", track[e.i].buffer)
@@ -386,7 +366,7 @@ end
 clip = {}
 for i = 1, 8 do
   clip[i] = {}
-  clip[i].s = (2 * i) + (i - 1) * max_cliplength
+  clip[i].s = clip_gap * i + (i - 1) * max_cliplength
   clip[i].name = "-"
   clip[i].info = "length: 4.00s"
   clip[i].reset = 4
@@ -430,7 +410,7 @@ function clear_clip(i) -- clear active buffer of clip and set clip length
   else
     resize = r_val
   end
-  softcut.buffer_clear_region_channel(buffer, clip[track[i].clip].s, clip[track[i].clip].s + max_cliplength)
+  softcut.buffer_clear_region_channel(buffer, clip[track[i].clip].s, max_cliplength)
   set_clip_length(track[i].clip, resize, r_val)
   set_clip(i, track[i].clip)
   update_rate(i)
@@ -438,16 +418,13 @@ function clear_clip(i) -- clear active buffer of clip and set clip length
   clip[track[i].clip].reset = resize
   clip[track[i].clip].name = "-"
   clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
-
-  print("clip "..track[i].clip.." cleared")
-  print("clip start is "..clip[track[i].clip].s)
-  print("clip end is "..clip[track[i].clip].e)
-  print("clip cleared to "..clip[track[i].clip].s + max_cliplength)
 end
 
 function clip_reset(i) -- reset clip to default length
+  local r_idx = params:get(track[i].clip.."clip_length")
+  local r_val = resize_values[r_idx]
   local resize = clip[track[i].clip].reset
-  set_clip_length(track[i].clip, resize, 4) -- resize to "reset" length
+  set_clip_length(track[i].clip, resize, r_val) -- resize to "reset" length
   set_clip(i, track[i].clip)
   update_rate(i)
   track[i].loop = 0
@@ -480,6 +457,14 @@ function clip_resize(i) -- resize clip length oder track speed according to t_ma
   end
 end
 
+function update_track_tempo()
+  for i = 1, 6 do
+    if track[i].tempo_map == 1 then
+      clip_resize(i)
+    end
+  end
+end
+
 -- softcut functions
 function set_rec(n) -- set softcut rec and pre levels
   if track[n].fade == 0 then
@@ -499,7 +484,7 @@ function set_rec(n) -- set softcut rec and pre levels
       softcut.rec_level(n, 0)
     end
   end
-  if view ~= vLFO and pageNum == 1 then dirtyscreen = true end
+  if view < vLFO and pageNum == 1 then dirtyscreen = true end
 end
 
 function rec_enable(i)
@@ -515,7 +500,7 @@ function set_level(n) -- set track volume and mute track
   elseif track[n].mute == 0 then
     softcut.level(n, track[n].level)
   end
-  if view ~= vLFO and pageNum == 1 then dirtyscreen = true end
+  if view < vLFO and pageNum == 1 then dirtyscreen = true end
 end
 
 function set_buffer(n) -- select softcut buffer to record to
@@ -631,7 +616,7 @@ function filter_select(n) -- select filter type
     softcut.post_filter_br(n, 0)
     softcut.post_filter_dry(n, 1)
   end
-  if view ~= vLFO and pageNum == 2 then dirtyscreen = true end
+  if view < vLFO and pageNum == 2 then dirtyscreen = true end
 end
 
 -- for lfos (hnds_mlre)
@@ -718,14 +703,14 @@ function set_scale(n) -- set scale id, thanks zebra
     p.options = trsp_id[n]
     p:bang()
   end
-  if view ~= vLFO and pageNum == 3 then dirtyscreen = true end
+  if view < vLFO and pageNum == 3 then dirtyscreen = true end
 end
 
 function set_transpose(i, x) -- transpose track
   local scale_idx = params:get("scale")
   track[i].transpose = trsp_scale[scale_idx][x] / 1200
   update_rate(i)
-  if view ~= vLFO and pageNum == 3 then dirtyscreen = true end
+  if view < vLFO and pageNum == 3 then dirtyscreen = true end
 end
 
 -- transport functions
@@ -1157,7 +1142,7 @@ init = function()
     params:set_action(i.."vol", function(x) track[i].level = x set_level(i) end)
     -- track pan
     params:add_control(i.."pan", i.." pan", controlspec.new(-1, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."pan", function(x) softcut.pan(i, x) if view ~= vLFO and pageNum == 1 then dirtyscreen = true end end)
+    params:set_action(i.."pan", function(x) softcut.pan(i, x) if view < vLFO and pageNum == 1 then dirtyscreen = true end end)
     -- record level
     params:add_control(i.."rec", i.." rec", controlspec.new(0, 1, 'lin', 0, 1, ""))
     params:set_action(i.."rec", function(x) track[i].rec_level = x set_rec(i) end)
@@ -1166,16 +1151,16 @@ init = function()
     params:set_action(i.."dub", function(x) track[i].pre_level = x set_rec(i) end)
     -- detune
     params:add_control(i.."detune", i.." detune", controlspec.BIPOLAR)
-    params:set_action(i.."detune", function() update_rate(i) if view ~= vLFO and pageNum == 3 then dirtyscreen = true end end)
+    params:set_action(i.."detune", function() update_rate(i) if view < vLFO and pageNum == 3 then dirtyscreen = true end end)
     -- transpose
     params:add_option(i.."transpose", i.." transpose", trsp_id[params:get("scale")], 8)
     params:set_action(i.."transpose", function(x) set_transpose(i, x) end)
     -- rate slew
     params:add_control(i.."rate_slew", i.." rate slew", controlspec.new(0, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."rate_slew", function(x) softcut.rate_slew_time(i, x) if view ~= vLFO and pageNum == 3 then dirtyscreen = true end end)
+    params:set_action(i.."rate_slew", function(x) softcut.rate_slew_time(i, x) if view < vLFO and pageNum == 3 then dirtyscreen = true end end)
     -- level slew
     params:add_control(i.."level_slew", i.." level slew", controlspec.new(0.1, 10.0, "lin", 0.1, 0.1, ""))
-    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) if view ~= vLFO and pageNum == 3 then dirtyscreen = true end end)
+    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) if view < vLFO and pageNum == 3 then dirtyscreen = true end end)
     -- send level track 5
     params:add_control(i.."send_track5", i.." send track 5", controlspec.new(0, 1, 'lin', 0, 1, ""))
     params:set_action(i.."send_track5", function(x) track[i].send_t5 = x set_track_route(i) end)
@@ -1189,16 +1174,16 @@ init = function()
     params:add_separator("filter")
     -- cutoff
     params:add_control(i.."cutoff", i.." cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
-    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) if view ~= vLFO and pageNum == 2 then dirtyscreen = true end end)
+    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
     -- filter q
     params:add_control(i.."filter_q", i.." filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
-    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) if view ~= vLFO and pageNum == 2 then dirtyscreen = true end end)
+    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
     -- filter type
     params:add_option(i.."filter_type", i.." type", {"low pass", "high pass", "band pass", "band reject", "off"}, 1)
     params:set_action(i.."filter_type", function() filter_select(i) end)
     -- post filter dry level
     params:add_control(i.."post_dry", i.." dry level", controlspec.new(0, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) if view ~= vLFO and pageNum == 2 then dirtyscreen = true end end)
+    params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
 
     -- warble params
     params:add_separator("wow & flutter")
@@ -1273,11 +1258,11 @@ init = function()
 
   -- params for quant division
   params:add_option("quant_div", "quant div", div_options, 7)
-  params:set_action("quant_div", function() update_tempo() end)
+  params:set_action("quant_div", function(d) div = div_values[d] / 4 end)
   params:hide("quant_div")
 
   -- params for clock tempo
-  params:set_action("clock_tempo", function() update_tempo() end)
+  params:set_action("clock_tempo", function() update_track_tempo() end)
 
   -- pset callback
   params.action_write = function(filename, name)
@@ -1480,16 +1465,12 @@ init = function()
 
   set_view(vREC)
 
-  update_tempo()
-
   grid.add = draw_grid_connected
 
   params:bang()
 
   softcut.event_phase(phase)
   softcut.poll_start_phase()
-
-  clock.run(clock_update_tempo)
 
   -- set "local e" to other than nil: workaround to an error that occured if thresh_rec() is called before any track is played
   for i = 1, 6 do
@@ -2383,7 +2364,7 @@ end
 clip_actions = {"load", "clear", "save", "reset"}
 clip_action = 1
 clip_sel = 1
-resize_values = {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 42}
+resize_values = {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, max_cliplength}
 resize_options = {"1/4", "2/4", "3/4", "4/4", "6/4", "8/4", "12/4", "16/4", "24/4", "32/4", "max"}
 
 function fileselect_callback(path, c)
@@ -2391,9 +2372,9 @@ function fileselect_callback(path, c)
   if path ~= "cancel" and path ~= "" then
     local ch, len = audio.file_info(path)
     if ch > 0 and len > 0 then
-      print("file: "..path.." "..clip[track[c].clip].s)
       softcut.buffer_read_mono(path, 0, clip[track[c].clip].s, max_cliplength, 1, buffer)
       local l = math.min(len / 48000, max_cliplength)
+      print("file: "..path.." "..clip[track[c].clip].s.."s to "..clip[track[c].clip].s + l.."s")
       local r_idx = params:get(track[c].clip.."clip_length")
       local r_val = resize_values[r_idx]
       set_clip_length(track[c].clip, l, r_val)
@@ -2401,7 +2382,7 @@ function fileselect_callback(path, c)
       update_rate(c)
       track[c].loop = 0
       clip[track[c].clip].name = path:match("[^/]*$")
-      clip[track[c].clip].info = "length "..string.format("%.2f", l).."s"
+      clip[track[c].clip].info = "length: "..string.format("%.2f", l).."s"
       clip[track[c].clip].reset = l
     else
       print("not a sound file")
