@@ -1,4 +1,4 @@
--- mlre v1.2.8 @sonocircuit
+-- mlre v1.3.2 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -35,6 +35,7 @@ local autolength = false
 local loop_pos = 1
 local trk_len = 0
 local declick = 0.06 -- 60ms delay
+local clip_gap = 1 -- 1s gap between clips
 local max_cliplength = 42 -- seconds per clip per buffer (max 8 clips in total)
 
 --for transpose scales
@@ -86,30 +87,9 @@ local eMUTE = 7
 local eTRSP = 8
 local ePATTERN = 9
 
+local div = 16
 local div_options = {"1bar", "1/2", "1/3", "1/4", "1/6", "1/8", "1/16", "1/32"}
 local div_values = {1, 2, 3, 4, 6, 8, 16, 32}
-
-local function update_tempo()
-  local d = params:get("quant_div")
-  div = div_values[d] / 4
-  for i = 1, 6 do
-    if track[i].tempo_map == 1 then
-      clip_resize(i)
-    end
-  end
-end
-
-local prev_tempo = params:get("clock_tempo")
-function clock_update_tempo()
-  while true do
-    clock.sync(1/24)
-    local curr_tempo = params:get("clock_tempo")
-    if prev_tempo ~= curr_tempo then
-      prev_tempo = curr_tempo
-      update_tempo()
-    end
-  end
-end
 
 function event_record(e)
   for i = 1, 8 do
@@ -174,7 +154,7 @@ function event_exec(e)
         end
       end)
     end
-    dirtygrid = true
+    if view < vLFO then dirtygrid = true end
   elseif e.t == eSTOP then
     softcut.level(e.i, 0)
     clock.run(
@@ -183,7 +163,7 @@ function event_exec(e)
       track[e.i].play = 0
       softcut.play(e.i, 0)
       softcut.rec(e.i, 0)
-      dirtygrid = true
+      if view < vLFO then dirtygrid = true end
     end)
   elseif e.t == eSTART then
     track[e.i].play = 1
@@ -195,7 +175,7 @@ function event_exec(e)
       if track[e.i].mute == 0 then
         softcut.level(e.i, track[e.i].level)
       end
-      dirtygrid = true
+      if view < vLFO then dirtygrid = true end
     end)
   elseif e.t == eLOOP then
     track[e.i].loop = 1
@@ -205,9 +185,7 @@ function event_exec(e)
     local lend = clip[track[e.i].clip].s + (track[e.i].loop_end) / 16 * clip[track[e.i].clip].l
     softcut.loop_start(e.i, lstart)
     softcut.loop_end(e.i, lend)
-    if view == vREC then dirtygrid = true end
-    if view == vCUT then dirtygrid = true end
-    if view == vTRSP then dirtygrid = true end
+    if view < vLFO then dirtygrid = true end
   elseif e.t == eSPEED then
     track[e.i].speed = e.speed
     update_rate(e.i)
@@ -215,15 +193,15 @@ function event_exec(e)
   elseif e.t == eREV then
     track[e.i].rev = e.rev
     update_rate(e.i)
-    dirtygrid = true
+    if view < vLFO then dirtygrid = true end
   elseif e.t == eMUTE then
     track[e.i].mute = e.mute
     set_level(e.i)
   elseif e.t == eTRSP then
     track[e.i].trsp = e.trsp
     params:set(e.i.."transpose", track[e.i].trsp)
-    if view == vTRSP then dirtygrid = true end
     if view == vCUT then dirtygrid = true end
+    if view == vTRSP then dirtygrid = true end
   elseif e.t == eBUFF then
     track[e.i].buffer = e.buffer
     params:set(e.i.."buffer_sel", track[e.i].buffer)
@@ -240,6 +218,7 @@ function event_exec(e)
   end
 end
 
+-- patterns and recall
 local patterns_only = false
 pattern = {}
 for i = 1, 8 do
@@ -248,7 +227,7 @@ for i = 1, 8 do
 end
 
 recall = {}
-for i = 1, 4 do
+for i = 1, 8 do
   recall[i] = {}
   recall[i].recording = false
   recall[i].has_data = false
@@ -257,7 +236,7 @@ for i = 1, 4 do
 end
 
 function recall_watch(e)
-  for i = 1, 4 do
+  for i = 1, 8 do
     if recall[i].recording == true then
       table.insert(recall[i].event, e)
       recall[i].has_data = true
@@ -271,12 +250,86 @@ function recall_exec(i)
   end
 end
 
+-- snapshots
+snapshot_mode = false
+snap = {}
+for i = 1, 8 do -- 8 snapshot slots
+  snap[i] = {}
+  snap[i].data = false
+  snap[i].active = false
+  snap[i].play = {}
+  snap[i].mute = {}
+  snap[i].loop = {}
+  snap[i].loop_start = {}
+  snap[i].loop_end = {}
+  snap[i].pos_grid = {}
+  snap[i].speed = {}
+  snap[i].rev = {}
+  snap[i].trsp = {}
+  for j = 1, 6 do -- 6 tracks
+    snap[i].play[j] = 0
+    snap[i].mute[j] = 0
+    snap[i].loop[j] = 0
+    snap[i].loop_start[j] = 1
+    snap[i].loop_end[j] = 16
+    snap[i].pos_grid[j] = 1
+    snap[i].speed[j] = 0
+    snap[i].rev[j] = 0
+    snap[i].trsp[j] = 8
+  end
+end
+
+function save_snapshot(n)
+  for i = 1, 6 do
+    snap[n].play[i] = track[i].play
+    snap[n].mute[i] = track[i].mute
+    snap[n].loop[i] = track[i].loop
+    snap[n].loop_start[i] = track[i].loop_start
+    snap[n].loop_end[i] = track[i].loop_end
+    snap[n].pos_grid[i] = track[i].pos_grid
+    snap[n].speed[i] = track[i].speed
+    snap[n].rev[i] = track[i].rev
+    snap[n].trsp[i] = track[i].trsp
+  end
+  snap[n].data = true
+end
+
+function load_snapshot(n)
+  for i = 1, 6 do
+    e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] event(e)
+    e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] event(e)
+    e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] event(e)
+    params:set(e.i.."transpose", snap[n].trsp[i])
+    if snap[n].loop[i] == 1 then
+      e = {}
+      e.t = eLOOP
+      e.i = i
+      e.loop = 1
+      e.loop_start = snap[n].loop_start[i]
+      e.loop_end = snap[n].loop_end[i]
+      event(e)
+    elseif snap[n].loop[i] == 0 then
+      track[i].loop = 0
+      softcut.loop_start(i, clip[track[i].clip].s)
+      softcut.loop_end(i, clip[track[i].clip].e)
+    end
+    local cut = (snap[n].pos_grid[i] / 16) * clip[track[i].clip].l + clip[track[i].clip].s
+    softcut.position(i, cut)
+    if snap[n].play[i] == 0 then
+      e = {} e.t = eSTOP e.i = i event(e)
+    else
+      e = {} e.t = eSTART e.i = i event(e)
+    end
+  end
+end
+
 -- for tracks and clip settings
 track = {}
 for i = 1, 6 do
   track[i] = {}
   track[i].head = (i - 1) % 4 + 1
   track[i].play = 0
+  track[i].momentary = false
   track[i].sel = 0
   track[i].rec = 0
   track[i].oneshot = 0
@@ -314,7 +367,7 @@ end
 clip = {}
 for i = 1, 8 do
   clip[i] = {}
-  clip[i].s = 2 + (i - 1) * max_cliplength
+  clip[i].s = clip_gap * i + (i - 1) * max_cliplength
   clip[i].name = "-"
   clip[i].info = "length: 4.00s"
   clip[i].reset = 4
@@ -358,9 +411,10 @@ function clear_clip(i) -- clear active buffer of clip and set clip length
   else
     resize = r_val
   end
-  softcut.buffer_clear_region_channel(buffer, clip[track[i].clip].s, clip[track[i].clip].s + max_cliplength)
+  softcut.buffer_clear_region_channel(buffer, clip[track[i].clip].s, max_cliplength)
   set_clip_length(track[i].clip, resize, r_val)
   set_clip(i, track[i].clip)
+  track[i].loop = 0
   update_rate(i)
   clip[track[i].clip].reset = resize
   clip[track[i].clip].name = "-"
@@ -368,9 +422,22 @@ function clear_clip(i) -- clear active buffer of clip and set clip length
 end
 
 function clip_reset(i) -- reset clip to default length
+  local r_idx = params:get(track[i].clip.."clip_length")
+  local r_val = resize_values[r_idx]
   local resize = clip[track[i].clip].reset
-  set_clip_length(track[i].clip, resize, 4) -- resize to "reset" length
+  set_clip_length(track[i].clip, resize, r_val) -- resize to "reset" length
   set_clip(i, track[i].clip)
+  if track[i].loop == 1 then
+    e = {}
+    e.t = eLOOP
+    e.i = i
+    e.loop = 1
+    e.loop_start = track[i].loop_start
+    e.loop_end = track[i].loop_end
+    event(e)
+  else
+    track[i].loop = 0
+  end
   update_rate(i)
   clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
 end
@@ -392,11 +459,30 @@ function clip_resize(i) -- resize clip length oder track speed according to t_ma
   end
   set_clip_length(track[i].clip, resize, r_val)
   set_clip(i, track[i].clip)
+  if track[i].loop == 1 then
+    e = {}
+    e.t = eLOOP
+    e.i = i
+    e.loop = 1
+    e.loop_start = track[i].loop_start
+    e.loop_end = track[i].loop_end
+    event(e)
+  else
+    track[i].loop = 0
+  end
   update_rate(i)
   if track[i].tempo_map == 1 and params:get("t_map_mode") == 2 then
     clip[track[i].clip].info = "repitch factor: "..string.format("%.2f", tempo / clip[track[i].clip].bpm)
   else
     clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
+  end
+end
+
+function update_track_tempo()
+  for i = 1, 6 do
+    if track[i].tempo_map == 1 then
+      clip_resize(i)
+    end
   end
 end
 
@@ -419,7 +505,7 @@ function set_rec(n) -- set softcut rec and pre levels
       softcut.rec_level(n, 0)
     end
   end
-  if view ~= vLFO and pageNum == 1 then dirtyscreen = true end
+  if view < vLFO and pageNum == 1 then dirtyscreen = true end
 end
 
 function rec_enable(i)
@@ -435,7 +521,7 @@ function set_level(n) -- set track volume and mute track
   elseif track[n].mute == 0 then
     softcut.level(n, track[n].level)
   end
-  if view ~= vLFO and pageNum == 1 then dirtyscreen = true end
+  if view < vLFO and pageNum == 1 then dirtyscreen = true end
 end
 
 function set_buffer(n) -- select softcut buffer to record to
@@ -551,7 +637,7 @@ function filter_select(n) -- select filter type
     softcut.post_filter_br(n, 0)
     softcut.post_filter_dry(n, 1)
   end
-  if view ~= vLFO and pageNum == 2 then dirtyscreen = true end
+  if view < vLFO and pageNum == 2 then dirtyscreen = true end
 end
 
 -- for lfos (hnds_mlre)
@@ -570,7 +656,7 @@ function lfo.process()
     local target = params:get(i.."lfo_target")
     local target_name = string.sub(lfo_targets[target], 2)
     local voice = string.sub(lfo_targets[target], 1, 1)
-    if params:get(i.."lfo") == 2 then
+    if params:get(i.."lfo_state") == 2 then
       if target_name == "vol" then
         params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
       elseif target_name == "pan" then
@@ -638,14 +724,14 @@ function set_scale(n) -- set scale id, thanks zebra
     p.options = trsp_id[n]
     p:bang()
   end
-  if view ~= vLFO and pageNum == 3 then dirtyscreen = true end
+  if view < vLFO and pageNum == 3 then dirtyscreen = true end
 end
 
 function set_transpose(i, x) -- transpose track
   local scale_idx = params:get("scale")
   track[i].transpose = trsp_scale[scale_idx][x] / 1200
   update_rate(i)
-  if view ~= vLFO and pageNum == 3 then dirtyscreen = true end
+  if view < vLFO and pageNum == 3 then dirtyscreen = true end
 end
 
 -- transport functions
@@ -877,13 +963,11 @@ alt2 = 0
 
 held = {}
 heldmax = {}
-done = {}
 first = {}
 second = {}
 for i = 1, 8 do
   held[i] = 0
   heldmax[i] = 0
-  done[i] = 0
   first[i] = 0
   second[i] = 0
 end
@@ -1001,9 +1085,14 @@ init = function()
   -- tempo map behaviour
   params:add_option("t_map_mode", "tempo-map mode", {"resize", "repitch"}, 1)
 
+  -- midi params
+  params:add_group("patterns & recall", 2)
   -- event recording slots
-  params:add_option("event_slots", "event slots", {"default", "pattern only"}, 1)
-  params:set_action("event_slots", function(x) patterns_only = x == 2 and true or false dirtygrid = true end)
+  params:add_option("slot_assign", "slot assignment", {"split", "patterns only", "recall only"}, 1)
+  params:set_action("slot_assign", function() dirtygrid = true end)
+  -- recall mode
+  params:add_option("recall_mode", "recall mode", {"manual", "snapshot"}, 2)
+  params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false dirtygrid = true end)
 
   -- midi params
   params:add_group("midi settings", 2)
@@ -1015,11 +1104,14 @@ init = function()
   params:add_option("midi_trnsp","MIDI transport", {"off", "send"}, 1)
 
   -- global track control
-  params:add_group("track control", 6)
+  params:add_group("track control", 7)
   params:add_separator("control focused track")
   -- playback
   params:add_binary("track_focus_playback", "playback", "momentary", 0)
   params:set_action("track_focus_playback", function(v) if v == 1 then toggle_playback(focus) end end)
+  -- mute
+  params:add_binary("track_focus_mute", "mute", "momentary", 0)
+  params:set_action("track_focus_mute", function(v) if v == 1 then local i = focus local n = 1 - track[i].mute e = {} e.t = eMUTE e.i = i e.mute = n event(e) end end)
   -- record enable
   params:add_binary("rec_focus_enable", "record", "momentary", 0)
   params:set_action("rec_focus_enable", function(v) if v == 1 then rec_enable(focus) end end)
@@ -1061,9 +1153,13 @@ init = function()
   audio.level_tape(1)
 
   for i = 1, 6 do
-    params:add_group("track "..i, 27)
+    params:add_group("track "..i, 30)
 
     params:add_separator("tape")
+    -- playback mode
+    params:add_option(i.."play_mode", i.." play mode", {"toggle", "momentary"}, 1)
+    params:set_action(i.."play_mode", function(x) track[i].momentary = x == 2 and true or false end)
+    params:hide(i.."play_mode")
     -- select buffer
     params:add_option(i.."buffer_sel", i.." buffer", {"main", "temp"}, 1)
     params:set_action(i.."buffer_sel", function(x) track[i].side = x - 1 set_buffer(i) end)
@@ -1072,7 +1168,7 @@ init = function()
     params:set_action(i.."vol", function(x) track[i].level = x set_level(i) end)
     -- track pan
     params:add_control(i.."pan", i.." pan", controlspec.new(-1, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."pan", function(x) softcut.pan(i, x) if view ~= vLFO and pageNum == 1 then dirtyscreen = true end end)
+    params:set_action(i.."pan", function(x) softcut.pan(i, x) if view < vLFO and pageNum == 1 then dirtyscreen = true end end)
     -- record level
     params:add_control(i.."rec", i.." rec", controlspec.new(0, 1, 'lin', 0, 1, ""))
     params:set_action(i.."rec", function(x) track[i].rec_level = x set_rec(i) end)
@@ -1081,16 +1177,16 @@ init = function()
     params:set_action(i.."dub", function(x) track[i].pre_level = x set_rec(i) end)
     -- detune
     params:add_control(i.."detune", i.." detune", controlspec.BIPOLAR)
-    params:set_action(i.."detune", function() update_rate(i) if view ~= vLFO and pageNum == 3 then dirtyscreen = true end end)
+    params:set_action(i.."detune", function() update_rate(i) if view < vLFO and pageNum == 3 then dirtyscreen = true end end)
     -- transpose
     params:add_option(i.."transpose", i.." transpose", trsp_id[params:get("scale")], 8)
     params:set_action(i.."transpose", function(x) set_transpose(i, x) end)
     -- rate slew
     params:add_control(i.."rate_slew", i.." rate slew", controlspec.new(0, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."rate_slew", function(x) softcut.rate_slew_time(i, x) if view ~= vLFO and pageNum == 3 then dirtyscreen = true end end)
+    params:set_action(i.."rate_slew", function(x) softcut.rate_slew_time(i, x) if view < vLFO and pageNum == 3 then dirtyscreen = true end end)
     -- level slew
     params:add_control(i.."level_slew", i.." level slew", controlspec.new(0.1, 10.0, "lin", 0.1, 0.1, ""))
-    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) if view ~= vLFO and pageNum == 3 then dirtyscreen = true end end)
+    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) if view < vLFO and pageNum == 3 then dirtyscreen = true end end)
     -- send level track 5
     params:add_control(i.."send_track5", i.." send track 5", controlspec.new(0, 1, 'lin', 0, 1, ""))
     params:set_action(i.."send_track5", function(x) track[i].send_t5 = x set_track_route(i) end)
@@ -1104,19 +1200,19 @@ init = function()
     params:add_separator("filter")
     -- cutoff
     params:add_control(i.."cutoff", i.." cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
-    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) if view ~= vLFO and pageNum == 2 then dirtyscreen = true end end)
+    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
     -- filter q
     params:add_control(i.."filter_q", i.." filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
-    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) if view ~= vLFO and pageNum == 2 then dirtyscreen = true end end)
+    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
     -- filter type
     params:add_option(i.."filter_type", i.." type", {"low pass", "high pass", "band pass", "band reject", "off"}, 1)
     params:set_action(i.."filter_type", function() filter_select(i) end)
     -- post filter dry level
     params:add_control(i.."post_dry", i.." dry level", controlspec.new(0, 1, 'lin', 0, 0, ""))
-    params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) if view ~= vLFO and pageNum == 2 then dirtyscreen = true end end)
+    params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
 
     -- warble params
-    params:add_separator("wow & flutter")
+    params:add_separator("warble")
     -- warble amount
     params:add_number(i.."warble_amount", i.." amount", 0, 100, 10, function(param) return (param:get().." %") end)
     -- warble depth
@@ -1130,6 +1226,9 @@ init = function()
     -- playback
     params:add_binary(i.."track_playback", i.." playback", "momentary", 0)
     params:set_action(i.."track_playback", function(v) if v == 1 then toggle_playback(i) end end)
+    -- mute
+    params:add_binary(i.."track_mute", i.." mute", "momentary", 0)
+    params:set_action(i.."track_mute", function(v) if v == 1 then local n = 1 - track[i].mute e = {} e.t = eMUTE e.i = i e.mute = n event(e) end end)
     -- record enable
     params:add_binary(i.."rec_enable", i.." record", "momentary", 0)
     params:set_action(i.."rec_enable", function(v) if v == 1 then rec_enable(i) end end)
@@ -1188,11 +1287,11 @@ init = function()
 
   -- params for quant division
   params:add_option("quant_div", "quant div", div_options, 7)
-  params:set_action("quant_div", function() update_tempo() end)
+  params:set_action("quant_div", function(d) div = div_values[d] / 4 end)
   params:hide("quant_div")
 
   -- params for clock tempo
-  params:set_action("clock_tempo", function() update_tempo() end)
+  params:set_action("clock_tempo", function() update_track_tempo() end)
 
   -- pset callback
   params.action_write = function(filename, name)
@@ -1237,17 +1336,28 @@ init = function()
       sesh_data[i].track_loop_end = track[i].loop_end
       sesh_data[i].track_clip = track[i].clip
     end
-    -- pattern data
+    -- pattern, recall and snapshot data
     for i = 1, 8 do
+      -- patterns
       sesh_data[i].pattern_count = pattern[i].count
       sesh_data[i].pattern_time = pattern[i].time
       sesh_data[i].pattern_event = pattern[i].event
       sesh_data[i].pattern_time_factor = pattern[i].time_factor
-    end
-    -- recall data
-    for i = 1, 4 do
+      -- recall
       sesh_data[i].recall_has_data = recall[i].has_data
       sesh_data[i].recall_event = recall[i].event
+      -- snapshots
+      sesh_data[i].snap_data = snap[i].data
+      sesh_data[i].snap_active = snap[i].active
+      sesh_data[i].snap_play = snap[i].play
+      sesh_data[i].snap_mute = snap[i].mute
+      sesh_data[i].snap_loop = snap[i].loop
+      sesh_data[i].snap_loop_start = snap[i].loop_start
+      sesh_data[i].snap_loop_end = snap[i].loop_end
+      sesh_data[i].snap_pos_grid = snap[i].pos_grid
+      sesh_data[i].snap_speed = snap[i].speed
+      sesh_data[i].snap_rev = snap[i].rev
+      sesh_data[i].snap_trsp = snap[i].trsp
     end
     -- and save the chunk
     tab.save(sesh_data, norns.state.data.."sessions/"..number.."/"..name.."_session.data")
@@ -1314,8 +1424,9 @@ init = function()
         end
         set_rec(i)
       end
-      -- load pattern data
+      -- load pattern, recall and snapshot data
       for i = 1, 8 do
+        -- patterns
         pattern[i].count = sesh_data[i].pattern_count
         pattern[i].time = {table.unpack(sesh_data[i].pattern_time)}
         pattern[i].event = {table.unpack(sesh_data[i].pattern_event)}
@@ -1325,11 +1436,21 @@ init = function()
         if pattern[i].rec == 1 then
           local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
         end
-      end
-      -- load recall data
-      for i = 1, 4 do
+        -- recall
         recall[i].has_data = sesh_data[i].recall_has_data
         recall[i].event = {table.unpack(sesh_data[i].recall_event)}
+        -- snapshots
+        snap[i].data = sesh_data[i].snap_data
+        snap[i].active = sesh_data[i].snap_active
+        snap[i].play = {table.unpack(sesh_data[i].snap_play)}
+        snap[i].mute = {table.unpack(sesh_data[i].snap_mute)}
+        snap[i].loop = {table.unpack(sesh_data[i].snap_loop)}
+        snap[i].loop_start = {table.unpack(sesh_data[i].snap_loop_start)}
+        snap[i].loop_end = {table.unpack(sesh_data[i].snap_loop_end)}
+        snap[i].pos_grid = {table.unpack(sesh_data[i].snap_pos_grid)}
+        snap[i].speed = {table.unpack(sesh_data[i].snap_speed)}
+        snap[i].rev = {table.unpack(sesh_data[i].snap_rev)}
+        snap[i].trsp = {table.unpack(sesh_data[i].snap_trsp)}
       end
       dirtyscreen = true
       dirtygrid = true
@@ -1373,16 +1494,12 @@ init = function()
 
   set_view(vREC)
 
-  update_tempo()
-
   grid.add = draw_grid_connected
 
   params:bang()
 
   softcut.event_phase(phase)
   softcut.poll_start_phase()
-
-  clock.run(clock_update_tempo)
 
   -- set "local e" to other than nil: workaround to an error that occured if thresh_rec() is called before any track is played
   for i = 1, 6 do
@@ -1399,9 +1516,7 @@ phase = function(n, x)
   x = math.floor(pp * 16)
   if x ~= track[n].pos_grid then
     track[n].pos_grid = x
-    if view == vCUT then dirtygrid = true end
-    if view == vREC then dirtygrid = true end
-    if view == vTRSP then dirtygrid = true end
+    if view < vLFO then dirtygrid = true end
   end
 end
 
@@ -1441,7 +1556,7 @@ gridkey_nav = function(x, z)
       end
     elseif x == 4 and alt == 0 then
       set_view(vLFO)
-    elseif x > 4 and x < (params:get("event_slots") == 1 and 9 or 13) then
+    elseif x > 4 and x < (params:get("slot_assign") == 1 and 9 or 13) and params:get("slot_assign") ~= 3 then
       local i = x - 4
       if alt == 1 then
         local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
@@ -1470,20 +1585,34 @@ gridkey_nav = function(x, z)
       else
         local e = {t = ePATTERN, i = i, action = "start"} event(e)
       end
-    elseif x > 8 and x < 13 and not patterns_only then
-      local i = x - 8
-      if alt == 1 then
-        recall[i].event = {}
-        recall[i].recording = false
-        recall[i].has_data = false
-        recall[i].active = false
-      elseif recall[i].recording == true then
-        recall[i].recording = false
-      elseif recall[i].has_data == false then
-        recall[i].recording = true
-      elseif recall[i].has_data == true then
-        recall_exec(i)
-        recall[i].active = true
+    elseif x > (params:get("slot_assign") == 3 and 4 or 8) and x < 13 and params:get("slot_assign") ~= 2 then
+      local i = x - 4
+      if snapshot_mode then
+        if alt == 1 then
+          snap[i].data = false
+          snap[i].active = false
+        elseif alt == 0 then
+          if not snap[i].data then
+            save_snapshot(i)
+          elseif snap[i].data then
+            load_snapshot(i)
+            snap[i].active = true
+          end
+        end
+      elseif not snapshot_mode then
+        if alt == 1 then
+          recall[i].event = {}
+          recall[i].recording = false
+          recall[i].has_data = false
+          recall[i].active = false
+        elseif recall[i].recording == true then
+          recall[i].recording = false
+        elseif recall[i].has_data == false then
+          recall[i].recording = true
+        elseif recall[i].has_data == true then
+          recall_exec(i)
+          recall[i].active = true
+        end
       end
     elseif x == 15 and alt == 0 then
       quantize = 1 - quantize
@@ -1502,48 +1631,59 @@ gridkey_nav = function(x, z)
   elseif z == 0 then
     if x == 16 then alt = 0 if view == vLFO then dirtyscreen = true end
     elseif x == 14 and alt == 0 then alt2 = 0 -- lock alt2 if alt2 released before alt is released
-    elseif x > 8 and x < 13 and not patterns_only then recall[x - 8].active = false
+    elseif x > (params:get("slot_assign") == 3 and 4 or 8) and x < 13 and params:get("slot_assign") ~= 2 then
+      if snapshot_mode then
+        snap[x - 4].active = false
+      else
+        recall[x - 4].active = false
+      end
     end
   end
   dirtygrid = true
 end
 
 gridredraw_nav = function()
-  g:led(1, 1, 4)
-  g:led(2, 1, 3)
-  g:led(3, 1, 2)
-  g:led(view, 1, 9)
-  if alt == 1 and alt2 == 0 then g:led(16, 1, 15)
-  elseif alt == 0 then g:led(16, 1, 9)
-  end
-  if quantize == 1 then g:led(15, 1, 9)
-  elseif quantize == 0 then g:led(15, 1, 3)
-  end
-  if alt2 == 1 then g:led(14, 1, 9)
-  elseif alt2 == 0 then g:led(14, 1, 2)
-  end
-  for i = 1, params:get("event_slots") == 1 and 4 or 8 do
-    if pattern[i].rec == 1 then
-      g:led(i + 4, 1, 15)
-    elseif pattern[i].overdub == 1 then
-      g:led(i + 4, 1, ledview)
-    elseif pattern[i].play == 1 then
-      g:led(i + 4, 1, 12)
-    elseif pattern[i].count > 0 then
-      g:led(i + 4, 1, 8)
-    else
-      g:led(i + 4, 1, 4)
-    end
-    if not patterns_only then
-      local b = 3
-      if recall[i].recording == true then
-        b = 15
-      elseif recall[i].active == true then
-        b = 11
-      elseif recall[i].has_data == true then
-        b = 7
+  g:led(1, 1, 4) -- vREC
+  g:led(2, 1, 3) -- vCUT
+  g:led(3, 1, 2) -- vTRSP
+  g:led(view, 1, 9) -- focus
+  g:led(16, 1, alt == 1 and 15 or 9) -- alt
+  g:led(15, 1, quantize == 1 and 9 or 3) -- Q
+  g:led(14, 1, alt2 == 1 and 9 or 2) -- mod
+  for i = 1, (params:get("slot_assign") == 1 and 4 or 8) do
+    if params:get("slot_assign") ~= 3 then
+      if pattern[i].rec == 1 then
+        g:led(i + 4, 1, 15)
+      elseif pattern[i].overdub == 1 then
+        g:led(i + 4, 1, ledview)
+      elseif pattern[i].play == 1 then
+        g:led(i + 4, 1, 12)
+      elseif pattern[i].count > 0 then
+        g:led(i + 4, 1, 8)
+      else
+        g:led(i + 4, 1, 4)
       end
-      g:led(i + 8, 1, b)
+    end
+  end
+  for i = (params:get("slot_assign") == 1 and 5 or 1), 8 do
+    if params:get("slot_assign") ~= 2 then
+      local b = 3
+      if snapshot_mode then
+        if snap[i].active == true then
+          b = 11
+        elseif snap[i].data == true then
+          b = 7
+        end
+      else
+        if recall[i].recording == true then
+          b = 15
+        elseif recall[i].active == true then
+          b = 11
+        elseif recall[i].has_data == true then
+          b = 7
+        end
+      end
+      g:led(i + 4, 1, b)
     end
   end
 end
@@ -1552,7 +1692,15 @@ end
 
 v.key[vREC] = function(n, z)
   if n == 2 and z == 1 then
-    viewinfo[vREC] = 1 - viewinfo[vREC]
+    if key1_hold == 0 then
+      viewinfo[vREC] = 1 - viewinfo[vREC]
+    else
+      if params:get("slot_assign") == 2 then
+        params:set("slot_assign", 3)
+      elseif params:get("slot_assign") == 3 then
+        params:set("slot_assign", 2)
+      end
+    end
     dirtyscreen = true
   elseif n == 3 and z == 1 then
     pageNum = (pageNum % 3) + 1
@@ -1825,22 +1973,27 @@ v.gridkey[vREC] = function(x, y, z)
         e.loop_start = x
         e.loop_end = x
         event(e)
-      elseif held[y] == 1 then
+      elseif held[y] == 1 then -- cut at pos
         first[y] = x
         local cut = x - 1
         e = {} e.t = eCUT e.i = i e.pos = cut
         event(e)
-      elseif held[y] == 2 then
+      elseif held[y] == 2 then -- second keypress
         second[y] = x
       end
     elseif z == 0 then
-      if held[y] == 1 and heldmax[y] == 2 then
+      if held[y] == 1 and heldmax[y] == 2 then -- if two keys held at release then loop
         e = {}
         e.t = eLOOP
         e.i = i
         e.loop = 1
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
+        event(e)
+      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
+        e = {}
+        e.t = eSTOP
+        e.i = i
         event(e)
       end
     end
@@ -1914,12 +2067,7 @@ v.gridkey[vCUT] = function(x, y, z)
         dirtyscreen = true
       end
       if alt == 1 and y < 8 then
-        if track[i].play == 1 then
-          e = {} e.t = eSTOP e.i = i
-        else
-          e = {} e.t = eSTART e.i = i
-        end
-        event(e)
+        toggle_playback(i)
       elseif alt2 == 1 and y < 8 then -- "hold mode"
         heldmax[y] = x
         e = {}
@@ -1931,7 +2079,7 @@ v.gridkey[vCUT] = function(x, y, z)
         event(e)
       elseif y < 8 and held[y] == 1 then
         first[y] = x
-        local cut = x-1
+        local cut = x - 1
         e = {} e.t = eCUT e.i = i e.pos = cut
         event(e)
       elseif y < 8 and held[y] == 2 then
@@ -1945,6 +2093,11 @@ v.gridkey[vCUT] = function(x, y, z)
         e.loop = 1
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
+        event(e)
+      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
+        e = {}
+        e.t = eSTOP
+        e.i = i
         event(e)
       end
     end
@@ -2002,12 +2155,7 @@ v.gridkey[vTRSP] = function(x, y, z)
         if x >= 9 and x <=16 then e = {} e.t = eTRSP e.i = i e.trsp = x - 1 event(e) end
       end
       if alt == 1 and x > 7 and x < 10 then
-        if track[i].play == 1 then
-          e = {} e.t = eSTOP e.i = i
-        else
-          e = {} e.t = eSTART e.i = i
-        end
-        event(e)
+        toggle_playback(i)
       end
     end
   elseif y == 8 then -- cut for focused track
@@ -2041,6 +2189,11 @@ v.gridkey[vTRSP] = function(x, y, z)
         e.loop = 1
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
+        event(e)
+      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
+        e = {}
+        e.t = eSTOP
+        e.i = i
         event(e)
       end
     end
@@ -2102,7 +2255,7 @@ v.enc[vLFO] = function(n, d)
     if n == 2 then
       params:delta(pageLFO.."lfo_freq", d)
     elseif n == 3 then
-      params:delta(pageLFO.."offset", d)
+      params:delta(pageLFO.."lfo_offset", d)
     end
   else
     if n == 2 then
@@ -2128,7 +2281,7 @@ v.redraw[vLFO] = function()
   screen.move(10, 32)
   screen.text(params:string(pageLFO.."lfo_freq"))
   screen.move(70, 32)
-  screen.text(params:string(pageLFO.."offset"))
+  screen.text(params:string(pageLFO.."lfo_offset"))
   screen.level(3)
   screen.move(10, 40)
   screen.text("freq")
@@ -2178,9 +2331,9 @@ v.gridkey[vLFO] = function(x, y, z)
       if x == 1 then
         lfo[lfo_index].active = 1 - lfo[lfo_index].active
         if lfo[lfo_index].active == 1 then
-          params:set(lfo_index .. "lfo", 2)
+          params:set(lfo_index .. "lfo_state", 2)
         else
-          params:set(lfo_index .. "lfo", 1)
+          params:set(lfo_index .. "lfo_state", 1)
         end
       end
       if x > 1 and x <= 16 then
@@ -2219,7 +2372,7 @@ v.gridredraw[vLFO] = function()
   g:all(0)
   gridredraw_nav()
   for i = 1, 6 do
-    g:led(1, i + 1, params:get(i.."lfo") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3) --nice one mat!
+    g:led(1, i + 1, params:get(i.."lfo_state") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3) --nice one mat!
     local range = math.floor(util.linlin(0, 100, 2, 16, params:get(i.."lfo_depth")))
     g:led(range, i + 1, 7)
     for x = 2, range - 1 do
@@ -2245,7 +2398,7 @@ end
 clip_actions = {"load", "clear", "save", "reset"}
 clip_action = 1
 clip_sel = 1
-resize_values = {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 42}
+resize_values = {1, 2, 3, 4, 6, 8, 12, 16, 24, 32, max_cliplength}
 resize_options = {"1/4", "2/4", "3/4", "4/4", "6/4", "8/4", "12/4", "16/4", "24/4", "32/4", "max"}
 
 function fileselect_callback(path, c)
@@ -2253,17 +2406,28 @@ function fileselect_callback(path, c)
   if path ~= "cancel" and path ~= "" then
     local ch, len = audio.file_info(path)
     if ch > 0 and len > 0 then
-      print("file: "..path.." "..clip[track[c].clip].s)
       softcut.buffer_read_mono(path, 0, clip[track[c].clip].s, max_cliplength, 1, buffer)
       local l = math.min(len / 48000, max_cliplength)
+      print("file: "..path.." "..clip[track[c].clip].s.."s to "..clip[track[c].clip].s + l.."s")
       local r_idx = params:get(track[c].clip.."clip_length")
       local r_val = resize_values[r_idx]
       set_clip_length(track[c].clip, l, r_val)
       set_clip(c, track[c].clip)
-      clip[track[c].clip].name = path:match("[^/]*$")
-      clip[track[c].clip].info = "length "..string.format("%.2f", l).."s"
-      clip[track[c].clip].reset = l
+      if track[c].loop == 1 then
+        e = {}
+        e.t = eLOOP
+        e.i = c
+        e.loop = 1
+        e.loop_start = track[c].loop_start
+        e.loop_end = track[c].loop_end
+        event(e)
+      else
+        track[c].loop = 0
+      end
       update_rate(c)
+      clip[track[c].clip].name = path:match("[^/]*$")
+      clip[track[c].clip].info = "length: "..string.format("%.2f", l).."s"
+      clip[track[c].clip].reset = l
     else
       print("not a sound file")
     end
