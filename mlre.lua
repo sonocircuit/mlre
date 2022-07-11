@@ -1,4 +1,4 @@
--- mlre v1.3.1 @sonocircuit
+-- mlre v1.3.2 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -329,6 +329,7 @@ for i = 1, 6 do
   track[i] = {}
   track[i].head = (i - 1) % 4 + 1
   track[i].play = 0
+  track[i].momentary = false
   track[i].sel = 0
   track[i].rec = 0
   track[i].oneshot = 0
@@ -413,8 +414,8 @@ function clear_clip(i) -- clear active buffer of clip and set clip length
   softcut.buffer_clear_region_channel(buffer, clip[track[i].clip].s, max_cliplength)
   set_clip_length(track[i].clip, resize, r_val)
   set_clip(i, track[i].clip)
-  update_rate(i)
   track[i].loop = 0
+  update_rate(i)
   clip[track[i].clip].reset = resize
   clip[track[i].clip].name = "-"
   clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
@@ -426,8 +427,18 @@ function clip_reset(i) -- reset clip to default length
   local resize = clip[track[i].clip].reset
   set_clip_length(track[i].clip, resize, r_val) -- resize to "reset" length
   set_clip(i, track[i].clip)
+  if track[i].loop == 1 then
+    e = {}
+    e.t = eLOOP
+    e.i = i
+    e.loop = 1
+    e.loop_start = track[i].loop_start
+    e.loop_end = track[i].loop_end
+    event(e)
+  else
+    track[i].loop = 0
+  end
   update_rate(i)
-  track[i].loop = 0
   clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
 end
 
@@ -448,8 +459,18 @@ function clip_resize(i) -- resize clip length oder track speed according to t_ma
   end
   set_clip_length(track[i].clip, resize, r_val)
   set_clip(i, track[i].clip)
+  if track[i].loop == 1 then
+    e = {}
+    e.t = eLOOP
+    e.i = i
+    e.loop = 1
+    e.loop_start = track[i].loop_start
+    e.loop_end = track[i].loop_end
+    event(e)
+  else
+    track[i].loop = 0
+  end
   update_rate(i)
-  track[i].loop = 0
   if track[i].tempo_map == 1 and params:get("t_map_mode") == 2 then
     clip[track[i].clip].info = "repitch factor: "..string.format("%.2f", tempo / clip[track[i].clip].bpm)
   else
@@ -942,13 +963,11 @@ alt2 = 0
 
 held = {}
 heldmax = {}
-done = {}
 first = {}
 second = {}
 for i = 1, 8 do
   held[i] = 0
   heldmax[i] = 0
-  done[i] = 0
   first[i] = 0
   second[i] = 0
 end
@@ -1085,11 +1104,14 @@ init = function()
   params:add_option("midi_trnsp","MIDI transport", {"off", "send"}, 1)
 
   -- global track control
-  params:add_group("track control", 6)
+  params:add_group("track control", 7)
   params:add_separator("control focused track")
   -- playback
   params:add_binary("track_focus_playback", "playback", "momentary", 0)
   params:set_action("track_focus_playback", function(v) if v == 1 then toggle_playback(focus) end end)
+  -- mute
+  params:add_binary("track_focus_mute", "mute", "momentary", 0)
+  params:set_action("track_focus_mute", function(v) if v == 1 then local i = focus local n = 1 - track[i].mute e = {} e.t = eMUTE e.i = i e.mute = n event(e) end end)
   -- record enable
   params:add_binary("rec_focus_enable", "record", "momentary", 0)
   params:set_action("rec_focus_enable", function(v) if v == 1 then rec_enable(focus) end end)
@@ -1131,9 +1153,13 @@ init = function()
   audio.level_tape(1)
 
   for i = 1, 6 do
-    params:add_group("track "..i, 27)
+    params:add_group("track "..i, 30)
 
     params:add_separator("tape")
+    -- playback mode
+    params:add_option(i.."play_mode", i.." play mode", {"toggle", "momentary"}, 1)
+    params:set_action(i.."play_mode", function(x) track[i].momentary = x == 2 and true or false end)
+    params:hide(i.."play_mode")
     -- select buffer
     params:add_option(i.."buffer_sel", i.." buffer", {"main", "temp"}, 1)
     params:set_action(i.."buffer_sel", function(x) track[i].side = x - 1 set_buffer(i) end)
@@ -1186,7 +1212,7 @@ init = function()
     params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
 
     -- warble params
-    params:add_separator("wow & flutter")
+    params:add_separator("warble")
     -- warble amount
     params:add_number(i.."warble_amount", i.." amount", 0, 100, 10, function(param) return (param:get().." %") end)
     -- warble depth
@@ -1200,6 +1226,9 @@ init = function()
     -- playback
     params:add_binary(i.."track_playback", i.." playback", "momentary", 0)
     params:set_action(i.."track_playback", function(v) if v == 1 then toggle_playback(i) end end)
+    -- mute
+    params:add_binary(i.."track_mute", i.." mute", "momentary", 0)
+    params:set_action(i.."track_mute", function(v) if v == 1 then local n = 1 - track[i].mute e = {} e.t = eMUTE e.i = i e.mute = n event(e) end end)
     -- record enable
     params:add_binary(i.."rec_enable", i.." record", "momentary", 0)
     params:set_action(i.."rec_enable", function(v) if v == 1 then rec_enable(i) end end)
@@ -1944,22 +1973,27 @@ v.gridkey[vREC] = function(x, y, z)
         e.loop_start = x
         e.loop_end = x
         event(e)
-      elseif held[y] == 1 then
+      elseif held[y] == 1 then -- cut at pos
         first[y] = x
         local cut = x - 1
         e = {} e.t = eCUT e.i = i e.pos = cut
         event(e)
-      elseif held[y] == 2 then
+      elseif held[y] == 2 then -- second keypress
         second[y] = x
       end
     elseif z == 0 then
-      if held[y] == 1 and heldmax[y] == 2 then
+      if held[y] == 1 and heldmax[y] == 2 then -- if two keys held at release then loop
         e = {}
         e.t = eLOOP
         e.i = i
         e.loop = 1
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
+        event(e)
+      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
+        e = {}
+        e.t = eSTOP
+        e.i = i
         event(e)
       end
     end
@@ -2033,12 +2067,7 @@ v.gridkey[vCUT] = function(x, y, z)
         dirtyscreen = true
       end
       if alt == 1 and y < 8 then
-        if track[i].play == 1 then
-          e = {} e.t = eSTOP e.i = i
-        else
-          e = {} e.t = eSTART e.i = i
-        end
-        event(e)
+        toggle_playback(i)
       elseif alt2 == 1 and y < 8 then -- "hold mode"
         heldmax[y] = x
         e = {}
@@ -2050,7 +2079,7 @@ v.gridkey[vCUT] = function(x, y, z)
         event(e)
       elseif y < 8 and held[y] == 1 then
         first[y] = x
-        local cut = x-1
+        local cut = x - 1
         e = {} e.t = eCUT e.i = i e.pos = cut
         event(e)
       elseif y < 8 and held[y] == 2 then
@@ -2064,6 +2093,11 @@ v.gridkey[vCUT] = function(x, y, z)
         e.loop = 1
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
+        event(e)
+      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
+        e = {}
+        e.t = eSTOP
+        e.i = i
         event(e)
       end
     end
@@ -2121,12 +2155,7 @@ v.gridkey[vTRSP] = function(x, y, z)
         if x >= 9 and x <=16 then e = {} e.t = eTRSP e.i = i e.trsp = x - 1 event(e) end
       end
       if alt == 1 and x > 7 and x < 10 then
-        if track[i].play == 1 then
-          e = {} e.t = eSTOP e.i = i
-        else
-          e = {} e.t = eSTART e.i = i
-        end
-        event(e)
+        toggle_playback(i)
       end
     end
   elseif y == 8 then -- cut for focused track
@@ -2160,6 +2189,11 @@ v.gridkey[vTRSP] = function(x, y, z)
         e.loop = 1
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
+        event(e)
+      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
+        e = {}
+        e.t = eSTOP
+        e.i = i
         event(e)
       end
     end
@@ -2379,8 +2413,18 @@ function fileselect_callback(path, c)
       local r_val = resize_values[r_idx]
       set_clip_length(track[c].clip, l, r_val)
       set_clip(c, track[c].clip)
+      if track[c].loop == 1 then
+        e = {}
+        e.t = eLOOP
+        e.i = c
+        e.loop = 1
+        e.loop_start = track[c].loop_start
+        e.loop_end = track[c].loop_end
+        event(e)
+      else
+        track[c].loop = 0
+      end
       update_rate(c)
-      track[c].loop = 0
       clip[track[c].clip].name = path:match("[^/]*$")
       clip[track[c].clip].info = "length: "..string.format("%.2f", l).."s"
       clip[track[c].clip].reset = l
