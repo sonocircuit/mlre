@@ -151,12 +151,15 @@ function event_exec(e)
         clock.sleep(declick)
         if track[e.i].mute == 0 then
           softcut.level(e.i, track[e.i].level)
+          set_track_route(e.i)
         end
       end)
     end
     if view < vLFO then dirtygrid = true end
   elseif e.t == eSTOP then
     softcut.level(e.i, 0)
+    softcut.level_cut_cut(e.i, 5, 0)
+    softcut.level_cut_cut(e.i, 6, 0)
     clock.run(
     function()
       clock.sleep(declick)
@@ -174,6 +177,7 @@ function event_exec(e)
       clock.sleep(declick)
       if track[e.i].mute == 0 then
         softcut.level(e.i, track[e.i].level)
+        set_track_route(e.i)
       end
       if view < vLFO then dirtygrid = true end
     end)
@@ -518,8 +522,11 @@ end
 function set_level(n) -- set track volume and mute track
   if track[n].mute == 1 then
     softcut.level(n, 0)
+    softcut.level_cut_cut(n, 5, 0)
+    softcut.level_cut_cut(n, 6, 0)
   elseif track[n].mute == 0 then
     softcut.level(n, track[n].level)
+    set_track_route(n)
   end
   if view < vLFO and pageNum == 1 then dirtyscreen = true end
 end
@@ -1188,11 +1195,11 @@ init = function()
     params:add_control(i.."level_slew", i.." level slew", controlspec.new(0.1, 10.0, "lin", 0.1, 0.1, ""))
     params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) if view < vLFO and pageNum == 3 then dirtyscreen = true end end)
     -- send level track 5
-    params:add_control(i.."send_track5", i.." send track 5", controlspec.new(0, 1, 'lin', 0, 1, ""))
+    params:add_control(i.."send_track5", i.." send track 5", controlspec.new(0, 1, 'lin', 0, 0.5, ""))
     params:set_action(i.."send_track5", function(x) track[i].send_t5 = x set_track_route(i) end)
     params:hide(i.."send_track5")
     -- send level track 6
-    params:add_control(i.."send_track6", i.." send track 6", controlspec.new(0, 1, 'lin', 0, 1, ""))
+    params:add_control(i.."send_track6", i.." send track 6", controlspec.new(0, 1, 'lin', 0, 0.5, ""))
     params:set_action(i.."send_track6", function(x) track[i].send_t6 = x set_track_route(i) end)
     params:hide(i.."send_track6")
 
