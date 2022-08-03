@@ -1,4 +1,4 @@
--- mlre v1.3.2 @sonocircuit
+-- mlre v1.3.4 @sonocircuit
 -- llllllll.co/t/????
 --
 -- an adaption of
@@ -333,7 +333,6 @@ for i = 1, 6 do
   track[i] = {}
   track[i].head = (i - 1) % 4 + 1
   track[i].play = 0
-  track[i].momentary = false
   track[i].sel = 0
   track[i].rec = 0
   track[i].oneshot = 0
@@ -1093,12 +1092,12 @@ init = function()
   params:add_option("t_map_mode", "tempo-map mode", {"resize", "repitch"}, 1)
 
   -- midi params
-  params:add_group("patterns & recall", 2)
+  params:add_group("macros", 2)
   -- event recording slots
-  params:add_option("slot_assign", "slot assignment", {"split", "patterns only", "recall only"}, 1)
+  params:add_option("slot_assign", "macro slots", {"split", "patterns only", "recall only"}, 1)
   params:set_action("slot_assign", function() dirtygrid = true end)
   -- recall mode
-  params:add_option("recall_mode", "recall mode", {"manual", "snapshot"}, 2)
+  params:add_option("recall_mode", "recall mode", {"manual recall", "snapshot"}, 2)
   params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false dirtygrid = true end)
 
   -- midi params
@@ -1108,7 +1107,7 @@ init = function()
   params:add_option("global_midi_device", "midi device", midi_devices, 1)
   params:set_action("global_midi_device", function(val) m = midi.connect(val) end)
   -- send midi transport
-  params:add_option("midi_trnsp","MIDI transport", {"off", "send"}, 1)
+  params:add_option("midi_trnsp","midi transport", {"off", "send"}, 1)
 
   -- global track control
   params:add_group("track control", 7)
@@ -1123,7 +1122,7 @@ init = function()
   params:add_binary("rec_focus_enable", "record", "momentary", 0)
   params:set_action("rec_focus_enable", function(v) if v == 1 then rec_enable(focus) end end)
   -- reverse
-  params:add_binary("tog_focus_rev", "reverse", "momentary", 0)
+  params:add_binary("tog_focus_rev", "direction", "momentary", 0)
   params:set_action("tog_focus_rev", function(v) if v == 1 then local i = focus local n = 1 - track[i].rev e = {} e.t = eREV e.i = i e.rev = n event(e) end end)
   -- speed +
   params:add_binary("inc_focus_speed", "speed +", "momentary", 0)
@@ -1133,7 +1132,7 @@ init = function()
   params:set_action("dec_focus_speed", function(v) if v == 1 then local i = focus local n = util.clamp(track[i].speed - 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end end)
 
   -- randomize settings
-  params:add_group("randomize settings", 15)
+  params:add_group("randomization", 15)
   params:add_option("auto_rand","auto-randomize", {"off", "on"}, 1)
 
   params:add_separator("")
@@ -1160,13 +1159,9 @@ init = function()
   audio.level_tape(1)
 
   for i = 1, 6 do
-    params:add_group("track "..i, 30)
+    params:add_group("track "..i, 29)
 
     params:add_separator("tape")
-    -- playback mode
-    params:add_option(i.."play_mode", i.." play mode", {"toggle", "momentary"}, 1)
-    params:set_action(i.."play_mode", function(x) track[i].momentary = x == 2 and true or false end)
-    params:hide(i.."play_mode")
     -- select buffer
     params:add_option(i.."buffer_sel", i.." buffer", {"main", "temp"}, 1)
     params:set_action(i.."buffer_sel", function(x) track[i].side = x - 1 set_buffer(i) end)
@@ -1932,7 +1927,7 @@ v.gridkey[vREC] = function(x, y, z)
         oneshot_on = i
         arm_thresh_rec(i) -- amp_in poll starts
         update_cycle(i)  -- duration of oneshot is set (track[i].dur)
-        if alt == 1 then -- if alt then go into autolength mode
+        if alt == 1 then -- if alt then go into autolength mode and stop track
           autolength = true
           e = {}
           e.t = eSTOP
@@ -1997,11 +1992,6 @@ v.gridkey[vREC] = function(x, y, z)
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
         event(e)
-      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
-        e = {}
-        e.t = eSTOP
-        e.i = i
-        event(e)
       end
     end
   end
@@ -2064,8 +2054,16 @@ v.gridkey[vCUT] = function(x, y, z)
   if y == 1 then gridkey_nav(x, z)
   elseif y == 8 and z == 1 then
     local i = focus
-    if x >= 1 and x <=8 then e = {} e.t = eTRSP e.i = i e.trsp = x event(e) end
-    if x >= 9 and x <=16 then e = {} e.t = eTRSP e.i = i e.trsp = x - 1 event(e) end
+    if alt2 == 0 then
+      if x >= 1 and x <=8 then e = {} e.t = eTRSP e.i = i e.trsp = x event(e) end
+      if x >= 9 and x <=16 then e = {} e.t = eTRSP e.i = i e.trsp = x - 1 event(e) end
+    elseif alt2 == 1 then
+      if x == 8 then
+        local n = util.clamp(track[i].speed - 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+      elseif x == 9 then
+        local n = util.clamp(track[i].speed + 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+      end
+    end
   else
     local i = y - 1
     if z == 1 then
@@ -2100,11 +2098,6 @@ v.gridkey[vCUT] = function(x, y, z)
         e.loop = 1
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
-        event(e)
-      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
-        e = {}
-        e.t = eSTOP
-        e.i = i
         event(e)
       end
     end
@@ -2157,12 +2150,19 @@ v.gridkey[vTRSP] = function(x, y, z)
         focus = i
         dirtyscreen = true
       end
-      if alt == 0 then
+      if alt == 0 and alt2 == 0 then
         if x >= 1 and x <=8 then e = {} e.t = eTRSP e.i = i e.trsp = x event(e) end
         if x >= 9 and x <=16 then e = {} e.t = eTRSP e.i = i e.trsp = x - 1 event(e) end
       end
       if alt == 1 and x > 7 and x < 10 then
         toggle_playback(i)
+      end
+      if alt2 == 1 then
+        if x == 8 then
+          local n = util.clamp(track[i].speed - 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+        elseif x == 9 then
+          local n = util.clamp(track[i].speed + 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+        end
       end
     end
   elseif y == 8 then -- cut for focused track
@@ -2196,11 +2196,6 @@ v.gridkey[vTRSP] = function(x, y, z)
         e.loop = 1
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
-        event(e)
-      elseif track[i].momentary and heldmax[y] ~= 2 and alt == 0 then -- if not loop and track momentary then stop
-        e = {}
-        e.t = eSTOP
-        e.i = i
         event(e)
       end
     end
