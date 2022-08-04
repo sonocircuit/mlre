@@ -1,12 +1,12 @@
 -- mlre v1.3.4 @sonocircuit
--- llllllll.co/t/????
+-- llllllll.co/t/mlre
 --
 -- an adaption of
 -- mlr v2.2.4 @tehn
 -- llllllll.co/t/21145
 --
 -- for docs go to:
--- github.com/sonocircuits/mlre
+-- github.com/sonocircuit/mlre
 -- or smb into code/mlre/docs
 --
 
