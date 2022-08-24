@@ -1,4 +1,4 @@
--- mlre v1.3.4 @sonocircuit
+-- mlre v1.3.5 @sonocircuit
 -- llllllll.co/t/mlre
 --
 -- an adaption of
@@ -6,8 +6,11 @@
 -- llllllll.co/t/21145
 --
 -- for docs go to:
--- github.com/sonocircuit/mlre
--- or smb into code/mlre/docs
+-- >> github.com
+--    /sonocircuit/mlre
+--
+-- or smb into:
+-- >> code/mlre/docs
 --
 
 local g = grid.connect()
@@ -27,6 +30,7 @@ local trksel = 0
 local dstview = 0
 local trsp = 1
 local ledview = 1
+local flash = false
 local quantize = 0
 local oneshot_on = 1
 local oneshot_rec = false
@@ -34,6 +38,7 @@ local transport_run = false
 local autolength = false
 local loop_pos = 1
 local trk_len = 0
+local noterep = 0.12
 local declick = 0.06 -- 60ms delay
 local clip_gap = 1 -- 1s gap between clips
 local max_cliplength = 42 -- seconds per clip per buffer (max 8 clips in total)
@@ -89,7 +94,7 @@ local ePATTERN = 9
 
 local div = 16
 local div_options = {"1bar", "1/2", "1/3", "1/4", "1/6", "1/8", "1/16", "1/32"}
-local div_values = {1, 2, 3, 4, 6, 8, 16, 32}
+local div_values = {1, 1/2, 1/3, 1/4, 1/6, 1/8, 1/16, 1/32}
 
 function event_record(e)
   for i = 1, 8 do
@@ -117,18 +122,26 @@ end
 
 function update_q_clock()
   while true do
-    clock.sync(1 / div)
+    clock.sync(div)
     event_q_clock()
   end
 end
 
 function event_q_clock()
   if #quantize_events > 0 then
-    for k,e in pairs(quantize_events) do
+    for k, e in pairs(quantize_events) do
       if e.t ~= ePATTERN then event_record(e) end
       event_exec(e)
     end
     quantize_events = {}
+  end
+end
+
+function clock.tempo_change_handler()
+  for i = 1, 6 do
+    if track[i].tempo_map == 1 then
+      clip_resize(i)
+    end
   end
 end
 
@@ -146,6 +159,7 @@ function event_exec(e)
       track[e.i].play = 1
       softcut.play(e.i, 1)
       softcut.rec(e.i, 1)
+      toggle_transport()
       clock.run(
       function()
         clock.sleep(declick)
@@ -157,21 +171,12 @@ function event_exec(e)
     end
     if view < vLFO then dirtygrid = true end
   elseif e.t == eSTOP then
-    softcut.level(e.i, 0)
-    softcut.level_cut_cut(e.i, 5, 0)
-    softcut.level_cut_cut(e.i, 6, 0)
-    clock.run(
-    function()
-      clock.sleep(declick)
-      track[e.i].play = 0
-      softcut.play(e.i, 0)
-      softcut.rec(e.i, 0)
-      if view < vLFO then dirtygrid = true end
-    end)
+    stop_track(e.i)
   elseif e.t == eSTART then
     track[e.i].play = 1
     softcut.play(e.i, 1)
     softcut.rec(e.i, 1)
+    toggle_transport()
     clock.run(
     function()
       clock.sleep(declick)
@@ -348,8 +353,10 @@ for i = 1, 6 do
   track[i].loop_end = 16
   track[i].dur = 4
   track[i].clip = i
-  track[i].pos = 0
+  track[i].pos = 1
   track[i].pos_grid = -1
+  track[i].step_count = 0
+  track[i].gate = false
   track[i].speed = 0
   track[i].warble = 0
   track[i].rev = 0
@@ -478,14 +485,6 @@ function clip_resize(i) -- resize clip length oder track speed according to t_ma
     clip[track[i].clip].info = "repitch factor: "..string.format("%.2f", tempo / clip[track[i].clip].bpm)
   else
     clip[track[i].clip].info = "length: "..string.format("%.2f", resize).."s"
-  end
-end
-
-function update_track_tempo()
-  for i = 1, 6 do
-    if track[i].tempo_map == 1 then
-      clip_resize(i)
-    end
   end
 end
 
@@ -752,11 +751,34 @@ function toggle_playback(i)
     e.t = eSTART
     e.i = i
     event(e)
-    if params:get("midi_trnsp") == 2 and transport_run == false then
-      m:start()
-      transport_run = true
-    end
   end
+end
+
+function toggle_transport()
+  if transport_run == false then
+    if params:get("midi_trnsp") == 2 then
+      m:start()
+    end
+    if params:get("clock_source") == 1 then
+      clock.internal.start()
+      print("internal clock reset")
+    end
+    transport_run = true
+  end
+end
+
+function stop_track(i)
+  softcut.level(i, 0)
+  softcut.level_cut_cut(i, 5, 0)
+  softcut.level_cut_cut(i, 6, 0)
+  clock.run(
+  function()
+    clock.sleep(declick)
+    track[i].play = 0
+    softcut.play(i, 0)
+    softcut.rec(i, 0)
+    if view < vLFO then dirtygrid = true end
+  end)
 end
 
 function stopall() -- stop all tracks and send midi stop if set in params
@@ -769,8 +791,8 @@ function stopall() -- stop all tracks and send midi stop if set in params
   end
   if params:get("midi_trnsp") == 2 then
     m:stop()
-    transport_run = false
   end
+  transport_run = false
 end
 
 function altrun() -- alt run function for selected tracks
@@ -859,10 +881,11 @@ function oneshot(cycle) -- called by clock coroutine at threshold
     track[oneshot_on].oneshot = 0
   end
   set_rec(oneshot_on)
-  if track[oneshot_on].sel == 1 and params:get("auto_rand") == 2 and oneshot_rec == true then --randomize selected tracks
+  if track[oneshot_on].sel == 1 and params:get("auto_rand_rec") == 2 and oneshot_rec == true then --randomize selected tracks
     randomize(oneshot_on)
   end
   tracktimer:stop()
+  oneshot_rec = false
 end
 
 function count_length()
@@ -909,7 +932,7 @@ function chop(i) -- called when rec is toggled
       clip[track[i].clip].reset = l
       clip[track[i].clip].info = "length: "..string.format("%.2f", l).."s"
     end
-    if track[i].sel == 1 and params:get("auto_rand") == 2 then --randomize selected tracks
+    if track[i].sel == 1 and params:get("auto_rand_rec") == 2 then --randomize selected tracks
       randomize(i)
     end
     oneshot_rec = false
@@ -936,7 +959,11 @@ function randomize(i) -- randomize parameters
     e.i = i
     e.loop = 1
     e.loop_start = math.random(1, 15)
-    e.loop_end = math.random(e.loop_start, 16)
+    if params:get("auto_rand_cycle") == 2 then
+      e.loop_end = math.random(e.loop_start + 1, 16)
+    else
+      e.loop_end = math.random(e.loop_start, 16)
+    end
     event(e)
   end
   if params:get("rnd_speed") == 2 then
@@ -946,6 +973,7 @@ function randomize(i) -- randomize parameters
   if params:get("rnd_cut") == 2 then
     params:set(i.. "cutoff", math.random(params:get("rnd_lcut"), params:get("rnd_ucut")) )
   end
+  track[i].step_count = 0
 end
 
 -- interface
@@ -1035,6 +1063,21 @@ function ledpulse()
   end
 end
 
+function barpulse()
+  while true do
+    clock.sync(4)
+    flash = true
+    dirtygrid = true
+    clock.run(
+      function()
+        clock.sleep(0.1)
+        flash = false
+        dirtygrid = true
+      end
+    )
+  end
+end
+
 function show_message(message)
   clock.run(function()
     view_message = message
@@ -1078,7 +1121,7 @@ end
 init = function()
 
 -- params for "globals"
-  params:add_separator("global")
+  params:add_separator("global_params", "global")
 
   -- params for scales
   params:add_option("scale", "scale", scale_options, 1)
@@ -1086,13 +1129,12 @@ init = function()
 
   -- params for rec threshold
   params:add_control("rec_threshold", "rec threshold", controlspec.new(-40, 6, 'lin', 0.01, -12, "dB"))
-  -- not as much fine control with db but it's more intuitive to me (increment of 0.01 doesn't work when neg values involved)
 
   -- tempo map behaviour
   params:add_option("t_map_mode", "tempo-map mode", {"resize", "repitch"}, 1)
 
   -- midi params
-  params:add_group("macros", 2)
+  params:add_group("macro_params", "macros", 2)
   -- event recording slots
   params:add_option("slot_assign", "macro slots", {"split", "patterns only", "recall only"}, 1)
   params:set_action("slot_assign", function() dirtygrid = true end)
@@ -1101,7 +1143,7 @@ init = function()
   params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false dirtygrid = true end)
 
   -- midi params
-  params:add_group("midi settings", 2)
+  params:add_group("midi_params", "midi settings", 2)
   -- midi device
   build_midi_device_list()
   params:add_option("global_midi_device", "midi device", midi_devices, 1)
@@ -1110,58 +1152,65 @@ init = function()
   params:add_option("midi_trnsp","midi transport", {"off", "send"}, 1)
 
   -- global track control
-  params:add_group("track control", 7)
-  params:add_separator("control focused track")
+  params:add_group("focus_track_control", "track control", 8)
+  params:add_separator("control_focused_track", "control focused track")
   -- playback
-  params:add_binary("track_focus_playback", "playback", "momentary", 0)
-  params:set_action("track_focus_playback", function(v) if v == 1 then toggle_playback(focus) end end)
+  params:add_binary("track_focus_playback", "playback", "trigger", 0)
+  params:set_action("track_focus_playback", function() toggle_playback(focus) end)
   -- mute
-  params:add_binary("track_focus_mute", "mute", "momentary", 0)
-  params:set_action("track_focus_mute", function(v) if v == 1 then local i = focus local n = 1 - track[i].mute e = {} e.t = eMUTE e.i = i e.mute = n event(e) end end)
+  params:add_binary("track_focus_mute", "mute", "trigger", 0)
+  params:set_action("track_focus_mute", function() local i = focus local n = 1 - track[i].mute e = {} e.t = eMUTE e.i = i e.mute = n event(e) end)
   -- record enable
-  params:add_binary("rec_focus_enable", "record", "momentary", 0)
-  params:set_action("rec_focus_enable", function(v) if v == 1 then rec_enable(focus) end end)
+  params:add_binary("rec_focus_enable", "record", "trigger", 0)
+  params:set_action("rec_focus_enable", function() rec_enable(focus) end)
   -- reverse
-  params:add_binary("tog_focus_rev", "direction", "momentary", 0)
-  params:set_action("tog_focus_rev", function(v) if v == 1 then local i = focus local n = 1 - track[i].rev e = {} e.t = eREV e.i = i e.rev = n event(e) end end)
+  params:add_binary("tog_focus_rev", "direction", "trigger", 0)
+  params:set_action("tog_focus_rev", function() local i = focus local n = 1 - track[i].rev e = {} e.t = eREV e.i = i e.rev = n event(e) end)
   -- speed +
-  params:add_binary("inc_focus_speed", "speed +", "momentary", 0)
-  params:set_action("inc_focus_speed", function(v) if v == 1 then local i = focus local n = util.clamp(track[i].speed + 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end end)
+  params:add_binary("inc_focus_speed", "speed +", "trigger", 0)
+  params:set_action("inc_focus_speed", function() local i = focus local n = util.clamp(track[i].speed + 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end)
   -- speed -
-  params:add_binary("dec_focus_speed", "speed -", "momentary", 0)
-  params:set_action("dec_focus_speed", function(v) if v == 1 then local i = focus local n = util.clamp(track[i].speed - 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end end)
+  params:add_binary("dec_focus_speed", "speed -", "trigger", 0)
+  params:set_action("dec_focus_speed", function() local i = focus local n = util.clamp(track[i].speed - 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end)
+  -- randomize
+  params:add_binary("focus_track_rand", "randomize", "trigger", 0)
+  params:set_action("focus_track_rand", function() randomize(focus) end)
 
   -- randomize settings
-  params:add_group("randomization", 15)
-  params:add_option("auto_rand","auto-randomize", {"off", "on"}, 1)
+  params:add_group("randomization_params", "randomization", 17)
+  params:add_option("auto_rand_rec","randomize @ oneshot rec", {"off", "on"}, 1)
+  params:add_option("auto_rand_cycle","randomize @ step count", {"off", "on"}, 1)
+  params:add_number("step_count", ">> step count", 1, 128, 16)
 
-  params:add_separator("")
+  params:add_separator("randomize_track", "")
   params:add_option("rnd_transpose", "transpose", {"off", "on"}, 1)
   params:add_option("rnd_vol", "volume", {"off", "on"}, 1)
   params:add_option("rnd_pan", "pan", {"off", "on"}, 1)
   params:add_option("rnd_dir", "direction", {"off", "on"}, 2)
   params:add_option("rnd_loop", "loop", {"off", "on"}, 2)
 
-  params:add_separator("")
+  params:add_separator("randomize_speed", "")
   params:add_option("rnd_speed", "speed", {"off", "on"}, 2)
   params:add_number("rnd_uoct", "+ oct range", 0, 3, 2)
   params:add_number("rnd_loct", "- oct range", 0, 3, 2)
 
-  params:add_separator("")
+  params:add_separator("randomize_filter", "")
   params:add_option("rnd_cut", "cutoff", {"off", "on"}, 1)
   params:add_control("rnd_ucut", "upper freq", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
   params:add_control("rnd_lcut", "lower freq", controlspec.new(20, 18000, 'exp', 1, 20, "Hz"))
 
   -- params for tracks
-  params:add_separator("tracks")
+  params:add_separator("track_params", "tracks")
 
   audio.level_cut(1)
   audio.level_tape(1)
 
   for i = 1, 6 do
-    params:add_group("track "..i, 29)
+    params:add_group("track_group"..i, "track "..i, 31)
 
-    params:add_separator("tape")
+    params:add_separator("tape_params"..i, "tape")
+    -- play mode
+    params:add_option(i.."play_mode", i.." play mode", {"loop", "oneshot", "hold"}, 1)
     -- select buffer
     params:add_option(i.."buffer_sel", i.." buffer", {"main", "temp"}, 1)
     params:set_action(i.."buffer_sel", function(x) track[i].side = x - 1 set_buffer(i) end)
@@ -1199,7 +1248,7 @@ init = function()
     params:hide(i.."send_track6")
 
     -- filter params
-    params:add_separator("filter")
+    params:add_separator("filter_params"..i, "filter")
     -- cutoff
     params:add_control(i.."cutoff", i.." cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
     params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
@@ -1214,7 +1263,7 @@ init = function()
     params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) if view < vLFO and pageNum == 2 then dirtyscreen = true end end)
 
     -- warble params
-    params:add_separator("warble")
+    params:add_separator("warble_params"..i, "warble")
     -- warble amount
     params:add_number(i.."warble_amount", i.." amount", 0, 100, 10, function(param) return (param:get().." %") end)
     -- warble depth
@@ -1224,25 +1273,28 @@ init = function()
     params:set_action(i.."warble_freq", function(val) warble[i].freq = val * 2 end)
 
     -- track control
-    params:add_separator("track control")
+    params:add_separator("track_control_params"..i, "track control")
     -- playback
-    params:add_binary(i.."track_playback", i.." playback", "momentary", 0)
-    params:set_action(i.."track_playback", function(v) if v == 1 then toggle_playback(i) end end)
+    params:add_binary(i.."track_playback", i.." playback", "trigger", 0)
+    params:set_action(i.."track_playback", function() toggle_playback(i) end)
     -- mute
-    params:add_binary(i.."track_mute", i.." mute", "momentary", 0)
-    params:set_action(i.."track_mute", function(v) if v == 1 then local n = 1 - track[i].mute e = {} e.t = eMUTE e.i = i e.mute = n event(e) end end)
+    params:add_binary(i.."track_mute", i.." mute", "trigger", 0)
+    params:set_action(i.."track_mute", function() local n = 1 - track[i].mute e = {} e.t = eMUTE e.i = i e.mute = n event(e) end)
     -- record enable
-    params:add_binary(i.."rec_enable", i.." record", "momentary", 0)
-    params:set_action(i.."rec_enable", function(v) if v == 1 then rec_enable(i) end end)
+    params:add_binary(i.."rec_enable", i.." record", "trigger", 0)
+    params:set_action(i.."rec_enable", function() rec_enable(i) end)
     -- reverse
-    params:add_binary(i.."tog_rev", i.." reverse", "momentary", 0)
-    params:set_action(i.."tog_rev", function(v) if v == 1 then local n = 1 - track[i].rev e = {} e.t = eREV e.i = i e.rev = n event(e) end end)
+    params:add_binary(i.."tog_rev", i.." reverse", "trigger", 0)
+    params:set_action(i.."tog_rev", function() local n = 1 - track[i].rev e = {} e.t = eREV e.i = i e.rev = n event(e) end)
     -- speed +
-    params:add_binary(i.."inc_speed", i.." speed +", "momentary", 0)
-    params:set_action(i.."inc_speed", function(v) if v == 1 then local n = util.clamp(track[i].speed + 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end end)
+    params:add_binary(i.."inc_speed", i.." speed +", "trigger", 0)
+    params:set_action(i.."inc_speed", function() local n = util.clamp(track[i].speed + 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end)
     -- speed -
-    params:add_binary(i.."dec_speed", i.." speed -", "momentary", 0)
-    params:set_action(i.."dec_speed", function(n) if n == 1 then local n = util.clamp(track[i].speed - 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end end)
+    params:add_binary(i.."dec_speed", i.." speed -", "trigger", 0)
+    params:set_action(i.."dec_speed", function() local n = util.clamp(track[i].speed - 1, -3, 3) e = {} e.t = eSPEED e.i = i e.speed = n event(e) end)
+    -- randomize
+    params:add_binary(i.."track_rand", i.." randomize", "trigger", 0)
+    params:set_action(i.."track_rand", function() randomize(i) end)
 
     -- input options
     params:add_option(i.."input_options", i.." input options", {"L+R", "L IN", "R IN", "OFF"}, 1)
@@ -1277,7 +1329,7 @@ init = function()
   end
 
   -- params for modulation (hnds_mlre)
-  params:add_separator("modulation")
+  params:add_separator("modulation_sep", "modulation")
   for i = 1, 6 do lfo[i].lfo_targets = lfo_targets end
   lfo.init()
 
@@ -1289,11 +1341,8 @@ init = function()
 
   -- params for quant division
   params:add_option("quant_div", "quant div", div_options, 7)
-  params:set_action("quant_div", function(d) div = div_values[d] / 4 end)
+  params:set_action("quant_div", function(d) div = div_values[d] * 4 end)
   params:hide("quant_div")
-
-  -- params for clock tempo
-  params:set_action("clock_tempo", function() update_track_tempo() end)
 
   -- pset callback
   params.action_write = function(filename, name)
@@ -1363,7 +1412,7 @@ init = function()
     end
     -- and save the chunk
     tab.save(sesh_data, norns.state.data.."sessions/"..number.."/"..name.."_session.data")
-    print("finished writing '"..filename.."' as '"..name.."'")
+    print("finished writing pset:'"..name.."'")
   end
 
   params.action_read = function(filename)
@@ -1456,7 +1505,12 @@ init = function()
       end
       dirtyscreen = true
       dirtygrid = true
-      print("finished reading '"..filename.."'")
+      print("finished reading pset:'"..pset_id.."'")
+    end
+
+    params.action_delete = function(filename, name, number)
+      norns.system_cmd("rm -r "..norns.state.data.."sessions/"..number.."/")
+      print("finished deleting pset:'"..name.."'")
     end
   end
 
@@ -1499,26 +1553,66 @@ init = function()
   grid.add = draw_grid_connected
 
   params:bang()
+  --params:default()
 
   softcut.event_phase(phase)
   softcut.poll_start_phase()
-
-  -- set "local e" to other than nil: workaround to an error that occured if thresh_rec() is called before any track is played
-  for i = 1, 6 do
-    track[i].play = 1
-    track[i].play = 0
-  end
 
   print("mlre loaded and ready. enjoy!")
 
 end -- end of init
 
 phase = function(n, x)
+  -- calc softcut positon
   local pp = ((x - clip[track[n].clip].s) / clip[track[n].clip].l)
-  x = math.floor(pp * 16)
-  if x ~= track[n].pos_grid then
-    track[n].pos_grid = x
+  local positon = math.floor(pp * 16)
+  -- calc grid position
+  if track[n].rev == 0 then
+    track[n].pos = positon + 1 % 16
+  elseif track[n].rev == 1 then
+    if track[n].loop == 1 then
+      track[n].pos = positon + 1 % 16
+    else
+      track[n].pos = ((positon + 1) % 16) + 1
+    end
+  end
+  -- display position
+  if positon ~= track[n].pos_grid then
+    track[n].pos_grid = positon
     if view < vLFO then dirtygrid = true end
+  end
+  -- oneshot play_mode
+  if params:get(n.."play_mode") == 2 and track[n].loop == 0 then
+    local key_len
+    if track[n].tempo_map == 1 and params:get("t_map_mode") == 2 then
+      key_len = ((60 / tempo) * clip[track[n].clip].l) / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune")) / 16
+    else
+      key_len = clip[track[n].clip].l / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune")) / 16
+    end
+    if track[n].rev == 0 then
+      if track[n].pos == 16 then
+        clock.run(
+        function()
+          clock.sleep(key_len - declick)
+          stop_track(n)
+        end)
+      end
+    else
+      if track[n].pos == 1 then
+        clock.run(
+        function()
+          clock.sleep(key_len - declick)
+          stop_track(n)
+        end)
+      end
+    end
+  end
+  -- randomize at cycle
+  if params:get("auto_rand_cycle") == 2 and track[n].sel == 1 and not oneshot_rec then
+    track[n].step_count = track[n].step_count + 1
+    if track[n].step_count > params:get("step_count") then
+      randomize(n)
+    end
   end
 end
 
@@ -1620,8 +1714,10 @@ gridkey_nav = function(x, z)
       quantize = 1 - quantize
       if quantize == 0 then
         clock.cancel(quantizer)
+        clock.cancel(indicator)
       else
         quantizer = clock.run(update_q_clock)
+        indicator = clock.run(barpulse)
       end
     elseif x == 16 then alt = 1 if view == vLFO then dirtyscreen = true end
     elseif x == 15 and alt == 1 then set_view(vCLIP)
@@ -1650,7 +1746,7 @@ gridredraw_nav = function()
   g:led(3, 1, 2) -- vTRSP
   g:led(view, 1, 9) -- focus
   g:led(16, 1, alt == 1 and 15 or 9) -- alt
-  g:led(15, 1, quantize == 1 and 9 or 3) -- Q
+  g:led(15, 1, quantize == 1 and (flash and 15 or 9) or 3) -- Q
   g:led(14, 1, alt2 == 1 and 9 or 2) -- mod
   for i = 1, (params:get("slot_assign") == 1 and 4 or 8) do
     if params:get("slot_assign") ~= 3 then
@@ -1983,6 +2079,7 @@ v.gridkey[vREC] = function(x, y, z)
       elseif held[y] == 2 then -- second keypress
         second[y] = x
       end
+      track[i].gate = true
     elseif z == 0 then
       if held[y] == 1 and heldmax[y] == 2 then -- if two keys held at release then loop
         e = {}
@@ -1992,6 +2089,17 @@ v.gridkey[vREC] = function(x, y, z)
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
         event(e)
+      end
+      track[i].gate = false
+      if params:get(i.."play_mode") == 3 and track[i].loop == 0 then
+        clock.run(
+          function()
+            clock.sleep(noterep)
+            if not track[i].gate then
+              e = {} e.t = eSTOP e.i = i event(e)
+            end
+          end
+        )
       end
     end
   end
@@ -2090,6 +2198,7 @@ v.gridkey[vCUT] = function(x, y, z)
       elseif y < 8 and held[y] == 2 then
         second[y] = x
       end
+      track[i].gate = true
     elseif z == 0 then
       if y < 8 and held[y] == 1 and heldmax[y] == 2 then
         e = {}
@@ -2099,6 +2208,17 @@ v.gridkey[vCUT] = function(x, y, z)
         e.loop_start = math.min(first[y], second[y])
         e.loop_end = math.max(first[y], second[y])
         event(e)
+      end
+      track[i].gate = false
+      if params:get(i.."play_mode") == 3 and track[i].loop == 0 then
+        clock.run(
+          function()
+            clock.sleep(noterep)
+            if not track[i].gate then
+              e = {} e.t = eSTOP e.i = i event(e)
+            end
+          end
+        )
       end
     end
   end
