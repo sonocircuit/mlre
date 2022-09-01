@@ -859,11 +859,10 @@ function thresh_rec() -- start rec when threshold is reached
 end
 
 function update_cycle(n) -- calculate cycle length when oneshot == 1
-  local tempo = params:get("clock_tempo")
   oneshot_rec = false
   if track[n].oneshot == 1 then
     if track[n].tempo_map == 1 and params:get("t_map_mode") == 2 then
-      track[n].dur = ((60 / tempo) * clip[track[n].clip].l) / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
+      track[n].dur = ((clock.get_beat_sec() * clip[track[n].clip].l) / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))) * (clip[track[n].clip].bpm / 60)
     else
       track[n].dur = clip[track[n].clip].l / math.pow(2, track[n].speed + track[n].transpose + params:get(n.."detune"))
     end
