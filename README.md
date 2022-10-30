@@ -11,7 +11,3 @@ Also, this wouldn't have been possible without the countless contributions made 
 A special thanks to **tehn** for creating mlr and **zebra** for softcut, answering questions and some very helpful lines of code. Also a great thanks to **justmat**, **infinitedigits** and **dan_derks** for inspiration, support, answering questions and some very helpful lines of code.
 
 ### Documentation: [mlre user guide](https://github.com/sonocircuit/mlre/blob/main/docs/MLRE_USER%20GUIDE%201.3.6.pdf)
-
-## Roadmap:
-- cleanup and bugfixes   
-- re-write lfos
