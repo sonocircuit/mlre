@@ -13,7 +13,7 @@
 -- >> code/mlre/docs
 --
 
--- failstate by @dan_derks
+-- failstate @dan_derks
 if tonumber(norns.version.update) < 220802 then
   norns.script.clear()
   norns.script.load('code/mlre/lib/fail_state.lua')

@@ -1,5 +1,5 @@
 -- display info if norns version does not match requirements
--- adapted form cc2 by @dan_derks
+-- adapted form cc2 @dan_derks
 function redraw()
   screen.clear()
   screen.level(15)
