@@ -26,7 +26,7 @@ for i = 1, number_of_outputs do
     slope = 0,
     depth = 100,
     offset = 0,
-    active = 0 -- this adds possibility to toggle on/off via grid with one button
+    active = 0
   }
 end
 
@@ -79,6 +79,7 @@ end
 function refresh()
   if view == 4 then dirtygrid = true end
   if view == 4 then dirtyscreen = true end
+  if view == 4 then dirtyarc = true end
 end
 
 function lfo.init()
