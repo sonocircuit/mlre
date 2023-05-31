@@ -1,4 +1,4 @@
--- mlre v1.5.0 @sonocircuit
+-- mlre v1.5.1 @sonocircuit
 -- llllllll.co/t/mlre
 --
 -- an adaption of
@@ -35,7 +35,8 @@ local pset_load = false
 local main_pageNum = 1
 local trksel = 0
 local dstview = 0
-local pulse_key = 1
+local pulse_key_fast = 1
+local pulse_key_slow = 1
 local flash_bar = false
 local flash_beat = false
 local quantize = 0
@@ -49,8 +50,9 @@ local rec_dur = 0
 local route_adc = 1
 local route_tape = 0
 
-local tape_gap = 1
-local max_tapelength = 57
+local FADE_TIME = 0.01
+local TAPE_GAP = 1
+local MAX_TAPELENGTH = 57
 local default_splicelength = 4
 local default_beatnum = 4
 
@@ -74,7 +76,7 @@ local tape_actions = {"load", "clear", "save", "copy", "paste"}
 local tape_action = 1
 local copy_track = nil
 local copy_splice = nil
-local resize_values = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, max_tapelength}
+local resize_values = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, MAX_TAPELENGTH}
 local resize_options = {"1/4", "2/4", "3/4", "4/4", "5/4", "6/4", "7/4", "8/4", "9/4", "10/4", "11/4", "12/4", "14/4", "16/4", "18/4", "20/4", "22/4", "24/4", "28/4", "32/4", "max"}
 
 local pattern_playback = {"loop", "oneshot"}
@@ -363,8 +365,8 @@ for i = 1, 6 do
   track[i].dur = 4
   track[i].splice_active = 1
   track[i].splice_focus = 1
-  track[i].cut = tape_gap * i + (i - 1) * max_tapelength
-  track[i].pos_abs = tape_gap * i + (i - 1) * max_tapelength
+  track[i].cut = TAPE_GAP * i + (i - 1) * MAX_TAPELENGTH
+  track[i].pos_abs = TAPE_GAP * i + (i - 1) * MAX_TAPELENGTH
   track[i].pos_rel = 0
   track[i].pos_clip = 0
   track[i].pos_hi_res = 1
@@ -386,8 +388,8 @@ end
 tape = {}
 for i = 1, 6 do
   tape[i] = {}
-  tape[i].s = tape_gap * i + (i - 1) * max_tapelength
-  tape[i].e = tape[i].s + max_tapelength
+  tape[i].s = TAPE_GAP * i + (i - 1) * MAX_TAPELENGTH
+  tape[i].e = tape[i].s + MAX_TAPELENGTH
   tape[i].splice = {}
   for j = 1, 8 do
     tape[i].splice[j] = {}
@@ -508,7 +510,7 @@ end
 function clear_splice(i) -- clear focused splice
   local buffer = params:get(i.."buffer_sel")
   local start = tape[i].splice[track[i].splice_focus].s
-  local length = tape[i].splice[track[i].splice_focus].l
+  local length = tape[i].splice[track[i].splice_focus].l + FADE_TIME
   softcut.buffer_clear_region_channel(buffer, start, length)
   show_message("track "..i.." splice "..track[i].splice_focus.." cleared")
   render_splice()
@@ -517,7 +519,7 @@ end
 function clear_tape(i) -- clear tape and reset splices
   local buffer = params:get(i.."buffer_sel")
   local start = tape[i].s
-  softcut.buffer_clear_region_channel(buffer, start, max_tapelength)
+  softcut.buffer_clear_region_channel(buffer, start, MAX_TAPELENGTH)
   track[i].loop = 0
   reset_splices(i)
   show_message("track "..i.." tape cleared")
@@ -1440,10 +1442,10 @@ function pan_display(param) --TODO
   return (pos_left..math.abs(util.round(util.linlin(-1, 1, -100, 100, param), 1))..pos_right)
 end
 
-function ledpulse()
+function ledpulse_fast()
   while true do
-    clock.sleep(1/15)
-    pulse_key = (pulse_key % 8) + 4
+    clock.sleep(0.1)
+    pulse_key_fast = pulse_key_fast == 8 and 12 or 8
     for i = 1, 8 do
       if pattern[i].overdub == 1 then
         dirtygrid = true
@@ -1451,6 +1453,18 @@ function ledpulse()
     end
     for i = 1, 6 do
       if track[i].oneshot == 1 then
+        dirtygrid = true
+      end
+    end
+  end
+end
+
+function ledpulse_slow()
+  while true do
+    clock.sleep(0.2)
+    pulse_key_slow = util.wrap(pulse_key_slow + 1, 4, 12)
+    for i = 1, 6 do
+      if track[i].mute then
         dirtygrid = true
       end
     end
@@ -1832,10 +1846,10 @@ function init()
     params:add_option(i.."adsr_active", "envelope", {"off", "on"}, 1)
     params:set_action(i.."adsr_active", function() init_envelope(i) if view == vENV then dirtyscreen = true end end)
     -- env amplitude
-    params:add_control(i.."adsr_amp", "max vol", controlspec.new(0, 1, 'lin', 0, 1, ""))
+    params:add_control(i.."adsr_amp", "max vol", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."adsr_amp", function(val) env[i].max_value = val clamp_env_levels(i) if view == vENV then dirtyscreen = true end end)
     -- env init level
-    params:add_control(i.."adsr_init", "min vol", controlspec.new(0, 1, 'lin', 0, 0, ""))
+    params:add_control(i.."adsr_init", "min vol", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."adsr_init", function(val) env[i].init_value = val clamp_env_levels(i) if view == vENV then dirtyscreen = true end end)
     -- env attack
     params:add_control(i.."adsr_attack", "attack", controlspec.new(0, 10, 'lin', 0.1, 0.2, "s"))
@@ -1900,7 +1914,7 @@ function init()
     softcut.pre_level(i, 1)
     softcut.rec_level(i, 0)
 
-    softcut.fade_time(i, 0.01)
+    softcut.fade_time(i, FADE_TIME)
     softcut.level_slew_time(i, 0.1)
     softcut.rate_slew_time(i, 0)
 
@@ -2120,7 +2134,8 @@ function init()
   tracktimer:stop()
 
   -- clocks
-  ledcounter = clock.run(ledpulse)
+  fastpulse = clock.run(ledpulse_fast)
+  slowpulse = clock.run(ledpulse_slow)
   envcounter = clock.run(env_run)
 
   for i = 1, 8 do
@@ -2183,7 +2198,7 @@ end -- end of init
 phase = function(n, x)
   -- calc softcut positon
   local pp = ((x - clip[n].s) / clip[n].l)
-  local pc = ((x - tape[n].s) / max_tapelength)
+  local pc = ((x - tape[n].s) / MAX_TAPELENGTH)
   local g_pos = math.floor(pp * 16)
   local a_pos = math.floor(pp * 64)
   -- calc positions
@@ -2420,7 +2435,7 @@ gridredraw_nav = function()
       if pattern[i].rec == 1 then
         g:led(i + 4, 1, 15)
       elseif pattern[i].overdub == 1 then
-        g:led(i + 4, 1, pulse_key)
+        g:led(i + 4, 1, pulse_key_fast)
       elseif pattern[i].play == 1 then
         g:led(i + 4, 1, pattern[i].flash and 15 or 12)
       elseif pattern[i].count > 0 then
@@ -2829,24 +2844,23 @@ v.gridredraw[vREC] = function()
   g:led(3, track_focus + 1, 7)
   g:led(4, track_focus + 1, params:get(track_focus.."buffer_sel") == 1 and 7 or 3)
   g:led(5, track_focus + 1, params:get(track_focus.."buffer_sel") == 2 and 7 or 3)
-  g:led(6, track_focus + 1, 3)
   for i = 1, 6 do
     local y = i + 1
-    g:led(1, y, 3) -- rec
-    if track[i].rec == 1 and track[i].fade == 1 then g:led(1, y, 15)  end
-    if track[i].rec == 1 and track[i].fade == 0 then g:led(1, y, 15)  end
-    if track[i].rec == 0 and track[i].fade == 1 then g:led(1, y, 6)  end
-    if track[i].oneshot == 1 then g:led(2, y, pulse_key) end
-    if track[i].tempo_map == 1 then g:led(6, y, 7) end
-    if track[i].tempo_map == 2 then g:led(6, y, 12) end
-    g:led(8, y, track[i].warble == 1 and 8 or 5) -- reverse playback
-    if track[i].rev == 1 and track[i].warble == 0 then g:led(8, y, 11) end
-    if track[i].rev == 1 and track[i].warble == 1 then g:led(8, y, 15) end
+    g:led(1, y, track[i].rec == 1 and 15 or (track[i].fade == 1 and 7 or 3)) -- rec key
+    g:led(2, y, track[i].oneshot == 1 and pulse_key_fast or 0)
+    g:led(6, y, track[i].tempo_map == 1 and 7 or (track[i].tempo_map == 2 and 12 or (track_focus == i and 3 or 0)))
+    g:led(8, y, track[i].rev == 1 and (track[i].warble == 1 and 15 or 11) or (track[i].warble == 1 and 8 or 4))
     g:led(16, y, 3) -- start/stop
-    if track[i].play == 1 and track[i].sel == 1 then g:led(16, y, 15) end
-    if track[i].play == 1 and track[i].sel == 0 then g:led(16, y, 10) end
-    if track[i].play == 0 and track[i].sel == 1 then g:led(16, y, 5) end
-    g:led(12, y, 3) -- speed = 1
+    if track[i].mute == 1 then
+      g:led(16, y, track[i].play == 0 and (track[i].sel == 0 and pulse_key_slow - 4 or pulse_key_slow) or (track[i].sel == 0 and pulse_key_slow or pulse_key_slow + 3))
+    elseif track[i].play == 1 and track[i].sel == 1 then
+      g:led(16, y, 15)
+    elseif track[i].play == 1 and track[i].sel == 0 then
+      g:led(16, y, 10)
+    elseif track[i].play == 0 and track[i].sel == 1 then
+      g:led(16, y, 5)
+    end
+    g:led(12, y, 3)
     g:led(12 + track[i].speed, y, 9)
   end
   gridredraw_cutfocus()
@@ -3350,7 +3364,7 @@ v.enc[vLFO] = function(n, d)
     if n == 2 then
       params:delta(lfo_focus.."lfo_target", d)
     elseif n == 3 then
-      if alt == 0 then
+      if alt == 0 and k1_hold == 0 then
         params:delta(lfo_focus.."lfo_shape", d)
       else
         params:delta(lfo_focus.."lfo_range", d)
@@ -3381,7 +3395,7 @@ v.redraw[vLFO] = function()
   screen.move(10, 52)
   screen.text(params:string(lfo_focus.."lfo_target"))
   screen.move(70, 52)
-  if alt == 0 then
+  if alt == 0 and k1_hold == 0 then
     screen.text(params:string(lfo_focus.."lfo_shape"))
   else
     screen.text(params:string(lfo_focus.."lfo_range"))
@@ -3390,7 +3404,7 @@ v.redraw[vLFO] = function()
   screen.move(10, 60)
   screen.text("lfo target")
   screen.move(70, 60)
-  if alt == 0 then
+  if alt == 0 and k1_hold == 0 then
     screen.text("shape")
   else
     screen.text("range")
@@ -3432,9 +3446,9 @@ v.gridkey[vLFO] = function(x, y, z)
     end
     if y == 8 then
       if x >= 1 and x <= 3 then
-        if alt == 0 then
+        if alt == 0 and k1_hold == 0 then
           params:set(lfo_focus.."lfo_shape", x)
-        elseif alt == 1 then
+        elseif (alt == 1 or k1_hold == 1) then
           params:set(lfo_focus.."lfo_range", x)
         end
       end
@@ -3471,9 +3485,9 @@ v.gridredraw[vLFO] = function()
     g:led(i + 3, 8, 4)
     g:led(i + 10, 8, 4)
   end
-  if alt == 0 then
+  if (alt == 0 and k1_hold == 0) then
     g:led(params:get(lfo_focus.."lfo_shape"), 8, 5)
-  elseif alt == 1 then
+  elseif (alt == 1 or k1_hold == 1) then
     g:led(params:get(lfo_focus.."lfo_range"), 8, 5)
   end
   g:led(trksel / 6 + 4, 8, 12)
@@ -3653,9 +3667,9 @@ v.redraw[vENV] = function()
     screen.text(params:string(env_focus.."adsr_init"))
     screen.level(3)
     screen.move(10, 40)
-    screen.text("max level")
+    screen.text("max vol")
     screen.move(70, 40)
-    screen.text("min level")
+    screen.text("min vol")
   end
 
   if view_message ~= "" then
@@ -3970,7 +3984,7 @@ function fileselect_callback(path, i)
   dirtygrid = true
 end
 
-function textentry_callback(txt)
+function filesave_callback(txt)
   local buffer = params:get(track_focus.."buffer_sel")
   if txt then
     local start = tape[track_focus].splice[track[track_focus].splice_focus].s
@@ -4005,7 +4019,6 @@ end
 
 function edit_splices(n, d, src, sens)
   -- set local variables
-  local render = false
   local i = track_focus
   local focus = track[track_focus].splice_focus
   local min_start = tape[track_focus].s
@@ -4031,11 +4044,7 @@ function edit_splices(n, d, src, sens)
   end
   if src == "arc" then
     arc_render = util.wrap(arc_render + 1, 1, 10)
-    if arc_render == 10 then render = true end
-    if render then
-      render_splice()
-      render = false
-    end
+    if arc_render == 10 then render_splice() end
   end
 end
 
@@ -4051,7 +4060,7 @@ v.key[vCLIP] = function(n, z)
           clear_splice(track_focus)
         elseif tape_actions[tape_action] == "save" then
           screenredrawtimer:stop()
-          textentry.enter(textentry_callback, "mlre-" .. (math.random(9000) + 1000))
+          textentry.enter(filesave_callback, "mlre-" .. (math.random(9000) + 1000))
         elseif tape_actions[tape_action] == "copy" then
           copy_track = track_focus
           copy_splice = track[track_focus].splice_focus
@@ -4331,7 +4340,6 @@ v.redraw[vCLIP] = function()
 end
 
 v.gridkey[vCLIP] = function(x, y, z)
-
   if y == 1 then gridkey_nav(x, z)
   elseif y > 1 and y < 8 then
     local i = y - 1
@@ -4354,7 +4362,7 @@ v.gridkey[vCLIP] = function(x, y, z)
       view_buffer = z == 1 and true or false
       render_splice()
     elseif x == 10 and z == 1 then
-      params:set(i.."buffer_sel", track[track_focus].side == 0 and 2 or 1)
+      params:set(i.."buffer_sel", track[i].side == 0 and 2 or 1)
       if track_focus == i then
         render_splice()
       end
@@ -4482,16 +4490,16 @@ v.arcredraw[vCLIP] = function()
   -- draw splice position
   local splice_s = tape[track_focus].splice[track[track_focus].splice_focus].s - tape[track_focus].s
   local splice_l = tape[track_focus].splice[track[track_focus].splice_focus].e - tape[track_focus].splice[track[track_focus].splice_focus].s
-  local pos_startpoint = math.floor(util.linlin(0, max_tapelength, 0, 1, splice_s) * 58)
-  local pos_endpoint = math.ceil(util.linlin(0, max_tapelength, 0, 1, splice_l) * 58)
+  local pos_startpoint = math.floor(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_s) * 58)
+  local pos_endpoint = math.ceil(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_l) * 58)
   a:led(3, -28 - arc_off, 6)
   a:led(3, 30 - arc_off, 6)
   for i = pos_startpoint, pos_startpoint + pos_endpoint do
     a:led(3, i + 1 - 29 - arc_off, 10)
   end
   -- draw splice size
-  local win_startpoint = math.floor(util.linlin(0, max_tapelength, 0, 1, splice_l) * -28)
-  local win_endpoint = math.ceil(util.linlin(0, max_tapelength, 0, 1, splice_l) * 28)
+  local win_startpoint = math.floor(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_l) * -28)
+  local win_endpoint = math.ceil(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_l) * 28)
   a:led(4, -28 - arc_off, 6)
   a:led(4, 30 - arc_off, 6)
   for i = win_startpoint, win_endpoint do
