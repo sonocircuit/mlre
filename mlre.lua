@@ -892,6 +892,12 @@ function retrig() -- retrig function for playing tracks
   end
 end
 
+function clear_loop(i)
+  track[i].loop = 0
+  softcut.loop_start(i, clip[track[i].clip].s)
+  softcut.loop_end(i, clip[track[i].clip].e)
+end
+
 -- threshold recording
 function arm_thresh_rec(i) -- start poll if oneshot == 1
   if track[i].oneshot == 1 then
@@ -2377,13 +2383,16 @@ v.gridkey[vREC] = function(x, y, z)
       dirtygrid = true
     end
   elseif y == 8 then -- cut for focused track
-    if z == 1 and held[y] then heldmax[y] = 0 end
-    held[y] = held[y] + (z * 2 - 1)
-    if held[y] > heldmax[y] then heldmax[y] = held[y] end
+    local row = focus + 1
+    if z == 1 and held[row] then heldmax[row] = 0 end
+    held[row] = held[row] + (z * 2 - 1)
+    if held[row] > heldmax[row] then heldmax[row] = held[row] end
     local i = focus
     if z == 1 then
-      if alt2 == 1 then -- "hold mode" as on cut page
-        heldmax[y] = x
+      if alt == 1 then
+        clear_loop(focus)
+      elseif alt2 == 1 then -- "hold mode" as on cut page
+        heldmax[row] = x
         e = {}
         e.t = eLOOP
         e.i = i
@@ -2392,22 +2401,22 @@ v.gridkey[vREC] = function(x, y, z)
         e.loop_end = x
         event(e)
         enc2_wait = false
-      elseif held[y] == 1 then -- cut at pos
-        first[y] = x
+      elseif held[row] == 1 then -- cut at pos
+        first[row] = x
         local cut = x - 1
         e = {} e.t = eCUT e.i = i e.pos = cut
         event(e)
-      elseif held[y] == 2 then -- second keypress
-        second[y] = x
+      elseif held[row] == 2 then -- second keypress
+        second[row] = x
       end
     elseif z == 0 then
-      if held[y] == 1 and heldmax[y] == 2 then -- if two keys held at release then loop
+      if held[row] == 1 and heldmax[row] == 2 then -- if two keys held at release then loop
         e = {}
         e.t = eLOOP
         e.i = i
         e.loop = 1
-        e.loop_start = math.min(first[y], second[y])
-        e.loop_end = math.max(first[y], second[y])
+        e.loop_start = math.min(first[row], second[row])
+        e.loop_end = math.max(first[row], second[row])
         event(e)
         enc2_wait = false
       end
@@ -2872,13 +2881,16 @@ v.gridkey[vTRSP] = function(x, y, z)
       end
     end
   elseif y == 8 then -- cut for focused track
-    if z == 1 and held[y] then heldmax[y] = 0 end
-    held[y] = held[y] + (z * 2 - 1)
-    if held[y] > heldmax[y] then heldmax[y] = held[y] end
+    local row = focus + 1
+    if z == 1 and held[row] then heldmax[row] = 0 end
+    held[row] = held[row] + (z * 2 - 1)
+    if held[row] > heldmax[row] then heldmax[row] = held[row] end
     local i = focus
     if z == 1 then
-      if alt2 == 1 then -- "hold" mode as on cut page
-        heldmax[y] = x
+      if alt == 1 then
+        clear_loop(focus)
+      elseif alt2 == 1 then -- "hold" mode as on cut page
+        heldmax[row] = x
         e = {}
         e.t = eLOOP
         e.i = i
@@ -2887,22 +2899,22 @@ v.gridkey[vTRSP] = function(x, y, z)
         e.loop_end = x
         event(e)
         enc2_wait = false
-      elseif held[y] == 1 then
-        first[y] = x
+      elseif held[row] == 1 then
+        first[row] = x
         local cut = x - 1
         e = {} e.t = eCUT e.i = i e.pos = cut
         event(e)
-      elseif held[y] == 2 then
-        second[y] = x
+      elseif held[row] == 2 then
+        second[row] = x
       end
     elseif z == 0 then
-      if held[y] == 1 and heldmax[y] == 2 then
+      if held[row] == 1 and heldmax[row] == 2 then
         e = {}
         e.t = eLOOP
         e.i = i
         e.loop = 1
-        e.loop_start = math.min(first[y], second[y])
-        e.loop_end = math.max(first[y], second[y])
+        e.loop_start = math.min(first[row], second[row])
+        e.loop_end = math.max(first[row], second[row])
         event(e)
         enc2_wait = false
       end
