@@ -26,7 +26,10 @@ for i = 1, number_of_outputs do
     slope = 0,
     depth = 100,
     offset = 0,
-    active = 0
+    active = false,
+    target = 1,
+    lfo_target = {},
+    lfo_target_names = {}
   }
 end
 
@@ -34,6 +37,8 @@ end
 for i = 1, number_of_outputs do
   lfo[i].lfo_targets = {"none"}
 end
+
+lfo_target_names = {"none"}
 
 function lfo.process()
 end
@@ -85,17 +90,20 @@ end
 function lfo.init()
   for i = 1, number_of_outputs do
     params:add_group("lfo " .. i, 7)
+    -- lfo on/off
+    params:add_option(i .. "lfo_state", "lfo state", {"off", "on"}, 1)
+    params:set_action(i .. "lfo_state", function(option) lfo[i].active = option == 2 and true or false refresh() end)
     -- modulation destination
-    params:add_option(i .. "lfo_target", "lfo target", lfo[i].lfo_targets, 1)
-    params:set_action(i .. "lfo_target", function() refresh() end)
+    params:add_option(i .. "lfo_target", "lfo target", lfo_target_names, 1)
+    params:set_action(i .. "lfo_target", function(val)  lfo[i].target = val refresh() end)
     -- lfo shape
     params:add_option(i .. "lfo_shape", "lfo shape", options.lfotypes, 1)
     params:set_action(i .. "lfo_shape", function(value) lfo[i].waveform = options.lfotypes[value] refresh() end)
     -- lfo depth
-    params:add_number(i .. "lfo_depth", "lfo depth", 0, 100, 0)
+    params:add_number(i .. "lfo_depth", "lfo depth", 0, 100, 0, function(param) return param:get().."%" end)
     params:set_action(i .. "lfo_depth", function(value) lfo[i].depth = value refresh() end)
     -- lfo offset
-    params:add_control(i .."lfo_offset", "lfo offset", controlspec.new(-1, 1, "lin", 0.1, 0.0, ""))
+    params:add_control(i .."lfo_offset", "lfo offset", controlspec.new(-1, 1, "lin", 0, 0.0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i .. "lfo_offset", function(value) lfo[i].offset = value refresh() end)
     -- lfo speed
     params:add_control(i .. "lfo_freq", "lfo freq", controlspec.new(0.1, 10.0, "lin", 0.1, 0.5, ""))
@@ -103,9 +111,6 @@ function lfo.init()
     -- speed range
     params:add_option(i .. "lfo_range", "lfo range", options.ranges, 2)
     params:set_action(i .. "lfo_range", function(idx) lfo[i].f_range = options.factors[idx] set_lfo_freq(i) refresh() end)
-    -- lfo on/off
-    params:add_option(i .. "lfo_state", "lfo state", {"off", "on"}, 1)
-    params:set_action(i .. "lfo_state", function() refresh() end)
   end
 
   local lfo_metro = metro.init()
