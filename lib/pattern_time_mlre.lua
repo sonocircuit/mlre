@@ -109,7 +109,6 @@ function pattern:rec_event(e)
         function()
           clock.sleep(pattern_length)
           self:rec_stop()
-          --self:start() -- replace with start commands
           self:first()
           self.clock_tick = 0
           self.play = 1
