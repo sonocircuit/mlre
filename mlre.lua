@@ -1790,7 +1790,7 @@ function init()
   params:set_action("rec_source", function(option) set_track_source(option) end)
   -- rec threshold
   params:add_control("rec_threshold", "rec threshold", controlspec.new(-40, 0, 'lin', 0.01, -12, "dB"))
-  params:set_action("rec_threshold", function(val) amp_threshold = util.dbamp(val / 10) end)
+  params:set_action("rec_threshold", function(val) amp_threshold = util.dbamp(val) / 10 end)
   -- rec slew
   params:add_control("rec_slew", "rec slew", controlspec.new(1, 10, 'lin', 0, 1, "ms"))
   params:set_action("rec_slew", function(val) for i = 1, 6 do softcut.recpre_slew_time(i, val * 0.001) end end)
