@@ -18,6 +18,7 @@ function display_message()
   end
 end
 
+
 ---------------------- MAIN VIEW -------------------------
 
 function ui.main_key(n, z)
@@ -422,6 +423,9 @@ function ui.lfo_key(n, z)
   elseif n == 3 and z == 1 then
     lfo_pageNum = util.wrap(lfo_pageNum + 1, 1, 3)
   end
+  if lfo_pageNum == 3 then
+    lfo_page_params_r[lfo_pageNum] = lfo_rate_params[params:get("lfo_mode_lfo_"..lfo_focus)]
+  end
   dirtyscreen = true
 end
 
@@ -430,14 +434,21 @@ function ui.lfo_enc(n, d)
     if shift == 0 then
       lfo_focus = util.clamp(lfo_focus + d, 1, 6)
       arc_lfo_focus = lfo_focus
+      if lfo_pageNum == 3 then
+        lfo_page_params_r[lfo_pageNum] = lfo_rate_params[params:get("lfo_mode_lfo_"..lfo_focus)]
+      end
     elseif shift == 1 then
       params:delta("output_level", d)
     end
   elseif n == 2 then
-    params:delta(lfo_focus..lfo_page_params_l[lfo_pageNum], d)
+    params:delta(lfo_page_params_l[lfo_pageNum]..lfo_focus, d)
+    if lfo_pageNum == 3 then
+      lfo_page_params_r[lfo_pageNum] = lfo_rate_params[params:get("lfo_mode_lfo_"..lfo_focus)]
+    end
   elseif n == 3 then
-    params:delta(lfo_focus..lfo_page_params_r[lfo_pageNum], d)
+    params:delta(lfo_page_params_r[lfo_pageNum]..lfo_focus, d)
   end
+  dirtyscreen = true
 end
 
 function ui.lfo_redraw()
@@ -447,6 +458,10 @@ function ui.lfo_redraw()
   screen.font_size(8)
   screen.move(4, 12)
   screen.text("LFO "..lfo_focus)
+
+  screen.level(4)
+  screen.move(64, 12)
+  screen.text_center("- "..lfo[lfo_focus].info.." -")
   for i = 1, 3 do
     screen.level(lfo_pageNum == i and 15 or 4)
     screen.rect(116 + (i -1) * 4, 6, 2, 6)
@@ -462,9 +477,9 @@ function ui.lfo_redraw()
   screen.font_size(16)
   screen.level(15)
   screen.move(32, 40)
-  screen.text_center(params:string(lfo_focus..lfo_page_params_l[lfo_pageNum]))
+  screen.text_center(params:string(lfo_page_params_l[lfo_pageNum]..lfo_focus))
   screen.move(96, 40)
-  screen.text_center(params:string(lfo_focus..lfo_page_params_r[lfo_pageNum]))
+  screen.text_center(params:string(lfo_page_params_r[lfo_pageNum]..lfo_focus))
   -- display messages
   display_message()
   screen.update()
@@ -472,18 +487,23 @@ end
 
 function ui.arc_lfo_delta(n, d)
   if n == 1 then
-    params:delta(lfo_focus.."lfo_freq", d / 20)
-  elseif n == 2 then
-    params:delta(lfo_focus.."lfo_depth", d / 10)
-    if params:get(lfo_focus.."lfo_depth") > 0 and params:get(lfo_focus.."lfo_state") ~= 2 then
-      params:set(lfo_focus.."lfo_state", 2)
-      lfo[lfo_focus].active = 1
-    elseif params:get(lfo_focus.."lfo_depth") == 0 then
-      params:set(lfo_focus.."lfo_state", 1)
-      lfo[lfo_focus].active = 0
+    params:delta("lfo_depth_lfo_"..lfo_focus, d / 10)
+    if lfo[lfo_focus].depth > 0 and lfo[lfo_focus].enabled == 0 then
+      params:set("lfo_lfo_"..lfo_focus, 2)
+    elseif lfo[lfo_focus].depth == 0 then
+      params:set("lfo_lfo_"..lfo_focus, 1)
     end
+  elseif n == 2 then
+    params:delta("lfo_offset_lfo_"..lfo_focus, d / 20)
   elseif n == 3 then
-    params:delta(lfo_focus.."lfo_offset", d / 20)
+    if lfo[lfo_focus].mode == 'clocked' then
+      arc_inc5 = (arc_inc5 % 20) + 1
+      if arc_inc5 == 20 then
+        params:delta("lfo_clocked_lfo_"..lfo_focus, d / 50)
+      end
+    else
+      params:delta("lfo_free_lfo_"..lfo_focus, d / 20)
+    end
   elseif n == 4 then
     arc_lfo_focus = util.clamp(arc_lfo_focus + d / 100, 1, 6)
     lfo_focus = math.floor(arc_lfo_focus)
@@ -493,41 +513,43 @@ end
 
 function ui.arc_lfo_draw()
   a:all(0)
-  -- draw lfo freq
-  local lfo_frq = math.floor(util.linlin(0.1, 10, 0, 1, params:get(lfo_focus.."lfo_freq")) * 48) + 41
+  -- draw lfo lfo depth
+  local lfo_dth = math.floor((lfo[lfo_focus].depth) * 48) + 41
   a:led (1, 25 - arc_off, 5)
   a:led (1, -23 - arc_off, 5)
   for i = -22, 24 do
-    if i < lfo_frq - 64 then
+    if i < lfo_dth - 64 then
       a:led(1, i - arc_off, 3)
     end
   end
-  a:led(1, lfo_frq - arc_off, 15)
-  -- draw lfo lfo depth
-  local lfo_dth = math.floor((params:get(lfo_focus.."lfo_depth") / 100) * 48) + 41
+  a:led(1, lfo_dth - arc_off, 15)
+  -- draw lfo offset
+  local lfo_off = math.floor(lfo[lfo_focus].offset * 100 / ((lfo[lfo_focus].baseline == 'center' and 50 or 100)) * 24)
+  a:led (2, 1 - arc_off, 7)
   a:led (2, 25 - arc_off, 5)
   a:led (2, -23 - arc_off, 5)
-  for i = -22, 24 do
-    if i < lfo_dth - 64 then
-      a:led(2, i - arc_off, 3)
-    end
-  end
-  a:led(2, lfo_dth - arc_off, 15)
-  -- draw lfo offset
-  local lfo_off = math.floor(params:get(lfo_focus.."lfo_offset") * 24)
-  a:led (3, 1 - arc_off, 7)
-  a:led (3, 25 - arc_off, 5)
-  a:led (3, -23 - arc_off, 5)
   if lfo_off > 0 then
     for i = 2, lfo_off do
-      a:led(3, i - arc_off, 4)
+      a:led(2, i - arc_off, 4)
     end
   elseif lfo_off < 0 then
     for i = lfo_off + 2, 0 do
-      a:led(3, i - arc_off, 4)
+      a:led(2, i - arc_off, 4)
     end
   end
-  a:led (3, lfo_off + 1 - arc_off, 15)
+  a:led (2, lfo_off + 1 - arc_off, 15)
+  local min = lfo[lfo_focus].mode == 'clocked' and 1 or 0.1
+  local max = lfo[lfo_focus].mode == 'clocked' and 22 or 300
+  local val = lfo[lfo_focus].mode == 'clocked' and params:get("lfo_clocked_lfo_"..lfo_focus) or params:get("lfo_free_lfo_"..lfo_focus)
+  local lfo_frq = lfo[lfo_focus].mode == 'clocked' and (math.floor(util.linlin(min, max, 0, 1, val) * 48) + 41) or (math.floor(util.explin(min, max, 0, 1, val) * 48) + 41)
+  a:led (3, 25 - arc_off, 5)
+  a:led (3, -23 - arc_off, 5)
+  for i = -22, 24 do
+    if i < lfo_frq - 64 then
+      a:led(3, i - arc_off, 3)
+    end
+  end
+  a:led(3, lfo_frq - arc_off, 15)
   -- draw lfo selection
   for i = 1, 6 do
     local off = -13
@@ -536,18 +558,6 @@ function ui.arc_lfo_draw()
     end
     a:led(4, (i + (lfo_focus - 1) * 7 - 6) + 50 - arc_off, 15)
   end
-  -- draw lfo targets
-  local tar = params:get(lfo_focus.."lfo_target")
-  local name = string.sub(lfo_targets[tar], 2)
-  for i = 1, 6 do
-    a:led(4, -i + 7 + 33 - arc_off, (tar >= i + (i - 1) * 5 + 1 and tar <= i + (i - 1) * 5 + 6) and 15 or 2) -- track num
-  end
-  a:led(4, -1 + 33 - arc_off, name == "vol" and 15 or 6)
-  a:led(4, -2 + 33 - arc_off, name == "pan" and 15 or 6)
-  a:led(4, -3 + 33 - arc_off, name == "dub" and 15 or 6)
-  a:led(4, -4 + 33 - arc_off, name == "transpose" and 15 or 6)
-  a:led(4, -5 + 33 - arc_off, name == "rate_slew" and 15 or 6)
-  a:led(4, -6 + 33 - arc_off, name == "cutoff" and 15 or 6)
   a:refresh()
 end
 
@@ -1022,6 +1032,14 @@ function ui.tape_redraw()
     screen.level(15)
     screen.move(4, 12)
     screen.text("TRACK "..track_focus)
+    screen.level(4)
+    screen.move(32, 12)
+    if track[track_focus].tempo_map == 1 then
+      screen.text(">  resize")
+    elseif track[track_focus].tempo_map == 2 then
+      screen.text(">  repitch")
+    end
+    screen.level(15)
     screen.move(124, 12)
     screen.text_right("TAPE")
     screen.move(4, 60)
