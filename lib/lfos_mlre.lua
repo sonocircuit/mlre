@@ -438,8 +438,8 @@ function LFO:add_params(id,sep,group)
         params:add_separator("lfo_sep_"..sep,sep)
       end
 
-      params:add_option("lfo_"..id,"lfo state",{"off","on"},self:get('enabled')+1)
-      params:set_action("lfo_"..id,function(x)
+      params:add_option("lfo_"..id, "lfo state", {"off","on"}, self:get('enabled')+1)
+      params:set_action("lfo_"..id, function(x)
         local enabled = x == 2 and true or false
         self.state_callback(enabled)
         if x == 1 then
@@ -451,14 +451,14 @@ function LFO:add_params(id,sep,group)
           lfo_params_visibility("show", id)
           self:start(true)
         end
-        self:set('enabled',x-1)
+        self:set('enabled', x - 1)
         lfo_bang(id)
       end)
 
-      params:add_option("lfo_shape_"..id, "lfo shape", lfo_shapes, tab.key(lfo_shapes,self:get('shape')))
+      params:add_option("lfo_shape_"..id, "lfo shape", lfo_shapes, tab.key(lfo_shapes, self:get('shape')))
       params:set_action("lfo_shape_"..id, function(x) self:set('shape', params:lookup_param("lfo_shape_"..id).options[x]) end)
 
-      params:add_number("lfo_depth_"..id,"lfo depth",0,100,self:get('depth')*100,function(param) return (param:get().."%") end)
+      params:add_number("lfo_depth_"..id,"lfo depth", 0, 100, self:get('depth') * 100, function(param) return (util.round(param:get(), 0.1).."%") end)
       params:set_action("lfo_depth_"..id, function(x)
         if x == 0 then
           params:set("lfo_scaled_"..id,"")
@@ -467,26 +467,26 @@ function LFO:add_params(id,sep,group)
         self:set('depth',x/100)
       end)
 
-      params:add_number('lfo_phase_'..id, 'lfo phase', 0, 100, self:get('phase') * 100, function(param) return (param:get()..'%') end)
+      params:add_number('lfo_phase_'..id, 'lfo phase', 0, 100, self:get('phase') * 100, function(param) return (util.round(param:get(), 0.1)..'%') end)
       params:set_action('lfo_phase_'..id, function(x)
         self:set('phase',x/100)
       end)
 
-      params:add_number('lfo_offset_'..id, 'lfo offset', -100, 100, self:get('offset')*100, function(param) return (param:get().."%") end)
+      params:add_number('lfo_offset_'..id, 'lfo offset', -100, 100, self:get('offset') * 100, function(param) return (util.round(param:get(), 0.1).."%") end)
       params:set_action("lfo_offset_"..id, function(x)
         self:set('offset',x/100)
       end)
 
-      params:add_text("lfo_scaled_"..id,"  scaled value","")
-      params:add_text("lfo_raw_"..id,"  raw value","")
+      params:add_text("lfo_scaled_"..id,"  scaled value", "")
+      params:add_text("lfo_raw_"..id,"  raw value", "")
 
-      build_lfo_spec(self,id,"min")
-      build_lfo_spec(self,id,"max")
+      build_lfo_spec(self, id, "min")
+      build_lfo_spec(self, id, "max")
 
       local baseline_options = {"from min", "from center", "from max"}
       params:add_option("lfo_baseline_"..id, "lfo baseline", baseline_options, tab.key(baseline_options,'from '..self:get('baseline')))
       params:set_action("lfo_baseline_"..id, function(x)
-        self:set('baseline',string.gsub(params:lookup_param("lfo_baseline_"..id).options[x],"from ",""))
+        self:set('baseline', string.gsub(params:lookup_param("lfo_baseline_"..id).options[x], "from ", ""))
         change_offset(id, self:get('baseline'))
         _menu.rebuild_params()
       end)
