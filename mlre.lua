@@ -23,10 +23,11 @@ mu = require 'musicutil'
 textentry = require 'textentry' 
 fileselect = require 'fileselect'
 lattice = require 'lattice'
+--_lfo = require 'lfo'
 
 ui = include 'lib/ui_mlre'
 grd = include 'lib/grid_mlre'
-lfo = include 'lib/hnds_mlre'
+_lfo = include 'lib/lfo_mlre'
 scales = include 'lib/scales_mlre'
 pattern_time = include 'lib/pattern_time_mlre'
 
@@ -61,8 +62,9 @@ mod = 0
 shift = 0
 cutview_hold = false
 
-lfo_trksel = 0
+lfo_trksel = 1
 lfo_dstview = 0
+lfo_dstsel = 1
 
 -- viz variables 
 pulse_key_fast = 1
@@ -99,6 +101,7 @@ arc_inc1 = 0
 arc_inc2 = 0
 arc_inc3 = 0
 arc_inc4 = 0
+arc_inc5 = 0
 arc_render = 0
 arc_lfo_focus = 1
 arc_track_focus = 1
@@ -112,11 +115,12 @@ main_page_params_r = {"pan", "dub", "filter_q", "post_dry", "transpose", "level_
 main_page_names_l = {"volume", "rec   level", "cutoff", "filter   type", "detune", "rate   slew"}
 main_page_names_r = {"pan", "dub   level", "filter   q", "dry   level", "transpose", "level   slew"}
 
--- lfo page variables
-lfo_page_params_l = {"lfo_target", "lfo_depth", "lfo_freq"}
-lfo_page_params_r = {"lfo_shape", "lfo_offset", "lfo_range"}
-lfo_page_names_l = {"destination", "depth", "freq"}
-lfo_page_names_r = {"shape", "offset", "range"}
+ -- lfo page variables
+lfo_rate_params = {"lfo_clocked_lfo_", "lfo_free_lfo_"}
+lfo_page_params_l = {"lfo_depth_lfo_", "lfo_shape_lfo_", "lfo_mode_lfo_"}
+lfo_page_params_r = {"lfo_offset_lfo_", "lfo_phase_lfo_", "lfo_free_lfo_"}
+lfo_page_names_l = {"depth", "shape", "mode"}
+lfo_page_names_r = {"offset", "phase", "rate"}
 
 -- pattern page variables
 patterns_page_params_l = {"patterns_meter", "patterns_countin"}
@@ -609,6 +613,7 @@ end
 
 snapshot_mode = false
 snapshot_playback = false
+snapshot_cut = false
 snap = {}
 for i = 1, 8 do -- 8 snapshot slots
   snap[i] = {}
@@ -677,7 +682,7 @@ function load_snapshot(n, i)
     if snap[n].play[i] == 0 then
       local e = {} e.t = eSTOP e.i = i event(e)
     else
-      track[i].cut = snap[n].cut[i]
+      if snapshot_cut then track[i].cut = snap[n].cut[i] end
       local e = {} e.t = eSTART e.i = i event(e)
     end
   end
@@ -1172,47 +1177,75 @@ end
 
 --------------------- LFOS -----------------------
 
-lfo_targets = {"none"}
-for i = 1, 6 do
-  table.insert(lfo_targets, i.."vol")
-  table.insert(lfo_targets, i.."pan")
-  table.insert(lfo_targets, i.."dub")
-  table.insert(lfo_targets, i.."transpose")
-  table.insert(lfo_targets, i.."rate_slew")
-  table.insert(lfo_targets, i.."cutoff")
-end
+NUM_LFOS = 6
+lfo_destination = {"volume", "pan", "dub level", "transpose", "detune", "rate slew", "cutoff"}
+lfo_params = {"vol", "pan", "dub", "transpose", "detune", "rate_slew", "cutoff"}
+lfo_min = {0, -1, 0, 1, -600, 0, 20}
+lfo_max = {1, 1, 1, 15, 600, 1, 18000}
+lfo_baseline = {'min', 'center', 'min', 'center', 'center', 'min', 'max'}
+lfo_baseline_options = {'min', 'center', 'max'}
 
-lfo_target_names = {"none"}
-for i = 1, 6 do
-  table.insert(lfo_target_names, "vol "..i)
-  table.insert(lfo_target_names, "pan "..i)
-  table.insert(lfo_target_names, "dub "..i)
-  table.insert(lfo_target_names, "trsp "..i)
-  table.insert(lfo_target_names, "r slew "..i)
-  table.insert(lfo_target_names, "cutoff "..i)
-end
-
-function lfo.process()
-  for i = 1, 6 do
-    local target = lfo[i].target
-    local target_name = string.sub(lfo_targets[target], 2)
-    if lfo[i].active then
-      if target_name == "vol" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
-      elseif target_name == "pan" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, -1.0, 1.0))
-      elseif target_name == "dub" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
-      elseif target_name == "transpose" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 1, 16))
-      elseif target_name == "rate_slew" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 0, 1.0))
-      elseif target_name == "cutoff" then
-        params:set(lfo_targets[target], lfo.scale(lfo[i].slope, -1.0, 1.0, 20, 18000))
-      end
-    end
+function init_lfos()
+  lfo = {}
+  for i = 1, NUM_LFOS do
+    --function LFO.new(shape, min, max, depth, mode, period, action, phase, baseline, callback)  
+    lfo[i] = _lfo.new(
+     'sine', -- shape
+      0, -- min
+      1, -- max
+      0, -- depth
+      'clocked', -- mode
+      1/2, -- period
+      function(scaled, raw) end, -- action
+      0, --phase
+      'min', --baseline
+      function(enabled) end -- state_callback
+    )
+    lfo[i]:add_params("lfo_"..i, nil, "lfo "..i)
+    lfo[i].track = nil
+    lfo[i].destination = nil
+    lfo[i].slope = 0
+    lfo[i].info = 'unassigned'
   end
-  if view == 4 then dirtygrid = true end -- for blinkenlights (lfo slope on "on" grid key)
+end
+
+function set_lfo(i, track, destination)
+  if destination == 'none' then
+    params:set("lfo_lfo_"..i, 1)
+    lfo[i].track = nil
+    lfo[i].destination = nil
+    lfo[i].slope = 0
+    lfo[i].info = 'unassigned'
+    lfo[i]:set('action', function(scaled, raw) end)
+  else
+    local n = tab.key(lfo_params, destination)
+    lfo[i].info = 'T'..track..'    '..lfo_destination[n]
+    lfo[i].track = track
+    lfo[i].destination = destination
+    params:lookup_param("lfo_min_lfo_"..i).controlspec.minval = lfo_min[n]
+    params:lookup_param("lfo_min_lfo_"..i).controlspec.maxval = lfo_max[n]
+    params:lookup_param("lfo_max_lfo_"..i).controlspec.minval = lfo_min[n]
+    params:lookup_param("lfo_max_lfo_"..i).controlspec.maxval = lfo_max[n]
+    params:lookup_param("lfo_min_lfo_"..i):bang()
+    params:lookup_param("lfo_max_lfo_"..i):bang()
+    params:set("lfo_min_lfo_"..i, lfo_min[n])
+    params:set("lfo_max_lfo_"..i, lfo_max[n])
+    params:set("lfo_baseline_lfo_"..i, tab.key(lfo_baseline_options, lfo_baseline[n]))
+    lfo[i]:set('action', function(scaled, raw)
+      params:set(i..lfo_params[n], scaled)
+      lfo[i].slope = raw
+      if (grido_view == vLFO or gridz_view == vLFO) then
+        dirtygrid = true
+      end
+    end)
+    lfo[i]:set('state_callback', function(enabled)
+      if not enabled and lfo[i].prev_val ~= nil then
+        params:set(track..destination, lfo[i].prev_val)
+      elseif enabled then
+        lfo[i].prev_val = params:get(track..destination)
+      end
+    end)
+  end
 end
 
 
@@ -1805,8 +1838,12 @@ function init()
   params:add_option("recall_mode", "recall mode", {"manual recall", "snapshot"}, 2)
   params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false dirtygrid = true end)
   -- snapshot option
-  params:add_option("recall_playback_position", "playback position", {"ignore", "recall"}, 1)
-  params:set_action("recall_playback_position", function(x) snapshot_playback = x == 2 and true or false dirtygrid = true end)
+  params:add_option("recall_playback_state", "playback state", {"ignore", "state only", "state & pos"}, 1)
+  params:set_action("recall_playback_state", function(x)
+    snapshot_playback = x > 1 and true or false
+    snapshot_cut = x == 3 and true or false
+    dirtygrid = true
+  end)
 
   -- patterns params
   params:add_group("patterns", "patterns", 40)
@@ -1982,7 +2019,7 @@ function init()
 
     params:add_separator("track_pitch_params"..i, "track "..i.." pitch")
     -- detune
-    params:add_number(i.."detune", "detune", -600, 600, 0, function(param) return param:get().." cents" end)
+    params:add_number(i.."detune", "detune", -600, 600, 0, function(param) return (round_form(param:get(), 1, "cents")) end)
     params:set_action(i.."detune", function(cent) track[i].detune = cent / 1200 update_rate(i) if view < vLFO and main_pageNum == 5 then dirtyscreen = true end end)
     -- transpose
     params:add_option(i.."transpose", "transpose", scales.id[1], 8)
@@ -2108,8 +2145,7 @@ function init()
   -- params for modulation (hnds_mlre)
   params:add_separator("modulation_params", "modulation")
   -- lfos
-  for i = 1, 6 do lfo[i].lfo_targets = lfo_targets end
-  lfo.init()
+  init_lfos()
   
   -- params for splice resize
   for i = 1, 6 do
@@ -2190,6 +2226,10 @@ function init()
       sesh_data[i].track_splice_active = track[i].splice_active
       sesh_data[i].track_splice_focus = track[i].splice_focus
       sesh_data[i].track_tempo_map = params:get(i.."tempo_map_mode")
+      -- lfo data
+      sesh_data[i].lfo_track = lfo[i].track
+      sesh_data[i].lfo_destination = lfo[i].destination
+      sesh_data[i].lfo_offset = params:get("lfo_offset_lfo_"..i)
     end
     tab.save(sesh_data, norns.state.data.."sessions/"..number.."/"..name.."_session.data")
     -- rebuild pset list
@@ -2241,6 +2281,14 @@ function init()
           stop_track(i)
         end
         set_rec(i)
+        -- set lfo params
+        if loaded_sesh_data[i].lfo_track ~= nil then
+          set_lfo(i, loaded_sesh_data[i].lfo_track, loaded_sesh_data[i].lfo_destination)
+          clock.run(function()
+            clock.sleep(0.2)
+            params:set("lfo_offset_lfo_"..i, loaded_sesh_data[i].lfo_offset)
+          end)
+        end
       end
       -- load pattern, recall and snapshot data
       load_patterns()
