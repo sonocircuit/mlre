@@ -419,7 +419,9 @@ function grd.rec_keys(x, y, z, offset)
     end
     dirtygrid = true
   elseif y == 8 then -- cut for focused track
-    grd.cutfocus_keys(x, z)
+    if GRID_SIZE == 128 or offset == 8 then 
+      grd.cutfocus_keys(x, z)
+    end
   end
 end
 
@@ -447,7 +449,9 @@ function grd.rec_draw(offset)
     g:led(12, y, 3)
     g:led(12 + track[i].speed, y, 9)
   end
-  grd.cutfocus_draw(8 + off)
+  if GRID_SIZE == 128 or offset == 8 then 
+    grd.cutfocus_draw(8 + off)
+  end
 end
 
 function grd.cut_keys(x, y, z, offset)
@@ -565,7 +569,9 @@ function grd.trsp_keys(x, y, z, offset)
       end
     end
   elseif y == 8 then -- cut for focused track
-    grd.cutfocus_keys(x, z)
+    if GRID_SIZE == 128 or offset == 8 then 
+      grd.cutfocus_keys(x, z)
+    end
   end
 end
 
@@ -580,7 +586,9 @@ function grd.trsp_draw(offset)
       g:led(params:get(i.."transpose") + 1, i + 1 + off, 10)
     end
   end
-  grd.cutfocus_draw(8 + off)
+  if GRID_SIZE == 128 or offset == 8 then 
+    grd.cutfocus_draw(8 + off)
+  end
 end
 
 function grd.lfo_keys(x, y, z, offset)
@@ -594,34 +602,31 @@ function grd.lfo_keys(x, y, z, offset)
       if lfo_focus ~= i then
         lfo_focus = i
         arc_lfo_focus = lfo_focus
+        if lfo_pageNum == 3 then
+          lfo_page_params_r[lfo_pageNum] = lfo_rate_params[params:get("lfo_mode_lfo_"..lfo_focus)]
+        end
       end
       if x == 1 then
-        params:set(lfo_focus.."lfo_state", lfo[lfo_focus].active and 1 or 2)
+        params:set("lfo_lfo_"..lfo_focus, params:get("lfo_lfo_"..lfo_focus) == 1 and 2 or 1)
       elseif x > 1 and x <= 16 then
-        params:set(lfo_focus.."lfo_depth", (x - 2) * util.round_up((100 / 14), 0.1))
+        params:set("lfo_depth_lfo_"..lfo_focus, (x - 2) * util.round_up((100 / 14), 0.1))
       end
     end
     if y == 8 then
-      if x >= 1 and x <= 3 then
-        if alt == 0 and shift == 0 then
-          params:set(lfo_focus.."lfo_shape", x)
-        elseif (alt == 1 or shift == 1) then
-          params:set(lfo_focus.."lfo_range", x)
-        end
+      if x > 2 and x < 9 then
+        lfo_trksel = x - 2
       end
-      if x > 3 and x < 10 then
-        lfo_trksel = 6 * (x - 4)
+      if x == 9 then
+        set_lfo(lfo_focus, lfo_trksel, 'none')
       end
-      if x == 10 then
-        params:set(lfo_focus.."lfo_target", 1)
-      end
-      if x > 10 and x <= 16 then
+      if x > 9 then
         lfo_dstview = 1
-        params:set(lfo_focus.."lfo_target", lfo_trksel + x - 9)
+        lfo_dstsel = x - 9
+        set_lfo(lfo_focus, lfo_trksel, lfo_params[lfo_dstsel])
       end
     end
   elseif z == 0 then
-    if x > 10 and x <= 16 then
+    if x > 9 then
       lfo_dstview = 0
     end
   end
@@ -632,23 +637,16 @@ end
 function grd.lfo_draw(offset)
   local off = offset or 0
   for i = 1, 6 do
-    g:led(1, i + 1 + off, params:get(i.."lfo_state") == 2 and math.floor(util.linlin( -1, 1, 6, 15, lfo[i].slope)) or 3) --nice one mat!
-    local range = math.floor(util.linlin(0, 100, 2, 16, params:get(i.."lfo_depth")))
+    g:led(1, i + 1 + off, params:get("lfo_lfo_"..i) == 2 and math.floor(util.linlin(0, 1, 6, 15, lfo[i].slope)) or 3) --nice one mat!
+    local range = math.floor(util.linlin(0, 100, 2, 16, params:get("lfo_depth_lfo_"..i)))
     g:led(range, i + 1 + off, 7)
     for x = 2, range - 1 do
       g:led(x, i + 1 + off, 3)
     end
-    g:led(i + 3, 8 + off, 4)
-    g:led(i + 10, 8 + off, 4)
+    g:led(i + 2, 8 + off, lfo_trksel == i and 12 or 2)
   end
-  if (alt == 0 and shift == 0) then
-    g:led(params:get(lfo_focus.."lfo_shape"), 8 + off, 5)
-  elseif (alt == 1 or shift == 1) then
-    g:led(params:get(lfo_focus.."lfo_range"), 8 + off, 5)
-  end
-  g:led(lfo_trksel / 6 + 4, 8 + off, 12)
-  if lfo_dstview == 1 then
-    g:led((params:get(lfo_focus.."lfo_target") + 9) - lfo_trksel, 8 + off, 12)
+  for i = 1, 7 do
+    g:led(i + 9, 8 + off, (lfo_dstsel == i and lfo_dstview == 1) and 12 or 1)
   end
 end
 
@@ -844,7 +842,9 @@ function grd.tape_keys(x, y, z, offset)
       end
     end
   elseif y == 8 then
-    grd.cutfocus_keys(x, z)
+    if GRID_SIZE == 128 or offset == 8 then 
+      grd.cutfocus_keys(x, z)
+    end
   end
   dirtyscreen = true
   dirtygrid = true
@@ -883,7 +883,9 @@ function grd.tape_draw(offset)
   end
   g:led(16, 7 + off, view_presets and 15 or 5)
   -- cut focus
-  grd.cutfocus_draw(8 + off)
+  if GRID_SIZE == 128 or offset == 8 then 
+    grd.cutfocus_draw(8 + off)
+  end
 end
 
 return grd
