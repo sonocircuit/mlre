@@ -219,7 +219,7 @@ function grd.drawnav(y)
   g:led(3, y, view == vTRSP and 10 or 2) -- vTRSP
   g:led(4, y, view == vLFO and 10 or (view == vENV and pulse_key_slow or 0)) -- vLFO
   g:led(16, y, alt == 1 and 15 or 9) -- alt
-  g:led(15, y, y ~= 9 and (quantizing and (flash_bar and 15 or (flash_beat and 10 or 7)) or 3) or 3) -- Q flash
+  g:led(15, y, y ~= 9 and (quantizing and (pulse_bar and 15 or (pulse_beat and 6 or 2))) or 3) -- Q flash
   g:led(14, y, mod == 1 and 9 or 2) -- mod
   if one then 
     for i = 1, (macro_slot_mode == 1 and 4 or 8) do
@@ -317,9 +317,20 @@ function grd.cutfocus_keys(x, z)
       end
       first[row] = x
       local cut = x - 1
-      local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
-      if env[i].active then
-        local e = {} e.t = eGATEON e.i = i event(e)
+      if track[i].play == 1 or track[i].start_launch == 1 then
+        local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
+        if env[i].active then
+          local e = {} e.t = eGATEON e.i = i event(e)
+        end
+      elseif track[i].play == 0 and track[i].start_launch > 1 then
+        clock.run(function()
+          local beats = track[i].start_launch == 2 and 1 or 4
+          clock.sync(beats)
+          local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+          if env[i].active then
+            local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+          end
+        end)
       end
     elseif held[row] == 2 then -- second keypress
       second[row] = x
@@ -493,9 +504,20 @@ function grd.cut_keys(x, y, z, offset)
         end
         first[y] = x
         local cut = x - 1
-        local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
-        if env[i].active then
-          local e = {} e.t = eGATEON e.i = i event(e)
+        if track[i].play == 1 or track[i].start_launch == 1 then
+          local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
+          if env[i].active then
+            local e = {} e.t = eGATEON e.i = i event(e)
+          end
+        elseif track[i].play == 0 and track[i].start_launch > 1 then
+          clock.run(function()
+            local beats = track[i].start_launch == 2 and 1 or 4
+            clock.sync(beats)
+            local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+            if env[i].active then
+              local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+            end
+          end)
         end
       elseif y < 8 and held[y] == 2 then
         second[y] = x
@@ -788,9 +810,13 @@ function grd.tape_keys(x, y, z, offset)
       view_buffer = z == 1 and true or false
       render_splice()
     elseif x == 10 and z == 1 then
-      params:set(i.."buffer_sel", tape[i].side == 1 and 2 or 1)
-      if track_focus == i then
-        render_splice()
+      if mod == 1 then
+        params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
+      else
+        params:set(i.."buffer_sel", tape[i].side == 1 and 2 or 1)
+        if track_focus == i then
+          render_splice()
+        end
       end
     elseif x == 11 then
       track_focus = i
@@ -857,20 +883,28 @@ function grd.tape_draw(offset)
     g:led(i, track_focus + 1 + off, 2)
     for j = 1, 6 do
       if i == track[j].splice_active then
-        g:led(i, j + 1 + off, track[j].loaded and 12 or pulse_key_mid)
+        g:led(i, j + 1 + off, track[j].loaded and 10 or pulse_key_mid)
       elseif i == track[j].splice_focus then
         g:led(i, j + 1 + off, 5)
       end
     end
   end
-  -- buffer selection
-  for i = 1, 6 do
-    g:led(10, i + 1 + off, tape[i].side == 1 and 10 or 4)
+
+  -- buffer selection / tempo map
+  if mod == 1 then
+    for i = 1, 6 do
+      g:led(10, i + 1 + off, track[i].tempo_map == 2 and 12 or (track[i].tempo_map == 1 and 7 or 2))
+    end
+  else
+    for i = 1, 6 do
+      g:led(10, i + 1 + off, tape[i].side == 1 and 10 or 4)
+    end
   end
+
   -- input selection
   for i = 1, 6 do
-    g:led(12, i + 1 + off, (tape[i].input == 1 or tape[i].input == 2) and 8 or 4)
-    g:led(13, i + 1 + off, (tape[i].input == 1 or tape[i].input == 3) and 8 or 4)
+    g:led(12, i + 1 + off, (tape[i].input == 1 or tape[i].input == 2) and 6 or 2)
+    g:led(13, i + 1 + off, (tape[i].input == 1 or tape[i].input == 3) and 6 or 2)
   end
   -- routing
   for i = 1, 4 do
