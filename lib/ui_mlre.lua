@@ -24,7 +24,7 @@ end
 function ui.main_key(n, z)
   if n == 2 and z == 1 then
     if shift == 0 then
-      main_pageNum = util.wrap(main_pageNum - 1, 1, 6)
+      main_pageNum = util.wrap(main_pageNum - 1, 1, 8)
     else
       if macro_slot_mode == 2 then
         params:set("slot_assign", 3)
@@ -37,7 +37,7 @@ function ui.main_key(n, z)
     dirtyscreen = true
   elseif n == 3 and z == 1 then
     if shift == 0 then
-      main_pageNum = util.wrap(main_pageNum + 1, 1, 6)
+      main_pageNum = util.wrap(main_pageNum + 1, 1, 8)
     else
       if arc_is then
         arc_pageNum = (arc_pageNum % 2) + 1
@@ -80,14 +80,14 @@ function ui.main_redraw()
   screen.level(15)
   screen.move(4, 12)
   screen.text("TRACK "..track_focus)
-  for i = 1, 3 do
+  for i = 1, 4 do
     screen.level(main_pageNum == i and 15 or 4)
-    screen.rect(116 + (i -1) * 4, 6, 2, 2)
+    screen.rect(112 + (i - 1) * 4, 6, 2, 2)
     screen.fill()
   end
-  for i = 1, 3 do
-    screen.level(main_pageNum == i + 3 and 15 or 4)
-    screen.rect(116 + (i -1) * 4, 10, 2, 2)
+  for i = 1, 4 do
+    screen.level(main_pageNum == i + 4 and 15 or 4)
+    screen.rect(112 + (i - 1) * 4, 10, 2, 2)
     screen.fill()
   end
   -- param list
@@ -240,7 +240,7 @@ function ui.arc_main_delta(n, d)
           softcut.loop_start(track_focus, lstart)
           softcut.loop_end(track_focus, lend)
         end
-        if view < vLFO then dirtygrid = true end
+        dirtygrid = true
       end
     -- enc 3: set loop start
     elseif n == 3 then
@@ -263,7 +263,7 @@ function ui.arc_main_delta(n, d)
           softcut.loop_start(track_focus, lstart)
         end
       end
-      if view < vLFO then dirtygrid = true end
+      dirtygrid = true
     -- enc 4: set loop end
     elseif n == 4 then
       if cutview_hold then
@@ -290,7 +290,7 @@ function ui.arc_main_delta(n, d)
           end
         end
       end
-      if view < vLFO then dirtygrid = true end
+      dirtygrid = true
     end
   elseif arc_pageNum == 2 then
     if n == 1 then
@@ -464,7 +464,7 @@ function ui.lfo_redraw()
   screen.text_center("- "..lfo[lfo_focus].info.." -")
   for i = 1, 3 do
     screen.level(lfo_pageNum == i and 15 or 4)
-    screen.rect(116 + (i -1) * 4, 6, 2, 6)
+    screen.rect(116 + (i - 1) * 4, 6, 2, 6)
     screen.fill()
   end
   -- param list
@@ -613,7 +613,7 @@ function ui.env_redraw()
   screen.text("ENVELOPE "..env_focus)
   for i = 1, 3 do
     screen.level(env_pageNum == i and 15 or 4)
-    screen.rect(116 + (i -1) * 4, 6, 2, 6)
+    screen.rect(116 + (i - 1) * 4, 6, 2, 6)
     screen.fill()
   end
   if env_pageNum < 3 then
@@ -651,9 +651,9 @@ function ui.env_redraw()
     screen.font_size(8)
     screen.level(3)
     screen.move(35, 54)
-    screen.text_center("max vol")
+    screen.text_center("max   vol")
     screen.move(94, 54)
-    screen.text_center("min vol")
+    screen.text_center("min   vol")
   end
   -- display messages
   display_message()
@@ -754,7 +754,7 @@ function ui.patterns_redraw()
   screen.text("PATTERN "..pattern_focus)
   for i = 1, 2 do
     screen.level(patterns_pageNum == i and 15 or 4)
-    screen.rect(116 + (i -1) * 6, 6, 4, 6)
+    screen.rect(116 + (i - 1) * 6, 6, 4, 6)
     screen.fill()
   end
   -- param list
@@ -770,13 +770,14 @@ function ui.patterns_redraw()
   if pattern[pattern_focus].synced then
     screen.text_center(params:string(patterns_page_params_l[patterns_pageNum]..pattern_focus))
   else
-    screen.text_center("-")
+    local str = patterns_pageNum == 1 and "-" or "free"
+    screen.text_center(str)
   end
   screen.move(94, 40)
   if pattern[pattern_focus].synced or patterns_pageNum == 2 then
     screen.text_center(params:string(patterns_page_params_r[patterns_pageNum]..pattern_focus))
   else
-    screen.text_center("manual")
+    screen.text_center("free")
   end
   -- display messages
   display_message()
@@ -973,7 +974,7 @@ function ui.tape_redraw()
     else
       screen.level(2)
       screen.move(64, 36)
-      screen.text_center("NO PSETS")
+      screen.text_center("NO   PSETS")
     end
     -- frame
     screen.level(10)
