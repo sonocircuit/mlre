@@ -1196,7 +1196,7 @@ end
 --------------------- LFOS -----------------------
 
 NUM_LFOS = 6
-lfo_destination = {"volume", "pan", "dub level", "transpose", "detune", "rate slew", "cutoff"}
+lfo_destination = {"volume", "pan", "dub   level", "transpose", "detune", "rate   slew", "cutoff"}
 lfo_params = {"vol", "pan", "dub", "transpose", "detune", "rate_slew", "cutoff"}
 lfo_min = {0, -1, 0, 1, -600, 0, 20}
 lfo_max = {1, 1, 1, 15, 600, 1, 18000}
@@ -1206,7 +1206,6 @@ lfo_baseline_options = {'min', 'center', 'max'}
 function init_lfos()
   lfo = {}
   for i = 1, NUM_LFOS do
-    --function LFO.new(shape, min, max, depth, mode, period, action, phase, baseline, callback)  
     lfo[i] = _lfo.new(
      'sine', -- shape
       0, -- min
