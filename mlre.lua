@@ -2062,13 +2062,13 @@ function init()
     params:add_control(i.."level_slew", "level slew", controlspec.new(0.1, 10.0, "lin", 0.1, 0.1, ""), function(param) return (round_form(param:get() * 10, 1, "%")) end)
     params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) page_redraw(vMAIN, 6) end)
     -- send level track 5
-    params:add_control(i.."send_track5", "send track 5", controlspec.new(0, 1, 'lin', 0, 0.5, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
+    params:add_control(i.."send_track5", "send trk 5", controlspec.new(0, 1, 'lin', 0, 0.5, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."send_track5", function(x) track[i].send_t5 = x set_track_sends(i) end)
-    params:hide(i.."send_track5")
+    if i > 4 then params:hide(i.."send_track5") end
     -- send level track 6
-    params:add_control(i.."send_track6", "send track 6", controlspec.new(0, 1, 'lin', 0, 0.5, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
+    params:add_control(i.."send_track6", "send trk 6", controlspec.new(0, 1, 'lin', 0, 0.5, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."send_track6", function(x) track[i].send_t6 = x set_track_sends(i) end)
-    params:hide(i.."send_track6")
+    if i > 5 then params:hide(i.."send_track6") end
 
     params:add_separator("track_pitch_params"..i, "track "..i.." pitch")
     -- detune
