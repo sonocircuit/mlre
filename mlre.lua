@@ -2027,7 +2027,7 @@ function init()
     params:add_option(i.."tempo_map_mode", "tempo-map", {"none", "resize", "repitch"}, 1)
     params:set_action(i.."tempo_map_mode", function(mode) track[i].tempo_map = mode - 1 set_tempo_map(i) grid_page(vREC) end)
     -- play lauch
-    params:add_option(i.."start_launch", "start launch", {"manual", "beat", "bar"}, 1)
+    params:add_option(i.."start_launch", "start launch", {"free", "beat", "bar"}, 1)
     params:set_action(i.."start_launch", function(option) track[i].start_launch = option page_redraw(vMAIN, 7) end)
     -- reset active
     params:add_option(i.."reset_active", "track reset", {"off", "on"}, 1)
