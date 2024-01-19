@@ -13,7 +13,7 @@
 -- >> code/mlre/docs
 --
 
-norns.version.required = 220802
+norns.version.required = 231114
 
 m = midi.connect()
 a = arc.connect()
@@ -70,8 +70,8 @@ lfo_dstsel = 1
 pulse_key_fast = 1
 pulse_key_mid = 1
 pulse_key_slow = 1
-flash_bar = false
-flash_beat = false
+pulse_bar = false
+pulse_beat = false
 
 view_message = ""
 
@@ -110,10 +110,10 @@ scrub_sens = 100
 tau = math.pi * 2
 
 -- main page variables
-main_page_params_l = {"vol", "rec", "cutoff", "filter_type", "detune","rate_slew"}
-main_page_params_r = {"pan", "dub", "filter_q", "post_dry", "transpose", "level_slew"}
-main_page_names_l = {"volume", "rec   level", "cutoff", "filter   type", "detune", "rate   slew"}
-main_page_names_r = {"pan", "dub   level", "filter   q", "dry   level", "transpose", "level   slew"}
+main_page_params_l = {"vol", "rec", "cutoff", "filter_type", "detune","rate_slew", "play_mode", "reset_active"}
+main_page_params_r = {"pan", "dub", "filter_q", "post_dry", "transpose", "level_slew", "start_launch", "reset_count"}
+main_page_names_l = {"volume", "rec   level", "cutoff", "filter   type", "detune", "rate   slew", "play   mode", "track   reset"}
+main_page_names_r = {"pan", "dub   level", "filter   q", "dry   level", "transpose", "level   slew", "track   launch", "reset   count"}
 
  -- lfo page variables
 lfo_rate_params = {"lfo_clocked_lfo_", "lfo_free_lfo_"}
@@ -197,7 +197,7 @@ function event_record(e)
 end
 
 function event(e)
-  if quantizing then
+  if quantizing and e.sync == nil then
     table.insert(quantize_events, e)
   else
     if e.t ~= ePATTERN then
@@ -241,40 +241,41 @@ function event_exec(e)
     softcut.position(e.i, cut + q)
     if track[e.i].play == 0 then
       track[e.i].play = 1
+      track[e.i].beat_count = 0
       set_rec(e.i)
       set_level(e.i)
       toggle_transport()
     end
-    if view < vLFO then dirtygrid = true end
+    dirtygrid = true
   elseif e.t == eSTOP then
     stop_track(e.i)
   elseif e.t == eSTART then
     softcut.position(e.i, track[e.i].cut)
     track[e.i].play = 1
+    track[e.i].beat_count = 0
     set_rec(e.i)
     set_level(e.i)
     toggle_transport()
-    if view < vLFO then dirtygrid = true end
+    dirtygrid = true
   elseif e.t == eLOOP then
     make_loop(e.i, e.loop_start, e.loop_end)
-    if view < vLFO then dirtygrid = true end
   elseif e.t == eUNLOOP then
     clear_loop(e.i)
   elseif e.t == eSPEED then
     track[e.i].speed = e.speed
     update_rate(e.i)
-    if view == vREC then dirtygrid = true end
+    grid_page(vREC)
   elseif e.t == eREV then
     track[e.i].rev = e.rev
     update_rate(e.i)
-    if view < vLFO then dirtygrid = true end
+    dirtygrid = true
   elseif e.t == eMUTE then
     track[e.i].mute = e.mute
     set_level(e.i)
   elseif e.t == eTRSP then
     params:set(e.i.."transpose", e.val)
-    if view == vCUT then dirtygrid = true end
-    if view == vTRSP then dirtygrid = true end
+    grid_page(vCUT)
+    grid_page(vTRSP)
   elseif e.t == eGATEON then
     if env[e.i].active then
       env_gate_on(e.i)
@@ -295,7 +296,7 @@ function event_exec(e)
       track[e.i].t6 = e.route
     end
     set_track_sends(e.i)
-    if view == vTAPE then dirtygrid = true end
+    grid_page(vTAPE)
   elseif e.t == ePATTERN then
     if e.action == "stop" then
       pattern[e.i]:stop()
@@ -390,6 +391,7 @@ end
 track = {}
 for i = 1, 6 do
   track[i] = {}
+  track[i].start_launch = 1
   track[i].play_mode = 1
   track[i].play = 0
   track[i].sel = 0
@@ -431,6 +433,9 @@ for i = 1, 6 do
   track[i].transpose = 0
   track[i].fade = 0
   track[i].loaded = true
+  track[i].reset = false
+  track[i].beat_count = 0
+  track[i].beat_reset = 4
 end
 
 -- tape variables -> six slices of tape, one for each track
@@ -472,7 +477,7 @@ function set_clip(i)
   clip[i].s = tape[i].splice[track[i].splice_active].s
   clip[i].l = tape[i].splice[track[i].splice_active].l
   clip[i].e = clip[i].s + clip[i].l
-  clip[i].bpm = tape[i].splice[track[i].splice_active].bpm 
+  clip[i].bpm = tape[i].splice[track[i].splice_active].bpm
   -- set softcut
   softcut.loop_start(i, clip[i].s)
   softcut.loop_end(i, clip[i].e)
@@ -606,6 +611,7 @@ function set_tempo_map(i)
     end
     render_splice()
   end)
+  page_redraw(vTAPE)
 end
 
 
@@ -695,7 +701,7 @@ function toggle_rec(i) -- toggle recording and trigger chop function
   track[i].rec = 1 - track[i].rec
   set_rec(i)
   if track[i].rec == 1 then chop(i) end
-  if view == vREC then dirtygrid = true end
+  grid_page(vREC)
 end
 
 function set_rec(i) -- set softcut rec and pre levels
@@ -716,7 +722,7 @@ function set_rec(i) -- set softcut rec and pre levels
       softcut.rec_level(i, 0)
     end
   end
-  if view < vLFO and main_pageNum == 2 then dirtyscreen = true end
+  page_redraw(vMAIN, 2)
 end
 
 function set_level(i) -- set track volume and mute track
@@ -728,7 +734,7 @@ function set_level(i) -- set track volume and mute track
     softcut.level_cut_cut(i, 5, 0)
     softcut.level_cut_cut(i, 6, 0)
   end
-  if view < vLFO and main_pageNum == 1 then dirtyscreen = true end
+  page_redraw(vMAIN, 1)
 end
 
 function set_track_sends(i) -- internal softcut routing
@@ -763,7 +769,7 @@ function stop_track(i)
   trig[i].tick = 0
   set_level(i)
   set_rec(i)
-  if view < vLFO then dirtygrid = true end
+  dirtygrid = true
 end
 
 function make_loop(i, lstart, lend)
@@ -775,6 +781,7 @@ function make_loop(i, lstart, lend)
   softcut.loop_start(i, s)
   softcut.loop_end(i, e)
   enc2_wait = false
+  dirtygrid = true
 end
 
 function clear_loop(i)
@@ -818,7 +825,6 @@ function filter_select(i, option)
   softcut.post_filter_bp(i, option == 3 and 1 or 0) 
   softcut.post_filter_br(i, option == 4 and 1 or 0)
   softcut.post_filter_dry(i, option == 5 and 1 or track[i].dry_level)
-  if view < vLFO and main_pageNum == 4 then dirtyscreen = true end
 end
 
 function phase_poll(i, pos)
@@ -845,15 +851,15 @@ function phase_poll(i, pos)
       track[i].pos_clip = pc -- relative position within allocated buffer space
     end
     -- display position
+    grid_page(vLFO)
+    grid_page(vTAPE)
     if (grido_view < vLFO or grido_view == vTAPE) then
       dirtygrid = true
     end
     if (gridz_view < vLFO or gridz_view == vTAPE) then
       dirtygrid = true
     end
-    if view == vTAPE then
-      dirtyscreen = true
-    end
+    page_redraw(vTAPE)
   end
   -- oneshot play_mode
   if track[i].play_mode == 2 and track[i].loop == 0 and track[i].play == 1 then
@@ -977,14 +983,15 @@ function set_scale(option) -- set scale id, thanks zebra
     p.options = scales.id[option]
     p:bang()
   end
-  if view < vLFO and main_pageNum == 3 then dirtyscreen = true end
+  page_redraw(vMAIN, 5)
 end
 
 function set_transpose(i, x) -- transpose track
   track[i].transpose = scales.val[current_scale][x] / 1200
   update_rate(i)
-  if view < vLFO and main_pageNum == 5 then dirtyscreen = true end
-  if (view == vCUT or view == vTRSP) then dirtygrid = true end
+  page_redraw(vMAIN, 5)
+  grid_page(vCUT)
+  grid_page(vTRSP)
 end
 
 
@@ -994,9 +1001,20 @@ function toggle_playback(i)
   if track[i].play == 1 then
     local e = {t = eSTOP, i = i} event(e)
   else
-    e = {t = eSTART, i = i} event(e)
+    if track[i].start_launch == 1 then
+      local e = {t = eSTART, i = i} event(e)
+    else
+      clock.run(function()
+        local beats = track[i].start_launch == 2 and 1 or 4
+        local cut = track[i].rev == 0 and 0 or 15
+        clock.sync(beats)
+        local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+      end)
+    end
   end
 end
+
+
 
 function toggle_transport()
   if transport_run == false then
@@ -1004,7 +1022,7 @@ function toggle_transport()
       m:start()
     end
     if params:get("clock_source") == 1 then
-      clock.internal.start()
+      --clock.internal.start()
     end
     transport_run = true
   end
@@ -1214,6 +1232,7 @@ function set_lfo(i, track, destination)
     params:set("lfo_lfo_"..i, 1)
     lfo[i].track = nil
     lfo[i].destination = nil
+    lfo[i].prev_val = nil
     lfo[i].slope = 0
     lfo[i].info = 'unassigned'
     lfo[i]:set('action', function(scaled, raw) end)
@@ -1222,6 +1241,7 @@ function set_lfo(i, track, destination)
     lfo[i].info = 'T'..track..'    '..lfo_destination[n]
     lfo[i].track = track
     lfo[i].destination = destination
+    lfo[i].prev_val = nil
     params:lookup_param("lfo_min_lfo_"..i).controlspec.minval = lfo_min[n]
     params:lookup_param("lfo_min_lfo_"..i).controlspec.maxval = lfo_max[n]
     params:lookup_param("lfo_max_lfo_"..i).controlspec.minval = lfo_min[n]
@@ -1232,11 +1252,9 @@ function set_lfo(i, track, destination)
     params:set("lfo_max_lfo_"..i, lfo_max[n])
     params:set("lfo_baseline_lfo_"..i, tab.key(lfo_baseline_options, lfo_baseline[n]))
     lfo[i]:set('action', function(scaled, raw)
-      params:set(i..lfo_params[n], scaled)
+      params:set(track..lfo_params[n], scaled)
       lfo[i].slope = raw
-      if (grido_view == vLFO or gridz_view == vLFO) then
-        dirtygrid = true
-      end
+      grid_page(vLFO)
     end)
     lfo[i]:set('state_callback', function(enabled)
       if not enabled and lfo[i].prev_val ~= nil then
@@ -1294,7 +1312,7 @@ end
 
 function env_increment(i, d)
   params:delta(i.."vol", d * 100)
-  if view == vENV then dirtygrid = true end
+  grid_page(vENV)
 end
 
 function env_set_value(i, val)
@@ -1395,7 +1413,7 @@ function init_envelope(i)
     env[i].direction = 1
     params:set(i.."vol", track[i].prev_level)
   end
-  if view == vENV then dirtygrid = true end
+  grid_page(vENV)
 end
 
 function clamp_env_levels(i)
@@ -1527,9 +1545,8 @@ function clock.tempo_change_handler(tempo)
       pattern[i].time_factor = pattern[i].bpm / tempo
     end
   end
-  if view == vPATTERNS then dirtyscreen = true end
   render_splice()
-  beat_sec = 60/params:get("clock_tempo")
+  beat_sec = 60 / params:get("clock_tempo")
 end
 
 function clock.transport.start()
@@ -1584,30 +1601,51 @@ end
 function ledpulse_bar()
   while true do
     clock.sync(4)
-    flash_bar = true
+    pulse_bar = true
     dirtygrid = true
-    clock.run(
-      function()
-        clock.sleep(0.1)
-        flash_bar = false
-        dirtygrid = true
-      end
-    )
+    clock.run(function()
+      clock.sleep(1/30)
+      pulse_bar = false
+      dirtygrid = true
+    end)
   end
 end
 
 function ledpulse_beat()
   while true do
     clock.sync(1)
-    flash_beat = true
+    pulse_beat = true
     dirtygrid = true
     clock.run(
       function()
-        clock.sleep(0.1)
-        flash_beat = false
+        clock.sleep(1/30)
+        pulse_beat = false
         dirtygrid = true
       end
     )
+  end
+end
+
+function track_reset()
+  while true do
+    clock.sync(1)
+    for i = 1, 6 do
+      if track[i].reset and track[i].play == 1 then
+        track[i].beat_count = track[i].beat_count + 1
+        if track[i].beat_count >= track[i].beat_reset then
+          if track[i].loop == 0 then
+            local cut = track[i].rev == 0 and clip[i].s or (clip[i].l + clip[i].s)
+            softcut.position(i, cut)
+          else
+            local lstart = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
+            local lend = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
+            local cut = track[i].rev == 0 and lstart or lend
+            softcut.position(i, cut)
+          end
+          track[i].beat_count = 0
+        end
+      end
+    end
   end
 end
 
@@ -1779,10 +1817,10 @@ function load_track_tape(i)
   track[i].loop = 0
   track[i].loop_start = loaded_sesh_data[i].track_loop_start
   track[i].loop_end = loaded_sesh_data[i].track_loop_end
-  set_clip(i)
   track[i].speed = 0
   params:set(i.."transpose", 8)
   params:set(i.."tempo_map_mode", loaded_sesh_data[i].track_tempo_map)
+  set_tempo_map(i)
   -- route data
   params:set(i.."send_track5", loaded_sesh_data[i].route_t5)
   params:set(i.."send_track6", loaded_sesh_data[i].route_t6)
@@ -1854,13 +1892,13 @@ function init()
     params:add_option("patterns_playback"..i, "playback", pattern_playback, 1)
     params:set_action("patterns_playback"..i, function(mode) pattern[i].loop = mode == 1 and true or false end)
 
-    params:add_option("patterns_countin"..i, "count in", pattern_countin, 1)
+    params:add_option("patterns_countin"..i, "count in", pattern_countin, 2)
     params:set_action("patterns_countin"..i, function(mode) pattern[i].count_in = mode == 1 and 1 or 4 dirtygrid = true end)
 
     params:add_option("patterns_meter"..i, "meter", pattern_meter, 3)
     params:set_action("patterns_meter"..i, function(idx) pattern[i].sync_meter = pattern_meter_val[idx] end)
 
-    params:add_number("patterns_barnum"..i, "length", 1, 16, 4, function(param) return param:get()..(pattern[i].sync_beatnum <= 4 and " bar" or " bars") end)
+    params:add_number("patterns_barnum"..i, "length", 1, 32, 4, function(param) return param:get()..(pattern[i].sync_beatnum <= 4 and " bar" or " bars") end)
     params:set_action("patterns_barnum"..i, function(num) pattern[i].sync_beatnum = num * 4 dirtygrid = true end)
   end
 
@@ -1976,7 +2014,7 @@ function init()
   audio.level_tape(1)
 
   for i = 1, 6 do
-    params:add_group("track_group"..i, "track "..i, 46)
+    params:add_group("track_group"..i, "track "..i, 49)
 
     params:add_separator("track_options_params"..i, "track "..i.." options")
     -- select buffer
@@ -1984,10 +2022,25 @@ function init()
     params:set_action(i.."buffer_sel", function(x) tape[i].side = x softcut.buffer(i, x) end)
     -- play mode
     params:add_option(i.."play_mode", "play mode", {"loop", "oneshot", "gate"}, 1)
-    params:set_action(i.."play_mode", function(option) track[i].play_mode = option end)
+    params:set_action(i.."play_mode", function(option) track[i].play_mode = option page_redraw(vMAIN, 7) end)
     -- tempo map
     params:add_option(i.."tempo_map_mode", "tempo-map", {"none", "resize", "repitch"}, 1)
-    params:set_action(i.."tempo_map_mode", function(mode) track[i].tempo_map = mode - 1 set_tempo_map(i) if view == vREC then dirtygrid = true end end)
+    params:set_action(i.."tempo_map_mode", function(mode) track[i].tempo_map = mode - 1 set_tempo_map(i) grid_page(vREC) end)
+    -- play lauch
+    params:add_option(i.."start_launch", "start launch", {"manual", "beat", "bar"}, 1)
+    params:set_action(i.."start_launch", function(option) track[i].start_launch = option page_redraw(vMAIN, 7) end)
+    -- reset active
+    params:add_option(i.."reset_active", "track reset", {"off", "on"}, 1)
+    params:set_action(i.."reset_active", function(mode)
+      track[i].reset = mode == 2 and true or false
+      if num == 2 then
+        track[i].beat_count = 0
+      end
+      page_redraw(vMAIN, 8)
+    end)
+    -- reset count
+    params:add_number(i.."reset_count", "reset count", 2, 128, 4, function(param) return (param:get().." beats") end)
+    params:set_action(i.."reset_count", function(val) track[i].beat_reset = val page_redraw(vMAIN, 8) end)
     
     params:add_separator("track_level_params"..i, "track "..i.." levels")
     -- track volume
@@ -1995,7 +2048,7 @@ function init()
     params:set_action(i.."vol", function(x) track[i].level = x set_level(i) end)
     -- track pan
     params:add_control(i.."pan", "pan", controlspec.new(-1, 1, 'lin', 0, 0, ""), function(param) return pan_display(param:get()) end)
-    params:set_action(i.."pan", function(x) track[i].pan = x softcut.pan(i, x) if view < vLFO and main_pageNum == 1 then dirtyscreen = true end end)
+    params:set_action(i.."pan", function(x) track[i].pan = x softcut.pan(i, x) page_redraw(vMAIN, 1) end)
     -- record level
     params:add_control(i.."rec", "rec level", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."rec", function(x) track[i].rec_level = x set_rec(i) end)
@@ -2004,10 +2057,10 @@ function init()
     params:set_action(i.."dub", function(x) track[i].pre_level = x set_rec(i) end)
     -- rate slew
     params:add_control(i.."rate_slew", "rate slew", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
-    params:set_action(i.."rate_slew", function(x) track[i].rate_slew = x softcut.rate_slew_time(i, x) if view < vLFO and main_pageNum == 6 then dirtyscreen = true end end)
+    params:set_action(i.."rate_slew", function(x) track[i].rate_slew = x softcut.rate_slew_time(i, x) page_redraw(vMAIN, 6) end)
     -- level slew
     params:add_control(i.."level_slew", "level slew", controlspec.new(0.1, 10.0, "lin", 0.1, 0.1, ""), function(param) return (round_form(param:get() * 10, 1, "%")) end)
-    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) if view < vLFO and main_pageNum == 6 then dirtyscreen = true end end)
+    params:set_action(i.."level_slew", function(x) softcut.level_slew_time(i, x) page_redraw(vMAIN, 6) end)
     -- send level track 5
     params:add_control(i.."send_track5", "send track 5", controlspec.new(0, 1, 'lin', 0, 0.5, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."send_track5", function(x) track[i].send_t5 = x set_track_sends(i) end)
@@ -2020,7 +2073,7 @@ function init()
     params:add_separator("track_pitch_params"..i, "track "..i.." pitch")
     -- detune
     params:add_number(i.."detune", "detune", -600, 600, 0, function(param) return (round_form(param:get(), 1, "cents")) end)
-    params:set_action(i.."detune", function(cent) track[i].detune = cent / 1200 update_rate(i) if view < vLFO and main_pageNum == 5 then dirtyscreen = true end end)
+    params:set_action(i.."detune", function(cent) track[i].detune = cent / 1200 update_rate(i) page_redraw(vMAIN, 5) end)
     -- transpose
     params:add_option(i.."transpose", "transpose", scales.id[1], 8)
     params:set_action(i.."transpose", function(x) set_transpose(i, x) end)
@@ -2029,22 +2082,22 @@ function init()
     params:add_separator("track_filter_params"..i, "track "..i.." filter")
     -- cutoff
     params:add_control(i.."cutoff", "cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, ""), function(param) return (round_form(param:get(), 1, " hz")) end)
-    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) if view < vLFO and main_pageNum == 3 then dirtyscreen = true end end)
+    params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) page_redraw(vMAIN, 3) end)
     -- filter q
     params:add_control(i.."filter_q", "filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
-    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) if view < vLFO and main_pageNum == 3 then dirtyscreen = true end end)
+    params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) page_redraw(vMAIN, 3) end)
     -- filter type
     params:add_option(i.."filter_type", "type", {"lp", "hp", "bp", "br", "off"}, 1)
-    params:set_action(i.."filter_type", function(option) filter_select(i, option) end)
+    params:set_action(i.."filter_type", function(option) filter_select(i, option) page_redraw(vMAIN, 4) end)
     -- post filter dry level
     params:add_control(i.."post_dry", "dry level", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
-    params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) if view < vLFO and main_pageNum == 4 then dirtyscreen = true end end)
+    params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) page_redraw(vMAIN, 4) end)
 
     -- warble params
     params:add_separator("warble_params"..i, "track "..i.." warble")
     -- filter type
     params:add_option(i.."warble_state", "active", {"no", "yes"}, 1)
-    params:set_action(i.."warble_state", function(option) track[i].warble = option - 1 dirtygrid = true end)
+    params:set_action(i.."warble_state", function(option) track[i].warble = option - 1 grid_page(vREC) end)
     -- warble amount
     params:add_number(i.."warble_amount", "amount", 0, 100, 10, function(param) return (param:get().."%") end)
     params:set_action(i.."warble_amount", function(val) warble[i].amount = val end)
@@ -2059,25 +2112,25 @@ function init()
     params:add_separator("envelope_params"..i, "track "..i.." envelope")
 
     params:add_option(i.."adsr_active", "envelope", {"off", "on"}, 1)
-    params:set_action(i.."adsr_active", function(mode) env[i].active = mode == 2 and true or false init_envelope(i) if view == vENV then dirtyscreen = true end end)
+    params:set_action(i.."adsr_active", function(mode) env[i].active = mode == 2 and true or false init_envelope(i) grid_page(vENV) end)
     -- env amplitude
     params:add_control(i.."adsr_amp", "max vol", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
-    params:set_action(i.."adsr_amp", function(val) env[i].max_value = val clamp_env_levels(i) if view == vENV then dirtyscreen = true end end)
+    params:set_action(i.."adsr_amp", function(val) env[i].max_value = val clamp_env_levels(i) page_redraw(vENV, 3) end)
     -- env init level
     params:add_control(i.."adsr_init", "min vol", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
-    params:set_action(i.."adsr_init", function(val) env[i].init_value = val clamp_env_levels(i) if view == vENV then dirtyscreen = true end end)
+    params:set_action(i.."adsr_init", function(val) env[i].init_value = val clamp_env_levels(i) page_redraw(vENV, 3) end)
     -- env attack
     params:add_control(i.."adsr_attack", "attack", controlspec.new(0, 10, 'lin', 0.1, 0.2, "s"))
-    params:set_action(i.."adsr_attack", function(val) env[i].attack = val * 10 if view == vENV then dirtyscreen = true end end)
+    params:set_action(i.."adsr_attack", function(val) env[i].attack = val * 10 page_redraw(vENV, 1) end)
     -- env decay
     params:add_control(i.."adsr_decay", "decay", controlspec.new(0, 10, 'lin', 0.1, 0.5, "s"))
-    params:set_action(i.."adsr_decay", function(val) env[i].decay = val * 10 if view == vENV then dirtyscreen = true end end)
+    params:set_action(i.."adsr_decay", function(val) env[i].decay = val * 10 page_redraw(vENV, 1) end)
     -- env sustain
     params:add_control(i.."adsr_sustain", "sustain", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
-    params:set_action(i.."adsr_sustain", function(val) env[i].sustain = val clamp_env_levels(i) if view == vENV then dirtyscreen = true end end)
+    params:set_action(i.."adsr_sustain", function(val) env[i].sustain = val clamp_env_levels(i) page_redraw(vENV, 2) end)
     -- env release
     params:add_control(i.."adsr_release", "release", controlspec.new(0, 10, 'lin', 0.1, 1, "s"))
-    params:set_action(i.."adsr_release", function(val) env[i].release = val * 10 if view == vENV then dirtyscreen = true end end)    
+    params:set_action(i.."adsr_release", function(val) env[i].release = val * 10 page_redraw(vENV, 2) end)    
 
     -- params for track to trigger
     params:add_separator(i.."trigger_params", "track "..i.." trigger")
@@ -2111,6 +2164,7 @@ function init()
     -- midi velocity
     params:add_number(i.."midi_vel", "midi velocity", 1, 127, 100)
     params:set_action(i.."midi_vel", function(num) trig[i].midi_vel = num end)
+    
     -- input options
     params:add_option(i.."input_options", "input options", {"L+R", "L IN", "R IN", "OFF"}, 1)
     params:set_action(i.."input_options", function(option) tape[i].input = option set_softcut_input(i) end)
@@ -2270,13 +2324,12 @@ function init()
         track[i].loop = loaded_sesh_data[i].track_loop
         track[i].loop_start = loaded_sesh_data[i].track_loop_start
         track[i].loop_end = loaded_sesh_data[i].track_loop_end
-        set_clip(i)
         -- set track state
         track[i].mute = loaded_sesh_data[i].track_mute
         set_level(i)
         track[i].speed = loaded_sesh_data[i].track_speed
         track[i].rev = loaded_sesh_data[i].track_rev
-        update_rate(i)
+        set_tempo_map(i)
         if track[i].play == 0 then
           stop_track(i)
         end
@@ -2323,6 +2376,8 @@ function init()
   beatpulse = clock.run(ledpulse_beat)
   quantizer = clock.run(update_q_clock)
   envcounter = clock.run(env_run)
+  reset_clk = clock.run(track_reset)
+
 
   -- lattice
   vizclock = lattice:new()
@@ -2533,6 +2588,29 @@ function screenredraw()
   if dirtyscreen then
     redraw()
     dirtyscreen = false
+  end
+end
+
+function page_redraw(view, page)
+  local view = view or 0
+  local page = page or 0
+  if view == vMAIN and main_pageNum == page then
+    dirtyscreen = true
+  elseif view == vLFO and lfo_pageNum == page then
+    dirtyscreen = true
+  elseif view == vENV and env_pageNum == page then
+    dirtyscreen = true
+  elseif view == vPATTERNS and patterns_pageNum == page then
+    dirtyscreen = true
+  elseif view == vTAPE then
+    dirtyscreen = true
+  end
+end
+
+function grid_page(view)
+  local view = view or 1
+  if (grido_view == view or gridz_view == view) then
+    dirtygrid = true
   end
 end
 
