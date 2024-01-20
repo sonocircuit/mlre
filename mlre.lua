@@ -32,10 +32,13 @@ scales = include 'lib/scales_mlre'
 pattern_time = include 'lib/pattern_time_mlre'
 
 
---------- variables --------
-pset_load = false
+--------- user variables --------
+pset_load = false -- if true default pset loaded at launch
 rotate_grid = false -- zero only. if true will rotate 90° CW
+autofocus = true -- zero only. if true norns screen automatically changes to last used grid layout
 
+
+--------- other variables --------
 mlre_path = _path.audio .. "mlre/"
 
 -- constants
@@ -588,6 +591,16 @@ function init_splices(i)
   set_clip(i)
 end
 
+function save_all_markers()
+  for t = 1, 6 do
+    for s = 1, 8 do
+      tape[t].splice[s].init_len = tape[t].splice[s].l
+      tape[t].splice[s].init_start = tape[t].splice[s].s
+      tape[t].splice[s].init_beatnum = tape[t].splice[s].beatnum
+    end
+  end
+end
+
 function set_info(i, n)
   if track[i].tempo_map == 2 then
     tape[i].splice[n].info = "repitch factor: "..string.format("%.2f", clock.get_tempo() / tape[i].splice[n].bpm)
@@ -598,19 +611,16 @@ function set_info(i, n)
 end
 
 function set_tempo_map(i)
-  clock.run(function()
-    clock.sleep(0.2) -- delay splice setting for pset_loading (need to load tables first!)
-    if track[i].tempo_map == 1 then
-      for n = 1, 8 do
-        splice_resize(i, n)
-      end
-    else
-      for n = 1, 8 do
-        splice_reset(i, n)
-      end
+  if track[i].tempo_map == 1 then
+    for n = 1, 8 do
+      splice_resize(i, n)
     end
-    render_splice()
-  end)
+  else
+    for n = 1, 8 do
+      splice_reset(i, n)
+    end
+  end
+  render_splice()
   page_redraw(vTAPE)
 end
 
@@ -1631,7 +1641,7 @@ function track_reset()
     for i = 1, 6 do
       if track[i].reset and track[i].play == 1 then
         track[i].beat_count = track[i].beat_count + 1
-        if track[i].beat_count >= track[i].beat_reset then
+        if track[i].beat_count >= track[i].beat_reset and track[i].rec == 0 then
           if track[i].loop == 0 then
             local cut = track[i].rev == 0 and clip[i].s or (clip[i].l + clip[i].s)
             softcut.position(i, cut)
@@ -1804,8 +1814,6 @@ function load_track_tape(i)
   tape[i].s = loaded_sesh_data[i].tape_s
   tape[i].e  = loaded_sesh_data[i].tape_e
   tape[i].splice = {table.unpack(loaded_sesh_data[i].tape_splice)}
-  -- track audio
-  softcut.buffer_copy_mono(2, 1, tape[i].s, tape[i].s, MAX_TAPELENGTH, 0.01)
   -- track data
   track[i].loaded = true
   track[i].splice_active = 1
@@ -1820,14 +1828,19 @@ function load_track_tape(i)
   params:set(i.."transpose", 8)
   params:set(i.."tempo_map_mode", loaded_sesh_data[i].track_tempo_map)
   set_tempo_map(i)
+  set_clip(i)
   -- route data
-  params:set(i.."send_track5", loaded_sesh_data[i].route_t5)
-  params:set(i.."send_track6", loaded_sesh_data[i].route_t6)
+  params:set(i.."send_track5", loaded_sesh_data[i].send_t5)
+  params:set(i.."send_track6", loaded_sesh_data[i].send_t6)
   -- set levels
   set_level(i)
   set_rec(i)
-  -- clear temp track
+  -- load tape
+  softcut.buffer_copy_mono(2, 1, tape[i].s, tape[i].s, MAX_TAPELENGTH, 0.01)
+  -- clear temp tape
   softcut.buffer_clear_region_channel(2, tape[i].s - 0.5, MAX_TAPELENGTH + TAPE_GAP, 0.01, 0)
+  -- render
+  clock.run(function() clock.sleep(0.1) render_splice() end)
   show_message("track   loaded")
 end
 
@@ -2214,6 +2227,8 @@ function init()
 
   -- pset callbacks
   params.action_write = function(filename, name, number)
+    -- save all markers
+    save_all_markers()
     -- make directory
     os.execute("mkdir -p "..norns.state.data.."sessions/"..number.."/")
     -- save buffer content
@@ -2251,9 +2266,6 @@ function init()
       sesh_data[i].snap_transpose_val = {table.unpack(snap[i].transpose_val)}
     end
     for i = 1, 6 do
-      -- save default markers
-      tape[i].splice[track[i].splice_focus].init_len = tape[i].splice[track[i].splice_focus].l
-      tape[i].splice[track[i].splice_focus].init_start = tape[i].splice[track[i].splice_focus].s
       -- tape data
       sesh_data[i].tape_s = tape[i].s
       sesh_data[i].tape_e = tape[i].e
@@ -2266,6 +2278,8 @@ function init()
       -- route data
       sesh_data[i].route_t5 = track[i].t5
       sesh_data[i].route_t6 = track[i].t6
+      sesh_data[i].send_t5 = track[i].send_t5
+      sesh_data[i].send_t6 = track[i].send_t6
       -- track data
       sesh_data[i].track_sel = track[i].sel
       sesh_data[i].track_fade = track[i].fade
@@ -2328,7 +2342,7 @@ function init()
         set_level(i)
         track[i].speed = loaded_sesh_data[i].track_speed
         track[i].rev = loaded_sesh_data[i].track_rev
-        set_tempo_map(i)
+        clock.run(function() clock.sleep(0.1) set_tempo_map(i) end)
         if track[i].play == 0 then
           stop_track(i)
         end
