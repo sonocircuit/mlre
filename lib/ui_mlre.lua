@@ -1068,7 +1068,7 @@ function ui.tape_redraw()
     if view_splice_info then
       screen.level(8)
       screen.move(4, 30)
-      screen.text(">> "..str_format(tape[track_focus].splice[track[track_focus].splice_focus].name, 18))
+      screen.text(">> "..str_format(tape[track_focus].splice[track[track_focus].splice_focus].name, 24))
       screen.level(4)
       screen.move(64, 45)
       screen.text_center("-- "..tape[track_focus].splice[track[track_focus].splice_focus].info.." --")
