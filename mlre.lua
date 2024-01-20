@@ -233,6 +233,14 @@ function loop_event(i, lstart, lend)
   event(e)
 end
 
+function recalc_time_factor()
+  for i = 1, 8 do
+    if pattern[i].tempo_map == true and pattern[i].bpm ~= nil then -- pattern tempo map default set to true.
+      pattern[i].time_factor = pattern[i].bpm / current_tempo
+    end
+  end
+end
+
 -- exec function
 function event_exec(e)
   if e.t == eCUT then
@@ -485,22 +493,13 @@ function set_clip(i)
   softcut.loop_start(i, clip[i].s)
   softcut.loop_end(i, clip[i].e)
   local q = (clip[i].l / 64)
-  local off = calc_quant_off(i, q)
+  local off = util.round((math.ceil(clip[i].s / q) * q) - clip[i].s, 0.001)
   softcut.phase_quant(i, q)
   softcut.phase_offset(i, off)
   if track[i].loop == 1 then
     make_loop(i, track[i].loop_start, track[i].loop_end)
   end
   update_rate(i)
-end
-
-calc_quant_off = function(i, q)
-  local off = q
-  while off < clip[i].s do
-    off = off + q
-  end
-  off = off - clip[i].s
-  return off
 end
 
 function splice_resize(i, focus, length)
@@ -603,7 +602,7 @@ end
 
 function set_info(i, n)
   if track[i].tempo_map == 2 then
-    tape[i].splice[n].info = "repitch factor: "..string.format("%.2f", clock.get_tempo() / tape[i].splice[n].bpm)
+    tape[i].splice[n].info = "repitch factor: "..string.format("%.2f", current_tempo / tape[i].splice[n].bpm)
   else
     tape[i].splice[n].info = "length: "..string.format("%.2f", tape[i].splice[n].l).."s"
   end
@@ -622,6 +621,17 @@ function set_tempo_map(i)
   end
   render_splice()
   page_redraw(vTAPE)
+end
+
+function recalc_splices()
+  for i = 1, 6 do
+    if track[i].tempo_map > 0 then
+      for j = 1, 8 do
+        splice_resize(i, j) -- resize clip according to tempo settings
+      end
+      render_splice()
+    end
+  end
 end
 
 
@@ -933,7 +943,7 @@ function update_rate(i)
   local n = math.pow(2, track[i].speed + track[i].transpose + track[i].detune)
   if track[i].rev == 1 then n = -n end
   if track[i].tempo_map == 2 then
-    local bpmmod = clock.get_tempo() / clip[i].bpm
+    local bpmmod = current_tempo / clip[i].bpm
     n = n * bpmmod
   end
   softcut.rate(i, n)
@@ -1030,9 +1040,6 @@ function toggle_transport()
   if transport_run == false then
     if params:get("midi_trnsp") == 2 then
       m:start()
-    end
-    if params:get("clock_source") == 1 then
-      --clock.internal.start()
     end
     transport_run = true
   end
@@ -1468,7 +1475,7 @@ function make_warble() -- warbletimer function
       local n = math.pow(2, track[i].speed + track[i].transpose + track[i].detune)
       if track[i].rev == 1 then n = -n end
       if track[i].tempo_map == 2 then
-        local bpmmod = clock.get_tempo() / clip[i].bpm
+        local bpmmod = current_tempo / clip[i].bpm
         n = n * bpmmod
       end
       local warble_rate = n * (1 + warble[i].slope)
@@ -1541,30 +1548,15 @@ end
 
 --------------------- CLOCK CALLBACKS -----------------------
 
-function clock.tempo_change_handler(tempo)
-  for i = 1, 6 do
-    if track[i].tempo_map > 0 then
-      for j = 1, 8 do
-        splice_resize(i, j) -- resize clip according to tempo settings
-      end
-    end
-  end
-  for i = 1, 8 do
-    if pattern[i].tempo_map == true and pattern[i].bpm ~= nil then -- pattern tempo map default set to true.
-      pattern[i].time_factor = pattern[i].bpm / tempo
-    end
-  end
-  render_splice()
-  beat_sec = 60 / params:get("clock_tempo")
+function clock.tempo_change_handler()
+  recalc_splices()
+  recalc_time_factor()
+  set_time_vars()
 end
 
 function clock.transport.start()
   if params:get("midi_trnsp") == 3 then
-    local count_in = params:get("clock_source") == 3 and params:get("link_quantum") or 4
-    clock.run(function()
-      clock.sync(count_in)
-      startall()
-    end)
+    startall()
   end
 end
 
@@ -1574,6 +1566,10 @@ function clock.transport.stop()
   end
 end
 
+function set_time_vars()
+  current_tempo = params:get("clock_tempo")
+  beat_sec = 60 / params:get("clock_tempo")
+end
 
 --------------------- CLOCK COROUTINES -----------------------
 
@@ -1767,7 +1763,7 @@ function load_patterns()
     pattern[i].bpm = loaded_sesh_data[i].pattern_bpm
     pattern[i].tempo_map = loaded_sesh_data[i].pattern_tempo_map
     if pattern[i].tempo_map and pattern[i].bpm ~= nil then
-      local newfactor = pattern[i].bpm / clock.get_tempo()
+      local newfactor = pattern[i].bpm / current_tempo
       pattern[i].time_factor = newfactor
     end
     -- recall
@@ -1854,6 +1850,10 @@ function init()
       g:rotation(1) -- 1 is 90°
     end
   end
+  -- set time variables
+  current_tempo = params:get("clock_tempo")
+  beat_sec = 60 / current_tempo
+
   -- make directory
   if util.file_exists(mlre_path) == false then
     util.make_dir(mlre_path)
