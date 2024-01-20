@@ -174,7 +174,7 @@ function grd.nav(x, z, pos)
             if not snap[i].data then
               save_snapshot(i)
             elseif snap[i].data then
-              if held_focus < 0 then
+              if held_focus > 0 then
                 load_snapshot(i, track_focus)
               else
                 load_snapshots(i)
@@ -363,7 +363,7 @@ end
 
 function grd.rec_keys(x, y, z, offset)
   local y = offset and y - offset or y
-  if z == 1 and view ~= vMAIN then
+  if z == 1 and view ~= vMAIN and autofocus then
     set_view(vMAIN)
   end
   if y > 1 and y < 8 then
@@ -375,6 +375,7 @@ function grd.rec_keys(x, y, z, offset)
           track_focus = i
           arc_track_focus = track_focus
           dirtyscreen = true
+          if not autofocus and view == vTAPE then render_splice(track_focus) end
         end
         if alt == 1 and mod == 0 then
           params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
@@ -467,7 +468,7 @@ end
 
 function grd.cut_keys(x, y, z, offset)
   local y = offset and y - offset or y
-  if z == 1 and view ~= vMAIN then
+  if z == 1 and view ~= vMAIN and autofocus then
     set_view(vMAIN)
   end
   if z == 1 and held[y] then heldmax[y] = 0 end
@@ -492,6 +493,7 @@ function grd.cut_keys(x, y, z, offset)
         track_focus = i
         arc_track_focus = track_focus
         dirtyscreen = true
+        if not autofocus and view == vTAPE then render_splice(track_focus) end
       end
       if alt == 1 and y < 8 then
         toggle_playback(i)
@@ -564,7 +566,7 @@ end
 
 function grd.trsp_keys(x, y, z, offset)
   local y = offset and y - offset or y
-  if z == 1 and view ~= vMAIN then
+  if z == 1 and view ~= vMAIN and autofocus then
     set_view(vMAIN)
   end
   if y > 1 and y < 8 then
@@ -574,6 +576,7 @@ function grd.trsp_keys(x, y, z, offset)
         track_focus = i
         arc_track_focus = track_focus
         dirtyscreen = true
+        if not autofocus and view == vTAPE then render_splice(track_focus) end
       end
       if alt == 0 and mod == 0 then
         if x >= 1 and x <=8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
@@ -615,7 +618,7 @@ end
 
 function grd.lfo_keys(x, y, z, offset)
   local y = offset and y - offset or y
-  if z == 1 and view ~= vLFO then
+  if z == 1 and view ~= vLFO and autofocus then
     set_view(vLFO)
   end
   if z == 1 then
@@ -674,7 +677,7 @@ end
 
 function grd.env_keys(x, y, z, offset)
   local y = offset and y - offset or y
-  if z == 1 and view ~= vENV then
+  if z == 1 and view ~= vENV and autofocus then
     set_view(vENV)
   end
   if z == 1 then
@@ -722,7 +725,7 @@ end
 
 function grd.pattern_keys(x, y, z, offset)
   local y = offset and y - offset or y
-  if z == 1 and view ~= vPATTERNS then
+  if z == 1 and view ~= vPATTERNS and autofocus then
     set_view(vPATTERNS)
   end
   if z == 1 then
@@ -779,14 +782,14 @@ function grd.pattern_draw(offset)
     local x = i + 13
     for j = 1, 4 do
       local y = j + 2 + off
-      g:led(x, y, params:get("quant_rate") == (y - 2) + (x - 14) * 4 and 10 or 4)
+      g:led(x, y, params:get("quant_rate") == (y - 1) + (x - 14) * 4 and 10 or 4)
     end
   end
 end
 
 function grd.tape_keys(x, y, z, offset)
   local y = offset and y - offset or y
-  if z == 1 and view ~= vTAPE then
+  if z == 1 and view ~= vTAPE and autofocus then
     set_view(vTAPE)
   end
   if y > 1 and y < 8 then
