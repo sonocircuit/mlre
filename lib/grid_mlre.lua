@@ -813,9 +813,9 @@ function grd.tape_keys(x, y, z, offset)
       view_buffer = z == 1 and true or false
       render_splice()
     elseif x == 10 and z == 1 then
-      if mod == 1 then
+      if alt == 1 and mod == 0 then
         params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
-      else
+      elseif mod == 1 and alt == 0 then
         params:set(i.."buffer_sel", tape[i].side == 1 and 2 or 1)
         if track_focus == i then
           render_splice()
@@ -892,18 +892,16 @@ function grd.tape_draw(offset)
       end
     end
   end
-
   -- buffer selection / tempo map
   if mod == 1 then
     for i = 1, 6 do
-      g:led(10, i + 1 + off, track[i].tempo_map == 2 and 12 or (track[i].tempo_map == 1 and 7 or 2))
+      g:led(10, i + 1 + off, tape[i].side == 1 and 10 or 4)
     end
   else
     for i = 1, 6 do
-      g:led(10, i + 1 + off, tape[i].side == 1 and 10 or 4)
+      g:led(10, i + 1 + off, track[i].tempo_map == 2 and 12 or (track[i].tempo_map == 1 and 7 or 2))
     end
   end
-
   -- input selection
   for i = 1, 6 do
     g:led(12, i + 1 + off, (tape[i].input == 1 or tape[i].input == 2) and 6 or 2)
