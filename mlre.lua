@@ -439,7 +439,7 @@ for i = 1, 6 do
   track[i].speed = 0
   track[i].warble = 0
   track[i].rev = 0
-  track[i].tempo_map = 0
+  track[i].tempo_map = 2
   track[i].resize_val = 4
   track[i].detune = 0
   track[i].transpose = 0
@@ -2070,15 +2070,19 @@ function init()
     -- track volume
     params:add_control(i.."vol", "volume", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."vol", function(x) track[i].level = x set_level(i) end)
+    params:set_save(i.."vol", false)
     -- track pan
     params:add_control(i.."pan", "pan", controlspec.new(-1, 1, 'lin', 0, 0, ""), function(param) return pan_display(param:get()) end)
     params:set_action(i.."pan", function(x) track[i].pan = x softcut.pan(i, x) page_redraw(vMAIN, 1) end)
+    params:set_save(i.."pan", false)
     -- record level
     params:add_control(i.."rec", "rec level", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."rec", function(x) track[i].rec_level = x set_rec(i) end)
+    params:set_save(i.."rec", false)
     -- overdub level
     params:add_control(i.."dub", "dub level", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."dub", function(x) track[i].pre_level = x set_rec(i) end)
+    params:set_save(i.."dub", false)
     -- rate slew
     params:add_control(i.."rate_slew", "rate slew", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."rate_slew", function(x) track[i].rate_slew = x softcut.rate_slew_time(i, x) page_redraw(vMAIN, 6) end)
@@ -2088,10 +2092,12 @@ function init()
     -- send level track 5
     params:add_control(i.."send_track5", "send trk 5", controlspec.new(0, 1, 'lin', 0, 0.5, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."send_track5", function(x) track[i].send_t5 = x set_track_sends(i) end)
+    params:set_save(i.."send_track5", false)
     if i > 4 then params:hide(i.."send_track5") end
     -- send level track 6
     params:add_control(i.."send_track6", "send trk 6", controlspec.new(0, 1, 'lin', 0, 0.5, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."send_track6", function(x) track[i].send_t6 = x set_track_sends(i) end)
+    params:set_save(i.."send_track6", false)
     if i > 5 then params:hide(i.."send_track6") end
 
     params:add_separator("track_pitch_params"..i, "track "..i.." pitch")
@@ -2107,12 +2113,15 @@ function init()
     -- cutoff
     params:add_control(i.."cutoff", "cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, ""), function(param) return (round_form(param:get(), 1, " hz")) end)
     params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) page_redraw(vMAIN, 3) end)
+    params:set_save(i.."cutoff", false)
     -- filter q
     params:add_control(i.."filter_q", "filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
     params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) page_redraw(vMAIN, 3) end)
+    params:set_save(i.."filter_q", false)
     -- filter type
     params:add_option(i.."filter_type", "type", {"lp", "hp", "bp", "br", "off"}, 1)
     params:set_action(i.."filter_type", function(option) filter_select(i, option) page_redraw(vMAIN, 4) end)
+    params:set_save(i.."filter_type", false)
     -- post filter dry level
     params:add_control(i.."post_dry", "dry level", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) page_redraw(vMAIN, 4) end)
