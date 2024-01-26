@@ -913,6 +913,12 @@ function ui.tape_enc(n, d)
   if n == 1 then
     if shift == 1 then
       params:delta("output_level", d)
+    else
+      track_focus = util.clamp(track_focus + d, 1, 6)
+      arc_track_focus = track_focus
+      arc_splice_focus = track[track_focus].splice_focus
+      render_splice()
+      dirtygrid = true
     end
   end
   if view_presets then
