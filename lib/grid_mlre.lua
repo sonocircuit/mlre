@@ -340,12 +340,13 @@ function grd.cutfocus_keys(x, z)
       local lstart = math.min(first[row], second[row])
       local lend = math.max(first[row], second[row])
       loop_event(i, lstart, lend)
-    end
-    if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-      local e = {} e.t = eSTOP e.i = i event(e)
-    end
-    if env[i].active and track[i].loop == 0 then
-      local e = {} e.t = eGATEOFF e.i = i event(e)
+    else
+      if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
+        local e = {} e.t = eSTOP e.i = i event(e)
+      end
+      if env[i].active and track[i].loop == 0 then
+        local e = {} e.t = eGATEOFF e.i = i event(e)
+      end
     end
   end
 end
@@ -671,7 +672,7 @@ function grd.lfo_draw(offset)
     g:led(i + 2, 8 + off, lfo_trksel == i and 12 or 2)
   end
   for i = 1, 7 do
-    g:led(i + 9, 8 + off, (lfo_dstsel == i and lfo_dstview == 1) and 12 or 1)
+    g:led(i + 9, 8 + off, (lfo_dstsel == i and lfo_dstview == 1) and 12 or 2)
   end
 end
 
@@ -782,7 +783,7 @@ function grd.pattern_draw(offset)
     local x = i + 13
     for j = 1, 4 do
       local y = j + 2 + off
-      g:led(x, y, params:get("quant_rate") == (y - 1) + (x - 14) * 4 and 10 or 4)
+      g:led(x, y, params:get("quant_rate") == (y - 2 + off) + (x - 14) * 4 and 10 or 4)
     end
   end
 end
