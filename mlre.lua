@@ -261,7 +261,7 @@ function event_exec(e)
   elseif e.t == eSTOP then
     stop_track(e.i)
   elseif e.t == eSTART then
-    softcut.position(e.i, track[e.i].cut)
+    softcut.position(e.i, e.pos or track[e.i].cut)
     track[e.i].play = 1
     track[e.i].beat_count = 0
     set_rec(e.i)
@@ -1026,9 +1026,13 @@ function toggle_playback(i)
     else
       clock.run(function()
         local beats = track[i].start_launch == 2 and 1 or 4
-        local cut = track[i].rev == 0 and 0 or 15
+        local cut = track[i].rev == 0 and clip[i].s or clip[i].e
+        local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
+        local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
+        local loop = track[i].rev == 0 and s or e
+        local pos = track[i].loop == 0 and cut or loop
         clock.sync(beats)
-        local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+        local e = {t = eSTART, i = i, pos = pos, sync = true} event(e)
       end)
     end
   end
@@ -2133,16 +2137,16 @@ function init()
     params:set_action(i.."adsr_init", function(val) env[i].init_value = val clamp_env_levels(i) page_redraw(vENV, 3) end)
     -- env attack
     params:add_control(i.."adsr_attack", "attack", controlspec.new(0, 10, 'lin', 0.1, 0.2, "s"))
-    params:set_action(i.."adsr_attack", function(val) env[i].attack = val * 10 page_redraw(vENV, 1) end)
+    params:set_action(i.."adsr_attack", function(val) env[i].attack = val * 10 page_redraw(vENV, 1) page_redraw(vENV, 2) end)
     -- env decay
     params:add_control(i.."adsr_decay", "decay", controlspec.new(0, 10, 'lin', 0.1, 0.5, "s"))
-    params:set_action(i.."adsr_decay", function(val) env[i].decay = val * 10 page_redraw(vENV, 1) end)
+    params:set_action(i.."adsr_decay", function(val) env[i].decay = val * 10 page_redraw(vENV, 1) page_redraw(vENV, 2) end)
     -- env sustain
     params:add_control(i.."adsr_sustain", "sustain", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
-    params:set_action(i.."adsr_sustain", function(val) env[i].sustain = val clamp_env_levels(i) page_redraw(vENV, 2) end)
+    params:set_action(i.."adsr_sustain", function(val) env[i].sustain = val clamp_env_levels(i) page_redraw(vENV, 1) page_redraw(vENV, 2) end)
     -- env release
     params:add_control(i.."adsr_release", "release", controlspec.new(0, 10, 'lin', 0.1, 1, "s"))
-    params:set_action(i.."adsr_release", function(val) env[i].release = val * 10 page_redraw(vENV, 2) end)    
+    params:set_action(i.."adsr_release", function(val) env[i].release = val * 10 page_redraw(vENV, 1) page_redraw(vENV, 2) end)    
 
     -- params for track to trigger
     params:add_separator(i.."trigger_params", "track "..i.." trigger")
