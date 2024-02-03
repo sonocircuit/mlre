@@ -143,6 +143,7 @@ view_splice_info = false
 view_track_send = false
 sends_focus = 1
 
+silent_load_tempo = false
 view_presets = false
 pset_focus = 1
 pset_list = {}
@@ -625,7 +626,7 @@ end
 
 function recalc_splices()
   for i = 1, 6 do
-    if track[i].tempo_map > 0 then
+    if track[i].tempo_map > 0 and track[i].loaded then
       for j = 1, 8 do
         splice_resize(i, j) -- resize clip according to tempo settings
       end
@@ -1641,15 +1642,17 @@ function track_reset()
     for i = 1, 6 do
       if track[i].reset and track[i].play == 1 then
         track[i].beat_count = track[i].beat_count + 1
-        if track[i].beat_count >= track[i].beat_reset and track[i].rec == 0 then
-          if track[i].loop == 0 then
-            local cut = track[i].rev == 0 and clip[i].s or (clip[i].l + clip[i].s)
-            softcut.position(i, cut)
-          else
-            local lstart = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
-            local lend = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
-            local cut = track[i].rev == 0 and lstart or lend
-            softcut.position(i, cut)
+        if track[i].beat_count >= track[i].beat_reset then
+          if track[i].rec == 0 and track[i].loaded then
+            if track[i].loop == 0 then
+              local cut = track[i].rev == 0 and clip[i].s or (clip[i].l + clip[i].s)
+              softcut.position(i, cut)
+            else
+              local lstart = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
+              local lend = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
+              local cut = track[i].rev == 0 and lstart or lend
+              softcut.position(i, cut)
+            end
           end
           track[i].beat_count = 0
         end
@@ -1797,6 +1800,10 @@ function silent_load(number, pset_id)
     softcut.buffer_read_mono(norns.state.data.."sessions/"..number.."/"..pset_id.."_buffer.wav", 0, 0, -1, 1, 2)
     -- load pattern, recall and snapshot data
     load_patterns()
+    -- set tempo
+    if loaded_sesh_data.tempo ~= nil then
+      params:set("clock_tempo", loaded_sesh_data.tempo)
+    end
     -- flip load state and load stopped tracks
     for i = 1, 6 do
       track[i].loaded = false
@@ -1804,6 +1811,7 @@ function silent_load(number, pset_id)
     end
     clock.run(function() clock.sleep(0.1) render_splice() end)
     dirtygrid = true
+    silent_load_tempo = false
   else
     print("error: no data loaded")
   end
@@ -1857,7 +1865,6 @@ function init()
   -- set time variables
   current_tempo = params:get("clock_tempo")
   beat_sec = 60 / current_tempo
-
   -- make directory
   if util.file_exists(mlre_path) == false then
     util.make_dir(mlre_path)
@@ -1866,10 +1873,11 @@ function init()
   build_pset_list()
   -- params for "globals"
   params:add_separator("global_params", "global")
+  -- save tempo
+  params:add_option("save_tempo", "save tempo", {"no", "yes"}, 2)
   -- params for scales
   params:add_option("scale", "scale", scales.options, 1)
-  params:set_action("scale", function(option) set_scale(option) end)
-
+  params:set_action("scale", function(option) set_scale(option) end)  
   -- rec params
   params:add_group("rec_params", "recording", 3)
   -- rec source
@@ -2302,6 +2310,8 @@ function init()
       sesh_data[i].lfo_destination = lfo[i].destination
       sesh_data[i].lfo_offset = params:get("lfo_offset_lfo_"..i)
     end
+    sesh_data.tempo = current_tempo
+    sesh_data.load_tempo = params:get("save_tempo") == 2 and true or false
     tab.save(sesh_data, norns.state.data.."sessions/"..number.."/"..name.."_session.data")
     -- rebuild pset list
     build_pset_list()
@@ -2321,6 +2331,10 @@ function init()
       -- load sesh data file
       loaded_sesh_data = {}
       loaded_sesh_data = tab.load(norns.state.data.."sessions/"..number.."/"..pset_id.."_session.data")
+      -- set tempo
+      if loaded_sesh_data.tempo ~= nil and loaded_sesh_data.load_tempo then
+        params:set("clock_tempo", loaded_sesh_data.tempo)
+      end
       -- load data
       for i = 1, 6 do
         -- tape data
