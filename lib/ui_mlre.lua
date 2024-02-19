@@ -805,6 +805,7 @@ function ui.tape_key(n, z)
       show_message("pset   loaded")
       view_presets = false
     elseif n == 3 and z == 1 then
+      silent_load_tempo = shift == 1 and true or false
       local num = string.format("%0.2i", get_pset_num(pset_list[pset_focus]))
       local pset_id = pset_list[pset_focus]
       silent_load(num, pset_id)
@@ -995,7 +996,7 @@ function ui.tape_redraw()
     screen.text("bang!  <")
     screen.level(pulse_key_mid)
     screen.move(124, 60)
-    screen.text_right(">  silent")
+    screen.text_right(shift == 1 and ">  silent + tempo" or ">  silent")
   -- track sends
   elseif view_track_send then
     screen.level(15)
