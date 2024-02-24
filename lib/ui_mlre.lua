@@ -445,6 +445,7 @@ function ui.lfo_enc(n, d)
     if lfo_pageNum == 3 then
       lfo_page_params_r[lfo_pageNum] = lfo_rate_params[params:get("lfo_mode_lfo_"..lfo_focus)]
     end
+    grid_page(vLFO)
   elseif n == 3 then
     params:delta(lfo_page_params_r[lfo_pageNum]..lfo_focus, d)
   end
@@ -493,6 +494,7 @@ function ui.arc_lfo_delta(n, d)
     elseif lfo[lfo_focus].depth == 0 then
       params:set("lfo_lfo_"..lfo_focus, 1)
     end
+    grid_page(vLFO)
   elseif n == 2 then
     params:delta("lfo_offset_lfo_"..lfo_focus, d / 20)
   elseif n == 3 then
