@@ -9,4 +9,6 @@ Any of this wouldn't have been possible without the countless contributions made
 A special thanks to **tehn** for creating mlr and **zebra** for softcut, answering questions and some very helpful lines of code. Also a great thanks to **justmat**, **infinitedigits** and **dan_derks** for inspiration, support, answering questions and some very helpful lines of code.
 
 ### Documentation:
-[mlre user guide](https://github.com/sonocircuit/mlre/blob/dev_v2/doc/mlre%20user%20guide%20v2.0.pdf)
+[mlre user guide](https://github.com/sonocircuit/mlre/blob/main/doc/mlre%20user%20guide%20v2.0.pdf)
+
+
