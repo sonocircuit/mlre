@@ -348,6 +348,7 @@ function grd.cutfocus_keys(x, z)
         local e = {} e.t = eGATEOFF e.i = i event(e)
       end
     end
+    if held[row] < 1 then held[row] = 0 end
   end
 end
 
@@ -539,6 +540,7 @@ function grd.cut_keys(x, y, z, offset)
             local e = {} e.t = eGATEOFF e.i = i event(e)
           end
         end
+        if held[y] < 1 then held[y] = 0 end
       end
     end
   end

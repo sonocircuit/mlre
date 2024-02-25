@@ -721,7 +721,7 @@ end
 function toggle_rec(i) -- toggle recording and trigger chop function
   track[i].rec = 1 - track[i].rec
   set_rec(i)
-  if track[i].rec == 1 then chop(i) end
+  chop(i)
   grid_page(vREC)
 end
 
@@ -1602,7 +1602,7 @@ end
 function ledpulse_slow()
   pulse_key_slow = util.wrap(pulse_key_slow + 1, 4, 12)
   for i = 1, 6 do
-    if ((track[i].mute and view == vREC) or (not track[i].loaded and view == vTAPE)) or view == vENV then
+    if ((track[i].mute and view == vMAIN) or (not track[i].loaded and view == vTAPE)) or view == vENV then
       dirtygrid = true
     end
   end
@@ -2051,7 +2051,7 @@ function init()
     params:add_option(i.."tempo_map_mode", "tempo-map", {"none", "resize", "repitch"}, 1)
     params:set_action(i.."tempo_map_mode", function(mode) track[i].tempo_map = mode - 1 set_tempo_map(i) grid_page(vREC) end)
     -- play lauch
-    params:add_option(i.."start_launch", "start launch", {"free", "beat", "bar"}, 1)
+    params:add_option(i.."start_launch", "track launch", {"free", "beat", "bar"}, 1)
     params:set_action(i.."start_launch", function(option) track[i].start_launch = option page_redraw(vMAIN, 7) end)
     -- reset active
     params:add_option(i.."reset_active", "track reset", {"off", "on"}, 1)
@@ -2537,6 +2537,9 @@ function set_gridview(x, pos)
     gridz_view = x
     _gridkey_z = v.gridkey_z[x]
     _gridredraw_z = v.gridredraw_z[x]
+  end
+  for i = 1, 8 do
+    held[i] = 0 -- reset key logic in case of stuck loops
   end
   dirtyscreen = true
   dirtygrid = true
