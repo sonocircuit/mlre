@@ -382,7 +382,7 @@ function grd.rec_keys(x, y, z, offset)
         if alt == 1 and mod == 0 then
           params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
         elseif alt == 0 and mod == 1 then
-          params:set(track_focus.."buffer_sel", tape[track_focus].side == 1 and 2 or 1)
+          params:set(track_focus.."buffer_sel", tp[track_focus].side == 1 and 2 or 1)
         end
       end
     elseif x == 1 and alt == 0 and z == 1 then
@@ -441,8 +441,8 @@ end
 
 function grd.rec_draw(offset)
   local off = offset or 0
-  g:led(4, track_focus + 1 + off, tape[track_focus].side == 1 and 7 or 3)
-  g:led(5, track_focus + 1 + off, tape[track_focus].side == 2 and 7 or 3)
+  g:led(4, track_focus + 1 + off, tp[track_focus].side == 1 and 7 or 3)
+  g:led(5, track_focus + 1 + off, tp[track_focus].side == 2 and 7 or 3)
   for i = 1, 6 do
     local y = i + 1 + off
     g:led(1, y, track[i].rec == 1 and 15 or (track[i].fade == 1 and 7 or 3)) -- rec key
@@ -805,8 +805,8 @@ function grd.tape_keys(x, y, z, offset)
       if alt == 1 and mod == 0 then
         local e = {} e.t = eSPLICE e.i = track_focus e.active = x event(e)
       elseif alt == 0 and mod == 1 then
-        local src = tape[track_focus].side == 1 and 1 or 2
-        local dst = tape[track_focus].side == 1 and 2 or 1
+        local src = tp[track_focus].side == 1 and 1 or 2
+        local dst = tp[track_focus].side == 1 and 2 or 1
         copy_buffer(track_focus, src, dst)
       end
       render_splice()
@@ -819,7 +819,7 @@ function grd.tape_keys(x, y, z, offset)
       if alt == 1 and mod == 0 then
         params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
       elseif mod == 1 and alt == 0 then
-        params:set(i.."buffer_sel", tape[i].side == 1 and 2 or 1)
+        params:set(i.."buffer_sel", tp[i].side == 1 and 2 or 1)
         if track_focus == i then
           render_splice()
         end
@@ -832,23 +832,23 @@ function grd.tape_keys(x, y, z, offset)
         render_splice()
       end
     elseif x == 12 and z == 1 then
-      if tape[i].input == 1 then
+      if tp[i].input == 1 then
         params:set(i.."input_options", 3)
-      elseif tape[i].input == 2 then
+      elseif tp[i].input == 2 then
         params:set(i.."input_options", 4)
-      elseif tape[i].input == 3 then
+      elseif tp[i].input == 3 then
         params:set(i.."input_options", 1)
-      elseif tape[i].input == 4 then 
+      elseif tp[i].input == 4 then 
         params:set(i.."input_options", 2)
       end
     elseif x == 13 and z == 1 then
-      if tape[i].input == 1 then
+      if tp[i].input == 1 then
         params:set(i.."input_options", 2)
-      elseif tape[i].input == 2 then
+      elseif tp[i].input == 2 then
         params:set(i.."input_options", 1)
-      elseif tape[i].input == 3 then
+      elseif tp[i].input == 3 then
         params:set(i.."input_options", 4)
-      elseif tape[i].input == 4 then 
+      elseif tp[i].input == 4 then 
         params:set(i.."input_options", 3)
       end
     elseif x == 14 and y < 7 then
@@ -898,7 +898,7 @@ function grd.tape_draw(offset)
   -- buffer selection / tempo map
   if mod == 1 then
     for i = 1, 6 do
-      g:led(10, i + 1 + off, tape[i].side == 1 and 10 or 4)
+      g:led(10, i + 1 + off, tp[i].side == 1 and 10 or 4)
     end
   else
     for i = 1, 6 do
@@ -907,8 +907,8 @@ function grd.tape_draw(offset)
   end
   -- input selection
   for i = 1, 6 do
-    g:led(12, i + 1 + off, (tape[i].input == 1 or tape[i].input == 2) and 6 or 2)
-    g:led(13, i + 1 + off, (tape[i].input == 1 or tape[i].input == 3) and 6 or 2)
+    g:led(12, i + 1 + off, (tp[i].input == 1 or tp[i].input == 2) and 6 or 2)
+    g:led(13, i + 1 + off, (tp[i].input == 1 or tp[i].input == 3) and 6 or 2)
   end
   -- routing
   for i = 1, 4 do
