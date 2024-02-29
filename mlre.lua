@@ -1,4 +1,4 @@
--- mlre v2.0.0 @sonocircuit
+-- mlre v2.0.1 @sonocircuit
 -- llllllll.co/t/mlre
 --
 -- an adaption of
@@ -451,26 +451,26 @@ for i = 1, 6 do
 end
 
 -- tape variables -> six slices of tape, one for each track
-tape = {}
+tp = {}
 for i = 1, 6 do
-  tape[i] = {}
-  tape[i].input = 1
-  tape[i].side = 1
-  tape[i].s = TAPE_GAP * i + (i - 1) * MAX_TAPELENGTH
-  tape[i].e = tape[i].s + MAX_TAPELENGTH
-  tape[i].splice = {}
+  tp[i] = {}
+  tp[i].input = 1
+  tp[i].side = 1
+  tp[i].s = TAPE_GAP * i + (i - 1) * MAX_TAPELENGTH
+  tp[i].e = tp[i].s + MAX_TAPELENGTH
+  tp[i].splice = {}
   for j = 1, 8 do
-    tape[i].splice[j] = {}
-    tape[i].splice[j].s = tape[i].s + (DEFAULT_SPLICELEN + 0.01) * (j - 1)
-    tape[i].splice[j].e = tape[i].splice[j].s + DEFAULT_SPLICELEN
-    tape[i].splice[j].l = tape[i].splice[j].e - tape[i].splice[j].s
-    tape[i].splice[j].name = "-"
-    tape[i].splice[j].info = "length: "..string.format("%.2f", DEFAULT_SPLICELEN).."s"
-    tape[i].splice[j].init_start = tape[i].splice[j].s
-    tape[i].splice[j].init_len = DEFAULT_SPLICELEN
-    tape[i].splice[j].init_beatnum = DEFAULT_BEATNUM
-    tape[i].splice[j].beatnum = DEFAULT_BEATNUM
-    tape[i].splice[j].bpm = 60 
+    tp[i].splice[j] = {}
+    tp[i].splice[j].s = tp[i].s + (DEFAULT_SPLICELEN + 0.01) * (j - 1)
+    tp[i].splice[j].e = tp[i].splice[j].s + DEFAULT_SPLICELEN
+    tp[i].splice[j].l = tp[i].splice[j].e - tp[i].splice[j].s
+    tp[i].splice[j].name = "-"
+    tp[i].splice[j].info = "length: "..string.format("%.2f", DEFAULT_SPLICELEN).."s"
+    tp[i].splice[j].init_start = tp[i].splice[j].s
+    tp[i].splice[j].init_len = DEFAULT_SPLICELEN
+    tp[i].splice[j].init_beatnum = DEFAULT_BEATNUM
+    tp[i].splice[j].beatnum = DEFAULT_BEATNUM
+    tp[i].splice[j].bpm = 60 
   end
 end
 
@@ -478,18 +478,18 @@ end
 clip = {}
 for i = 1, 6 do
   clip[i] = {}
-  clip[i].s = tape[i].splice[1].s
-  clip[i].e = tape[i].splice[1].e
-  clip[i].l = tape[i].splice[1].l
-  clip[i].bpm = tape[i].splice[1].bpm 
+  clip[i].s = tp[i].splice[1].s
+  clip[i].e = tp[i].splice[1].e
+  clip[i].l = tp[i].splice[1].l
+  clip[i].bpm = tp[i].splice[1].bpm 
 end
 
 function set_clip(i) 
   -- set playback window
-  clip[i].s = tape[i].splice[track[i].splice_active].s
-  clip[i].l = tape[i].splice[track[i].splice_active].l
+  clip[i].s = tp[i].splice[track[i].splice_active].s
+  clip[i].l = tp[i].splice[track[i].splice_active].l
   clip[i].e = clip[i].s + clip[i].l
-  clip[i].bpm = tape[i].splice[track[i].splice_active].bpm
+  clip[i].bpm = tp[i].splice[track[i].splice_active].bpm
   -- set softcut
   softcut.loop_start(i, clip[i].s)
   softcut.loop_end(i, clip[i].e)
@@ -507,18 +507,18 @@ function splice_resize(i, focus, length)
   -- if no length argument recalculate
   if length == nil then
     if track[i].tempo_map == 0 then
-      length = tape[i].splice[focus].beatnum
+      length = tp[i].splice[focus].beatnum
     elseif track[i].tempo_map == 1 then
-      length = beat_sec * tape[i].splice[focus].beatnum
+      length = beat_sec * tp[i].splice[focus].beatnum
     elseif track[i].tempo_map == 2 then
-      length = tape[i].splice[focus].l
+      length = tp[i].splice[focus].l
     end
   end
   -- set splice variables
-  if tape[i].splice[focus].s + length <= tape[i].e then
-    tape[i].splice[focus].e = tape[i].splice[focus].s + length
-    tape[i].splice[focus].l = length
-    tape[i].splice[focus].bpm = 60 / length * tape[i].splice[focus].beatnum
+  if tp[i].splice[focus].s + length <= tp[i].e then
+    tp[i].splice[focus].e = tp[i].splice[focus].s + length
+    tp[i].splice[focus].l = length
+    tp[i].splice[focus].bpm = 60 / length * tp[i].splice[focus].beatnum
     if track[i].splice_focus == track[i].splice_active then
       set_clip(i)
     end
@@ -531,11 +531,11 @@ end
 function splice_reset(i, focus) -- reset splice to default length
   local focus = focus or track[i].splice_focus
   -- reset variables
-  tape[i].splice[focus].s = tape[i].splice[focus].init_start
-  tape[i].splice[focus].l = tape[i].splice[focus].init_len
-  tape[i].splice[focus].e = tape[i].splice[focus].s + tape[i].splice[focus].l
-  tape[i].splice[focus].beatnum = tape[i].splice[focus].init_beatnum
-  tape[i].splice[focus].bpm = 60 / tape[i].splice[focus].l * tape[i].splice[focus].beatnum
+  tp[i].splice[focus].s = tp[i].splice[focus].init_start
+  tp[i].splice[focus].l = tp[i].splice[focus].init_len
+  tp[i].splice[focus].e = tp[i].splice[focus].s + tp[i].splice[focus].l
+  tp[i].splice[focus].beatnum = tp[i].splice[focus].init_beatnum
+  tp[i].splice[focus].bpm = 60 / tp[i].splice[focus].l * tp[i].splice[focus].beatnum
   -- set clip
   if track[i].splice_focus == track[i].splice_active then
     set_clip(i) 
@@ -544,17 +544,17 @@ function splice_reset(i, focus) -- reset splice to default length
 end
 
 function clear_splice(i) -- clear focused splice
-  local buffer = tape[i].side
-  local start = tape[i].splice[track[i].splice_focus].s
-  local length = tape[i].splice[track[i].splice_focus].l + FADE_TIME
+  local buffer = tp[i].side
+  local start = tp[i].splice[track[i].splice_focus].s
+  local length = tp[i].splice[track[i].splice_focus].l + FADE_TIME
   softcut.buffer_clear_region_channel(buffer, start, length)
   render_splice()
   show_message("track    "..i.."    splice    "..track[i].splice_focus.."    cleared")
 end
 
 function clear_tape(i) -- clear tape and reset splices
-  local buffer = tape[i].side
-  local start = tape[i].s
+  local buffer = tp[i].side
+  local start = tp[i].s
   softcut.buffer_clear_region_channel(buffer, start, MAX_TAPELENGTH)
   track[i].loop = 0
   init_splices(i)
@@ -576,15 +576,15 @@ end
 
 function init_splices(i)
   for j = 1, 8 do
-    tape[i].splice[j] = {}
-    tape[i].splice[j].s = tape[i].s + (DEFAULT_SPLICELEN + 0.01) * (j - 1)
-    tape[i].splice[j].e = tape[i].splice[j].s + DEFAULT_SPLICELEN
-    tape[i].splice[j].l = tape[i].splice[j].e - tape[i].splice[j].s
-    tape[i].splice[j].init_start = tape[i].splice[j].s
-    tape[i].splice[j].init_len = DEFAULT_SPLICELEN
-    tape[i].splice[j].beatnum = DEFAULT_BEATNUM
-    tape[i].splice[j].bpm = 60 
-    tape[i].splice[j].name = "-"
+    tp[i].splice[j] = {}
+    tp[i].splice[j].s = tp[i].s + (DEFAULT_SPLICELEN + 0.01) * (j - 1)
+    tp[i].splice[j].e = tp[i].splice[j].s + DEFAULT_SPLICELEN
+    tp[i].splice[j].l = tp[i].splice[j].e - tp[i].splice[j].s
+    tp[i].splice[j].init_start = tp[i].splice[j].s
+    tp[i].splice[j].init_len = DEFAULT_SPLICELEN
+    tp[i].splice[j].beatnum = DEFAULT_BEATNUM
+    tp[i].splice[j].bpm = 60 
+    tp[i].splice[j].name = "-"
     set_info(i, j)
   end
   track[i].splice_active = 1
@@ -594,18 +594,18 @@ end
 function save_all_markers()
   for t = 1, 6 do
     for s = 1, 8 do
-      tape[t].splice[s].init_len = tape[t].splice[s].l
-      tape[t].splice[s].init_start = tape[t].splice[s].s
-      tape[t].splice[s].init_beatnum = tape[t].splice[s].beatnum
+      tp[t].splice[s].init_len = tp[t].splice[s].l
+      tp[t].splice[s].init_start = tp[t].splice[s].s
+      tp[t].splice[s].init_beatnum = tp[t].splice[s].beatnum
     end
   end
 end
 
 function set_info(i, n)
   if track[i].tempo_map == 2 then
-    tape[i].splice[n].info = "repitch factor: "..string.format("%.2f", current_tempo / tape[i].splice[n].bpm)
+    tp[i].splice[n].info = "repitch factor: "..string.format("%.2f", current_tempo / tp[i].splice[n].bpm)
   else
-    tape[i].splice[n].info = "length: "..string.format("%.2f", tape[i].splice[n].l).."s"
+    tp[i].splice[n].info = "length: "..string.format("%.2f", tp[i].splice[n].l).."s"
   end
   if view == vTAPE and view_splice_info then dirtyscreen = true end
 end
@@ -813,7 +813,7 @@ end
 
 function copy_buffer(i, src, dst) -- copy splice to the other buffer
   local n = track[i].splice_focus
-  softcut.buffer_copy_mono(src, dst, tape[i].splice[n].s, tape[i].splice[n].s, tape[i].splice[n].l, 0.01)
+  softcut.buffer_copy_mono(src, dst, tp[i].splice[n].s, tp[i].splice[n].s, tp[i].splice[n].l, 0.01)
   local dst_name = dst == 1 and "main" or "temp"
   show_message("splice   copied   to   "..dst_name.."   buffer")
 end
@@ -825,16 +825,16 @@ function set_track_source(option) -- select audio source
 end
 
 function set_softcut_input(i) -- select softcut input
-  if tape[i].input == 1 then -- L&R
+  if tp[i].input == 1 then -- L&R
     softcut.level_input_cut(1, i, 0.707)
     softcut.level_input_cut(2, i, 0.707)
-  elseif tape[i].input == 2 then -- L IN
+  elseif tp[i].input == 2 then -- L IN
     softcut.level_input_cut(1, i, 1)
     softcut.level_input_cut(2, i, 0)
- elseif tape[i].input == 3 then -- R IN
+ elseif tp[i].input == 3 then -- R IN
     softcut.level_input_cut(1, i, 0)
     softcut.level_input_cut(2, i, 1)
- elseif tape[i].input == 4 then -- OFF
+ elseif tp[i].input == 4 then -- OFF
     softcut.level_input_cut(1, i, 0)
     softcut.level_input_cut(2, i, 0)
   end
@@ -851,7 +851,7 @@ end
 function phase_poll(i, pos)
   -- calc softcut positon
   local pp = ((pos - clip[i].s) / clip[i].l)
-  local pc = ((pos - tape[i].s) / MAX_TAPELENGTH)
+  local pc = ((pos - tp[i].s) / MAX_TAPELENGTH)
   local g_pos = math.floor(pp * 16)
   local a_pos = math.floor(pp * 64)
   -- calc positions
@@ -981,15 +981,15 @@ end
 function render_splice()
   if view == vTAPE and not (view_splice_info or view_presets) then 
     if view_buffer then
-      local start = tape[track_focus].s
-      local length = tape[track_focus].e - tape[track_focus].s
-      local buffer = tape[track_focus].side
+      local start = tp[track_focus].s
+      local length = tp[track_focus].e - tp[track_focus].s
+      local buffer = tp[track_focus].side
       softcut.render_buffer(buffer, start, length, 128)
     else
       local n = track[track_focus].splice_focus
-      local start = tape[track_focus].splice[n].s
-      local length = tape[track_focus].splice[n].e - tape[track_focus].splice[n].s
-      local buffer = tape[track_focus].side
+      local start = tp[track_focus].splice[n].s
+      local length = tp[track_focus].splice[n].e - tp[track_focus].splice[n].s
+      local buffer = tp[track_focus].side
       softcut.render_buffer(buffer, start, length, 128)
     end
   end
@@ -1198,12 +1198,12 @@ function chop(i) -- called when rec key is pressed
       local length = rec_dur / 100
       tracktimer:stop()
       -- set splice markers
-      tape[i].splice[track[i].splice_active].l = length
-      tape[i].splice[track[i].splice_active].e = tape[i].splice[track[i].splice_active].s + length
-      tape[i].splice[track[i].splice_active].init_start = tape[i].splice[track[i].splice_active].s
-      tape[i].splice[track[i].splice_active].init_len = length
-      tape[i].splice[track[i].splice_active].beatnum = get_beatnum(length)
-      tape[i].splice[track[i].splice_active].bpm = 60 / length * get_beatnum(length)
+      tp[i].splice[track[i].splice_active].l = length
+      tp[i].splice[track[i].splice_active].e = tp[i].splice[track[i].splice_active].s + length
+      tp[i].splice[track[i].splice_active].init_start = tp[i].splice[track[i].splice_active].s
+      tp[i].splice[track[i].splice_active].init_len = length
+      tp[i].splice[track[i].splice_active].beatnum = get_beatnum(length)
+      tp[i].splice[track[i].splice_active].bpm = 60 / length * get_beatnum(length)
       -- set clip
       set_clip(i)
       set_info(i, track[i].splice_active)
@@ -1667,25 +1667,25 @@ end
 function fileselect_callback(path, i)
   if path ~= "cancel" and path ~= "" then
     local ch, len = audio.file_info(path)
-    local buffer = tape[i].side
+    local buffer = tp[i].side
     if ch > 0 and len > 0 then
-      softcut.buffer_read_mono(path, 0, tape[i].splice[track[i].splice_focus].s, -1, 1, buffer)
-      local max_length = tape[i].e - tape[i].splice[track[i].splice_focus].s
+      softcut.buffer_read_mono(path, 0, tp[i].splice[track[i].splice_focus].s, -1, 1, buffer)
+      local max_length = tp[i].e - tp[i].splice[track[i].splice_focus].s
       local length = math.min(len / 48000, max_length)
       -- set splice   
-      tape[i].splice[track[i].splice_focus].l = length
-      tape[i].splice[track[i].splice_focus].e = tape[i].splice[track[i].splice_focus].s + length
-      tape[i].splice[track[i].splice_focus].init_start = tape[i].splice[track[i].splice_focus].s
-      tape[i].splice[track[i].splice_focus].init_len = length
-      tape[i].splice[track[i].splice_focus].init_beatnum = get_beatnum(length)
-      tape[i].splice[track[i].splice_focus].beatnum = get_beatnum(length)
-      tape[i].splice[track[i].splice_focus].bpm = 60 / length * get_beatnum(length)
-      tape[i].splice[track[i].splice_focus].name = path:match("[^/]*$")
+      tp[i].splice[track[i].splice_focus].l = length
+      tp[i].splice[track[i].splice_focus].e = tp[i].splice[track[i].splice_focus].s + length
+      tp[i].splice[track[i].splice_focus].init_start = tp[i].splice[track[i].splice_focus].s
+      tp[i].splice[track[i].splice_focus].init_len = length
+      tp[i].splice[track[i].splice_focus].init_beatnum = get_beatnum(length)
+      tp[i].splice[track[i].splice_focus].beatnum = get_beatnum(length)
+      tp[i].splice[track[i].splice_focus].bpm = 60 / length * get_beatnum(length)
+      tp[i].splice[track[i].splice_focus].name = path:match("[^/]*$")
       if track[i].splice_focus == track[i].splice_active then  
         set_clip(i)
       end
       set_info(i, track[i].splice_focus)
-      print("file: "..path.." "..tape[i].splice[track[i].splice_focus].s.."s to "..tape[i].splice[track[i].splice_focus].s + length.."s")
+      print("file: "..path.." "..tp[i].splice[track[i].splice_focus].s.."s to "..tp[i].splice[track[i].splice_focus].s + length.."s")
     else
       print("not a sound file")
     end
@@ -1698,12 +1698,12 @@ end
 
 function filesave_callback(txt)
   if txt then
-    local start = tape[track_focus].splice[track[track_focus].splice_focus].s
-    local length = tape[track_focus].splice[track[track_focus].splice_focus].l
-    local buffer = tape[track_focus].side
+    local start = tp[track_focus].splice[track[track_focus].splice_focus].s
+    local length = tp[track_focus].splice[track[track_focus].splice_focus].l
+    local buffer = tp[track_focus].side
     util.make_dir(_path.audio .. "mlre")
     softcut.buffer_write_mono(_path.audio.."mlre/"..txt..".wav", start, length, buffer)
-    tape[track_focus].splice[track[track_focus].splice_focus].name = txt
+    tp[track_focus].splice[track[track_focus].splice_focus].name = txt
     print("saved " .. _path.audio .. "mlre/" .. txt .. ".wav", start, length)
   else
     print("save cancel")
@@ -1819,9 +1819,9 @@ end
 
 function load_track_tape(i)
   -- tape data
-  tape[i].s = loaded_sesh_data[i].tape_s
-  tape[i].e  = loaded_sesh_data[i].tape_e
-  tape[i].splice = {table.unpack(loaded_sesh_data[i].tape_splice)}
+  tp[i].s = loaded_sesh_data[i].tape_s
+  tp[i].e  = loaded_sesh_data[i].tape_e
+  tp[i].splice = {table.unpack(loaded_sesh_data[i].tape_splice)}
   -- track data
   track[i].loaded = true
   track[i].splice_active = 1
@@ -1844,9 +1844,9 @@ function load_track_tape(i)
   set_level(i)
   set_rec(i)
   -- load tape
-  softcut.buffer_copy_mono(2, 1, tape[i].s, tape[i].s, MAX_TAPELENGTH, 0.01)
+  softcut.buffer_copy_mono(2, 1, tp[i].s, tp[i].s, MAX_TAPELENGTH, 0.01)
   -- clear temp tape
-  softcut.buffer_clear_region_channel(2, tape[i].s - 0.5, MAX_TAPELENGTH + TAPE_GAP, 0.01, 0)
+  softcut.buffer_clear_region_channel(2, tp[i].s - 0.5, MAX_TAPELENGTH + TAPE_GAP, 0.01, 0)
   -- render
   clock.run(function() clock.sleep(0.1) render_splice() end)
   show_message("track   loaded")
@@ -2043,7 +2043,7 @@ function init()
     params:add_separator("track_options_params"..i, "track "..i.." options")
     -- select buffer
     params:add_option(i.."buffer_sel", "buffer", {"main", "temp"}, 1)
-    params:set_action(i.."buffer_sel", function(x) tape[i].side = x softcut.buffer(i, x) end)
+    params:set_action(i.."buffer_sel", function(x) tp[i].side = x softcut.buffer(i, x) end)
     -- play mode
     params:add_option(i.."play_mode", "play mode", {"loop", "oneshot", "gate"}, 1)
     params:set_action(i.."play_mode", function(option) track[i].play_mode = option page_redraw(vMAIN, 7) end)
@@ -2191,7 +2191,7 @@ function init()
     
     -- input options
     params:add_option(i.."input_options", "input options", {"L+R", "L IN", "R IN", "OFF"}, 1)
-    params:set_action(i.."input_options", function(option) tape[i].input = option set_softcut_input(i) end)
+    params:set_action(i.."input_options", function(option) tp[i].input = option set_softcut_input(i) end)
     params:hide(i.."input_options")
 
     -- softcut settings
@@ -2279,9 +2279,9 @@ function init()
     end
     for i = 1, 6 do
       -- tape data
-      sesh_data[i].tape_s = tape[i].s
-      sesh_data[i].tape_e = tape[i].e
-      sesh_data[i].tape_splice = {table.unpack(tape[i].splice)}
+      sesh_data[i].tape_s = tp[i].s
+      sesh_data[i].tape_e = tp[i].e
+      sesh_data[i].tape_splice = {table.unpack(tp[i].splice)}
       -- clip data
       sesh_data[i].clip_s = clip[i].s
       sesh_data[i].clip_e = clip[i].e
@@ -2338,9 +2338,9 @@ function init()
       -- load data
       for i = 1, 6 do
         -- tape data
-        tape[i].s = loaded_sesh_data[i].tape_s
-        tape[i].e  = loaded_sesh_data[i].tape_e
-        tape[i].splice = {table.unpack(loaded_sesh_data[i].tape_splice)}
+        tp[i].s = loaded_sesh_data[i].tape_s
+        tp[i].e  = loaded_sesh_data[i].tape_e
+        tp[i].splice = {table.unpack(loaded_sesh_data[i].tape_splice)}
         -- route data
         track[i].t5 = loaded_sesh_data[i].route_t5
         track[i].t6 = loaded_sesh_data[i].route_t6
