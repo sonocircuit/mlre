@@ -2125,7 +2125,7 @@ function init()
     -- post filter dry level
     params:add_control(i.."post_dry", "dry level", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) page_redraw(vMAIN, 4) end)
-
+    params:set_save(i.."post_dry", false)
     -- warble params
     params:add_separator("warble_params"..i, "track "..i.." warble")
     -- filter type
@@ -2134,6 +2134,7 @@ function init()
     -- warble amount
     params:add_number(i.."warble_amount", "amount", 0, 100, 10, function(param) return (param:get().."%") end)
     params:set_action(i.."warble_amount", function(val) warble[i].amount = val end)
+    params:set_save(i.."warble_amount", false)
     -- warble depth
     params:add_number(i.."warble_depth", "depth", 0, 100, 12, function(param) return (param:get().."%") end)
     params:set_action(i.."warble_depth", function(val) warble[i].depth = val * 0.001 end)
