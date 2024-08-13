@@ -33,7 +33,7 @@ pattern_time = include 'lib/pattern_time_mlre'
 
 
 --------- user variables --------
-pset_load = false -- if true default pset loaded at launch
+pset_load = true -- if true default pset loaded at launch
 rotate_grid = false -- zero only. if true will rotate 90° CW
 autofocus = true -- zero only. if true norns screen automatically changes to last used grid layout
 
