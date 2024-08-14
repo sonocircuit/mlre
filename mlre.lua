@@ -33,7 +33,7 @@ pattern_time = include 'lib/pattern_time_mlre'
 
 
 --------- user variables --------
-pset_load = true -- if true default pset loaded at launch
+pset_load = false -- if true default pset loaded at launch
 rotate_grid = false -- zero only. if true will rotate 90° CW
 autofocus = true -- zero only. if true norns screen automatically changes to last used grid layout
 
@@ -156,7 +156,7 @@ pattern_meter_val = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
 
 -- key quantization variables and tables
 quantize_events = {}
-quantizing = false
+quantizing = true
 quant_options = {"1bar", "1/2", "1/3", "1/4", "1/6", "1/8", "1/16", "1/32"}
 quant_values = {1, 1/2, 1/3, 1/4, 1/6, 1/8, 1/16, 1/32}
 q_rate = 16
