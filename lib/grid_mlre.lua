@@ -808,6 +808,8 @@ function grd.tape_keys(x, y, z, offset)
         local src = tp[track_focus].side == 1 and 1 or 2
         local dst = tp[track_focus].side == 1 and 2 or 1
         copy_buffer(track_focus, src, dst)
+      elseif alt == 1 and mod == 1 and x < 7 then
+        set_tape(i, x)
       end
       render_splice()
     elseif x == 9 then
@@ -857,20 +859,24 @@ function grd.tape_keys(x, y, z, offset)
       if z == 0 then
         render_splice()
       end
-    elseif x == 15 and z == 1 then
-      if y < 6 then
+    elseif x == 15 and y < 6 and z == 1 then
+      if tp[i].buffer == tp[5].buffer then
+        show_message("not   allowed")
+      else
         track[i].t5 = 1 - track[i].t5
         local e = {} e.t = eROUTE e.i = i e.ch = 5 e.route = track[i].t5 event(e)
       end
-    elseif x == 16 then
-      if y < 7 and z == 1 then
+    elseif x == 16 and y < 7 and z == 1then
+      if tp[i].buffer == tp[6].buffer then
+        show_message("assign   different   buffer")
+      else
         track[i].t6 = 1 - track[i].t6
         local e = {} e.t = eROUTE e.i = i e.ch = 6 e.route = track[i].t6 event(e)
-      elseif y == 7 and z == 1 then
-        view_presets = not view_presets
-        if view_presets == false then
-          render_splice()
-        end
+      end
+    elseif x == 16 and y == 7 and z == 1 then
+      view_presets = not view_presets
+      if view_presets == false then
+        render_splice()
       end
     end
   elseif y == 8 then
