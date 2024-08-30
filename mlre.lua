@@ -1,4 +1,4 @@
--- mlre v2.0.1 @sonocircuit
+-- mlre v2.1.0 @sonocircuit
 -- llllllll.co/t/mlre
 --
 -- an adaption of
@@ -224,13 +224,14 @@ function update_q_clock()
   end
 end
 
-function loop_event(i, lstart, lend)
+function loop_event(i, lstart, lend, sync)
   local e = {}
   e.t = eLOOP
   e.i = i
   e.loop = 1
   e.loop_start = lstart
   e.loop_end = lend
+  e.sync = sync
   event(e)
 end
 
@@ -456,6 +457,7 @@ for i = 1, 6 do
   tp[i] = {}
   tp[i].input = 1
   tp[i].side = 1
+  tp[i].buffer = i
   tp[i].s = TAPE_GAP * i + (i - 1) * MAX_TAPELENGTH
   tp[i].e = tp[i].s + MAX_TAPELENGTH
   tp[i].splice = {}
@@ -552,12 +554,24 @@ function clear_splice(i) -- clear focused splice
   show_message("track    "..i.."    splice    "..track[i].splice_focus.."    cleared")
 end
 
+function set_tape(i, buffer) -- assign tape buffer
+  local prev_start = tp[i].s
+  tp[i].s = TAPE_GAP * buffer + (buffer - 1) * MAX_TAPELENGTH
+  tp[i].e = tp[i].s + MAX_TAPELENGTH
+  for j = 1, 8 do
+    tp[i].splice[j].s = tp[i].splice[j].s + (tp[i].s - prev_start)
+    tp[i].splice[j].e = tp[i].splice[j].s + tp[i].splice[j].l
+  end
+  set_clip(i)
+  render_splice()
+end
+
 function clear_tape(i) -- clear tape and reset splices
   local buffer = tp[i].side
   local start = tp[i].s
   softcut.buffer_clear_region_channel(buffer, start, MAX_TAPELENGTH)
   track[i].loop = 0
-  init_splices(i)
+  --init_splices(i)
   render_splice()
   show_message("track    "..i.."    tape    cleared")
   dirtygrid = true
@@ -567,7 +581,7 @@ function clear_buffers() -- clear both buffers and reset splices
   softcut.buffer_clear()
   for i = 1, 6 do
     track[i].loop = 0
-    init_splices(i)
+    --init_splices(i)
   end
   render_splice()
   show_message("buffers    cleared")
@@ -641,11 +655,16 @@ end
 snapshot_mode = false
 snapshot_playback = false
 snapshot_cut = false
+snapshot_reset = false
+snapshot_splice = false
+snapshot_launch = "free"
+snapshot_launch_modes = {"free", "beat", "bar"}
 snap = {}
 for i = 1, 8 do -- 8 snapshot slots
   snap[i] = {}
   snap[i].data = false
   snap[i].active = false
+  snap[i].queued = false
   snap[i].play = {}
   snap[i].mute = {}
   snap[i].loop = {}
@@ -655,6 +674,7 @@ for i = 1, 8 do -- 8 snapshot slots
   snap[i].speed = {}
   snap[i].rev = {}
   snap[i].transpose_val = {}
+  snap[i].active_splice = {}
   for j = 1, 6 do -- 6 tracks
     snap[i].play[j] = 0
     snap[i].mute[j] = 0
@@ -665,6 +685,7 @@ for i = 1, 8 do -- 8 snapshot slots
     snap[i].speed[j] = 0
     snap[i].rev[j] = 0
     snap[i].transpose_val[j] = 8
+    snap[i].active_splice[j] = 1
   end
 end
 
@@ -679,6 +700,7 @@ function save_snapshot(n)
     snap[n].speed[i] = track[i].speed
     snap[n].rev[i] = track[i].rev
     snap[n].transpose_val[i] = params:get(i.."transpose")
+    snap[n].active_splice[i] = track[i].splice_active
     clock.run(
       function()
         clock.sleep(0.05) -- give get_pos() some time
@@ -696,21 +718,49 @@ function load_snapshots(snapshot)
 end
 
 function load_snapshot(n, i)
-  local e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] event(e)
-  local e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] event(e)
-  local e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] event(e)
-  local e = {} e.t = eTRSP e.i = i e.val = snap[n].transpose_val[i] event(e)
+  local queue = snapshot_launch == "bar" and 4 or (snapshot_launch == "beat" and 1 or nil)
+  if queue then
+    clock.run(function()
+      clock.sync(queue)
+      recall_snapshot(n, i)
+    end)
+  else
+    recall_snapshot(n, i)
+  end
+end
+
+function recall_snapshot(n, i)
+  local e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] e.sync = true event(e)
+  local e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] e.sync = true event(e)
+  local e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] e.sync = true event(e)
+  local e = {} e.t = eTRSP e.i = i e.val = snap[n].transpose_val[i] e.sync = true event(e)
   if snap[n].loop[i] == 1 then
-    loop_event(i, snap[n].loop_start[i], snap[n].loop_end[i])
+    loop_event(i, snap[n].loop_start[i], snap[n].loop_end[i], true)
   elseif snap[n].loop[i] == 0 then
-    local e = {} e.t = eUNLOOP e.i = i event(e)
+    local e = {} e.t = eUNLOOP e.i = i e.sync = true event(e)
+  end
+  if snapshot_splice then
+    if snap[n].active_splice[i] ~= track[i].splice_active then
+      local e = {} e.t = eSPLICE e.i = i e.active = snap[n].active_splice[i] e.sync = true event(e)
+      track[i].splice_focus = snap[n].active_splice[i]
+    end
   end
   if snapshot_playback then
-    if snap[n].play[i] == 0 then
-      local e = {} e.t = eSTOP e.i = i event(e)
+    if snapshot_cut then
+      local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = true} event(e)
+    elseif snapshot_reset then
+      local cut = track[i].rev == 0 and clip[i].s or clip[i].e
+      local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
+      local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
+      local loop = track[i].rev == 0 and s or e
+      local pos = track[i].loop == 0 and cut or loop
+      local e = {t = eSTART, i = i, pos = pos, sync = true} event(e)
     else
-      if snapshot_cut then track[i].cut = snap[n].cut[i] end
-      local e = {} e.t = eSTART e.i = i event(e)
+      if snap[n].play[i] == 0 then
+        local e = {} e.t = eSTOP e.i = i e.sync = true event(e)
+      elseif track[i].play == 0 then
+        local e = {t = eSTART, i = i, sync = true} event(e)
+      end
     end
   end
 end
@@ -1788,6 +1838,9 @@ function load_patterns()
     snap[i].speed = {table.unpack(loaded_sesh_data[i].snap_speed)}
     snap[i].rev = {table.unpack(loaded_sesh_data[i].snap_rev)}
     snap[i].transpose_val = {table.unpack(loaded_sesh_data[i].snap_transpose_val)}
+    if loaded_sesh_data[i].snap_active_splice ~= nil then
+      snap[i].active_splice = {table.unpack(loaded_sesh_data[i].snap_active_splice)}
+    end
   end
 end
 
@@ -1891,7 +1944,7 @@ function init()
   params:set_action("rec_slew", function(val) for i = 1, 6 do softcut.recpre_slew_time(i, val * 0.001) end end)
 
   -- macro params
-  params:add_group("macro_params", "macros", 3)
+  params:add_group("macro_params", "macros", 5)
   -- event recording slots
   params:add_option("slot_assign", "macro slots", {"split", "patterns only", "recall only"}, 1)
   params:set_action("slot_assign", function(option) macro_slot_mode = option dirtygrid = true end)
@@ -1899,13 +1952,20 @@ function init()
   -- recall mode
   params:add_option("recall_mode", "recall mode", {"manual recall", "snapshot"}, 2)
   params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false dirtygrid = true end)
-  -- snapshot option
-  params:add_option("recall_playback_state", "playback state", {"ignore", "state only", "state & pos"}, 1)
+  -- snapshot options
+  params:add_option("snapshot_launch", "snapshot launch", snapshot_launch_modes, 1)
+  params:set_action("snapshot_launch", function(x) snapshot_launch = snapshot_launch_modes[x] end)
+
+  params:add_option("recall_playback_state", "playback state", {"ignore", "state only", "state & pos", "reset pos"}, 1)
   params:set_action("recall_playback_state", function(x)
     snapshot_playback = x > 1 and true or false
     snapshot_cut = x == 3 and true or false
+    snapshot_reset = x == 4 and true or false
     dirtygrid = true
   end)
+  
+  params:add_option("recall_active_splice", "active splice", {"ignore", "load"}, 1)
+  params:set_action("recall_active_splice", function(x) snapshot_splice = x == 2 and true or false end)
 
   -- patterns params
   params:add_group("patterns", "patterns", 40)
@@ -2038,11 +2098,14 @@ function init()
   audio.level_tape(1)
 
   for i = 1, 6 do
-    params:add_group("track_group"..i, "track "..i, 49)
+    params:add_group("track_group"..i, "track "..i, 51)
 
     params:add_separator("track_options_params"..i, "track "..i.." options")
-    -- select buffer
-    params:add_option(i.."buffer_sel", "buffer", {"main", "temp"}, 1)
+    -- set tape buffer
+    params:add_number(i.."tape_buffer", "tape buffer", 1, 6, i)
+    params:set_action(i.."tape_buffer", function(x) tp[i].buffer = x set_tape(i, x) end)
+    -- select buffer side
+    params:add_option(i.."buffer_sel", "tape side", {"main", "temp"}, 1)
     params:set_action(i.."buffer_sel", function(x) tp[i].side = x softcut.buffer(i, x) end)
     -- play mode
     params:add_option(i.."play_mode", "play mode", {"loop", "oneshot", "gate"}, 1)
@@ -2065,6 +2128,9 @@ function init()
     -- reset count
     params:add_number(i.."reset_count", "reset count", 2, 128, 4, function(param) return (param:get().." beats") end)
     params:set_action(i.."reset_count", function(val) track[i].beat_reset = val page_redraw(vMAIN, 8) end)
+    -- reset splices
+    params:add_binary(i.."reset_splices", "reset spices", "trigger")
+    params:set_action(i.."reset_splices", function() init_splices(i) end)
     
     params:add_separator("track_level_params"..i, "track "..i.." levels")
     -- track volume
@@ -2227,8 +2293,14 @@ function init()
   
   -- params for splice resize
   for i = 1, 6 do
-    params:add_option(i.."splice_length", i.." splice length", resize_options, 4)
-    params:set_action(i.."splice_length", function(idx) track[i].resize_val = resize_values[idx] end)
+    --params:add_option(i.."splice_length", i.." splice length", resize_options, 4)
+    params:add_number(i.."splice_length", i.." splice length", 1, 64, 4, function(param) return param:get().."/4" end)
+    params:set_action(i.."splice_length", function(x)
+      track[i].resize_val = x
+      if track[i].tempo_map == 0 and track[i].resize_val > 57 then
+        params:set(i.."splice_length", 57)
+      end
+    end)
     params:hide(i.."splice_length")
   end
 
@@ -2276,6 +2348,7 @@ function init()
       sesh_data[i].snap_speed = {table.unpack(snap[i].speed)}
       sesh_data[i].snap_rev = {table.unpack(snap[i].rev)}
       sesh_data[i].snap_transpose_val = {table.unpack(snap[i].transpose_val)}
+      sesh_data[i].snap_active_splice = {table.unpack(snap[i].active_splice)}
     end
     for i = 1, 6 do
       -- tape data
@@ -2547,7 +2620,7 @@ end
 
 -- set screen view
 function set_view(x)
-  if x > 0 and x < 4 then x = 0 end
+  if x > 0 and x < 4 then x = vMAIN end
   view = x
   _key = v.key[x]
   _enc = v.enc[x]
@@ -3070,6 +3143,24 @@ function show_message(message)
   end)
 end
 
+function show_banner()
+  local banner = {
+    {1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1},
+    {1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0},
+    {1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0},
+    {1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1},
+  }
+  local hi = GRIDSIZE == 256 and 7 or 3
+  local lo = GRIDSIZE == 256 and 10 or 6
+  g:all(0)
+  for x = 1, 16 do
+    for y = hi, lo do
+      g:led(x, y, banner[y - hi + 1][x] * 4)
+    end
+  end
+  g:refresh()
+end
+
 --------------------- TIME TO TIDY UP A BIT -----------------------
 
 function cleanup()
@@ -3083,4 +3174,5 @@ function cleanup()
   midi.add = function() end
   midi.remove = function() end
   vizclock:destroy()
+  show_banner()
 end
