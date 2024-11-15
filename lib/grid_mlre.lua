@@ -635,12 +635,24 @@ function grd.lfo_keys(x, y, z, offset)
         end
       end
       if x == 1 then
-        params:set("lfo_lfo_"..lfo_focus, params:get("lfo_lfo_"..lfo_focus) == 1 and 2 or 1)
+        local action = lfo[lfo_focus].enabled == 1 and "lfo_off" or "lfo_on"
+        if lfo_launch > 0 and action == "lfo_on" then
+          local beat_sync = lfo_launch == 2 and 4 or 1
+          clock.run(function()
+            clock.sync(beat_sync)
+            local e = {t = eLFO, i = lfo_focus, action = action , sync = true} event(e)
+          end)
+        else
+          local e = {t = eLFO, i = lfo_focus, action = action , sync = false} event(e)
+        end
       elseif x > 1 and x <= 16 then
         params:set("lfo_depth_lfo_"..lfo_focus, (x - 2) * util.round_up((100 / 14), 0.1))
       end
     end
     if y == 8 then
+      if x == 1 then
+        lfo_launch = util.wrap(lfo_launch + 1, 0, 2)
+      end
       if x > 2 and x < 9 then
         lfo_trksel = x - 2
       end
@@ -654,7 +666,7 @@ function grd.lfo_keys(x, y, z, offset)
       end
     end
   elseif z == 0 then
-    if x > 9 then
+    if x > 9 and y == 8 then
       lfo_dstview = 0
     end
   end
@@ -676,6 +688,7 @@ function grd.lfo_draw(offset)
   for i = 1, 7 do
     g:led(i + 9, 8 + off, (lfo_dstsel == i and lfo_dstview == 1) and 12 or 2)
   end
+  g:led(1, 8, lfo_launch * 6)
 end
 
 function grd.env_keys(x, y, z, offset)
