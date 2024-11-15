@@ -1,4 +1,4 @@
--- mlre v2.1.0 @sonocircuit
+-- mlre v2.1.1 @sonocircuit
 -- llllllll.co/t/mlre
 --
 -- an adaption of
@@ -40,6 +40,7 @@ autofocus = true -- zero only. if true norns screen automatically changes to las
 
 --------- other variables --------
 mlre_path = _path.audio .. "mlre/"
+config_file = _path.code .. "mlre/lib/config.data"
 
 -- constants
 GRID_SIZE = 0
@@ -191,6 +192,7 @@ eGATEON = 11
 eGATEOFF = 12
 eSPLICE = 13
 eROUTE = 14
+eLFO = 15
 
 -- event funtions
 function event_record(e)
@@ -310,6 +312,12 @@ function event_exec(e)
     end
     set_track_sends(e.i)
     grid_page(vTAPE)
+  elseif e.t == eLFO then
+    if e.action == "lfo_on" then
+      params:set("lfo_lfo_"..e.i, 2)
+    elseif e.action == "lfo_off" then
+      params:set("lfo_lfo_"..e.i, 1)
+    end
   elseif e.t == ePATTERN then
     if e.action == "stop" then
       pattern[e.i]:stop()
@@ -746,18 +754,18 @@ function recall_snapshot(n, i)
     end
   end
   if snapshot_playback then
-    if snapshot_cut then
-      local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = true} event(e)
-    elseif snapshot_reset then
-      local cut = track[i].rev == 0 and clip[i].s or clip[i].e
-      local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
-      local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
-      local loop = track[i].rev == 0 and s or e
-      local pos = track[i].loop == 0 and cut or loop
-      local e = {t = eSTART, i = i, pos = pos, sync = true} event(e)
+    if snap[n].play[i] == 0 then
+      local e = {} e.t = eSTOP e.i = i e.sync = true event(e)
     else
-      if snap[n].play[i] == 0 then
-        local e = {} e.t = eSTOP e.i = i e.sync = true event(e)
+      if snapshot_cut then
+        local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = true} event(e)
+      elseif snapshot_reset then
+        local cut = track[i].rev == 0 and clip[i].s or clip[i].e
+        local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
+        local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
+        local loop = track[i].rev == 0 and s or e
+        local pos = track[i].loop == 0 and cut or loop
+        local e = {t = eSTART, i = i, pos = pos, sync = true} event(e)
       elseif track[i].play == 0 then
         local e = {t = eSTART, i = i, sync = true} event(e)
       end
@@ -1268,6 +1276,7 @@ end
 --------------------- LFOS -----------------------
 
 NUM_LFOS = 6
+lfo_launch = 0
 lfo_destination = {"volume", "pan", "dub   level", "transpose", "detune", "rate   slew", "cutoff"}
 lfo_params = {"vol", "pan", "dub", "transpose", "detune", "rate_slew", "cutoff"}
 lfo_min = {0, -1, 0, 1, -600, 0, 20}
@@ -1885,8 +1894,13 @@ function load_track_tape(i)
   track[i].loop = 0
   track[i].loop_start = loaded_sesh_data[i].track_loop_start
   track[i].loop_end = loaded_sesh_data[i].track_loop_end
-  track[i].speed = 0
-  params:set(i.."transpose", 8)
+  if silent_speed_reset then
+    track[i].speed = 0
+    params:set(i.."transpose", 8)
+  else
+    track[i].speed = 0
+    params:set(i.."transpose", 8)
+  end
   params:set(i.."tempo_map_mode", loaded_sesh_data[i].track_tempo_map)
   set_tempo_map(i)
   set_clip(i)
@@ -1944,7 +1958,7 @@ function init()
   params:set_action("rec_slew", function(val) for i = 1, 6 do softcut.recpre_slew_time(i, val * 0.001) end end)
 
   -- macro params
-  params:add_group("macro_params", "macros", 5)
+  params:add_group("macro_params", "macros", 6)
   -- event recording slots
   params:add_option("slot_assign", "macro slots", {"split", "patterns only", "recall only"}, 1)
   params:set_action("slot_assign", function(option) macro_slot_mode = option dirtygrid = true end)
@@ -1953,10 +1967,12 @@ function init()
   params:add_option("recall_mode", "recall mode", {"manual recall", "snapshot"}, 2)
   params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false dirtygrid = true end)
   -- snapshot options
-  params:add_option("snapshot_launch", "snapshot launch", snapshot_launch_modes, 1)
+  params:add_separator("snapshot_options", "snapshot options")
+
+  params:add_option("snapshot_launch", "launch", snapshot_launch_modes, 1)
   params:set_action("snapshot_launch", function(x) snapshot_launch = snapshot_launch_modes[x] end)
 
-  params:add_option("recall_playback_state", "playback state", {"ignore", "state only", "state & pos", "reset pos"}, 1)
+  params:add_option("recall_playback_state", "playback", {"ignore", "state only", "state & pos", "state & pos reset"}, 1)
   params:set_action("recall_playback_state", function(x)
     snapshot_playback = x > 1 and true or false
     snapshot_cut = x == 3 and true or false
@@ -1964,7 +1980,7 @@ function init()
     dirtygrid = true
   end)
   
-  params:add_option("recall_active_splice", "active splice", {"ignore", "load"}, 1)
+  params:add_option("recall_active_splice", "active splice", {"ignore", "recall"}, 1)
   params:set_action("recall_active_splice", function(x) snapshot_splice = x == 2 and true or false end)
 
   -- patterns params
