@@ -635,12 +635,24 @@ function grd.lfo_keys(x, y, z, offset)
         end
       end
       if x == 1 then
-        params:set("lfo_lfo_"..lfo_focus, params:get("lfo_lfo_"..lfo_focus) == 1 and 2 or 1)
+        local action = lfo[lfo_focus].enabled == 1 and "lfo_off" or "lfo_on"
+        if lfo_launch > 0 and action == "lfo_on" then
+          local beat_sync = lfo_launch == 2 and 4 or 1
+          clock.run(function()
+            clock.sync(beat_sync)
+            local e = {t = eLFO, i = lfo_focus, action = action , sync = true} event(e)
+          end)
+        else
+          local e = {t = eLFO, i = lfo_focus, action = action , sync = false} event(e)
+        end
       elseif x > 1 and x <= 16 then
         params:set("lfo_depth_lfo_"..lfo_focus, (x - 2) * util.round_up((100 / 14), 0.1))
       end
     end
     if y == 8 then
+      if x == 1 then
+        lfo_launch = util.wrap(lfo_launch + 1, 0, 2)
+      end
       if x > 2 and x < 9 then
         lfo_trksel = x - 2
       end
@@ -654,7 +666,7 @@ function grd.lfo_keys(x, y, z, offset)
       end
     end
   elseif z == 0 then
-    if x > 9 then
+    if x > 9 and y == 8 then
       lfo_dstview = 0
     end
   end
@@ -676,6 +688,7 @@ function grd.lfo_draw(offset)
   for i = 1, 7 do
     g:led(i + 9, 8 + off, (lfo_dstsel == i and lfo_dstview == 1) and 12 or 2)
   end
+  g:led(1, 8, lfo_launch * 6)
 end
 
 function grd.env_keys(x, y, z, offset)
@@ -808,6 +821,8 @@ function grd.tape_keys(x, y, z, offset)
         local src = tp[track_focus].side == 1 and 1 or 2
         local dst = tp[track_focus].side == 1 and 2 or 1
         copy_buffer(track_focus, src, dst)
+      elseif alt == 1 and mod == 1 and x < 7 then
+        set_tape(i, x)
       end
       render_splice()
     elseif x == 9 then
@@ -857,20 +872,24 @@ function grd.tape_keys(x, y, z, offset)
       if z == 0 then
         render_splice()
       end
-    elseif x == 15 and z == 1 then
-      if y < 6 then
+    elseif x == 15 and y < 6 and z == 1 then
+      if tp[i].buffer == tp[5].buffer then
+        show_message("not   allowed")
+      else
         track[i].t5 = 1 - track[i].t5
         local e = {} e.t = eROUTE e.i = i e.ch = 5 e.route = track[i].t5 event(e)
       end
-    elseif x == 16 then
-      if y < 7 and z == 1 then
+    elseif x == 16 and y < 7 and z == 1then
+      if tp[i].buffer == tp[6].buffer then
+        show_message("assign   different   buffer")
+      else
         track[i].t6 = 1 - track[i].t6
         local e = {} e.t = eROUTE e.i = i e.ch = 6 e.route = track[i].t6 event(e)
-      elseif y == 7 and z == 1 then
-        view_presets = not view_presets
-        if view_presets == false then
-          render_splice()
-        end
+      end
+    elseif x == 16 and y == 7 and z == 1 then
+      view_presets = not view_presets
+      if view_presets == false then
+        render_splice()
       end
     end
   elseif y == 8 then
