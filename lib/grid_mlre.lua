@@ -306,49 +306,52 @@ function grd.cutfocus_keys(x, z)
   held[row] = held[row] + (z * 2 - 1)
   if held[row] > heldmax[row] then heldmax[row] = held[row] end
   if z == 1 then
-    if alt == 1 and mod == 0 then
-      toggle_playback(i)
-    elseif mod == 1 then -- "hold mode" as on cut page
-      heldmax[row] = x
-      loop_event(i, x, x)
-    elseif held[row] == 1 then -- cut at pos
-      if not track[i].loaded then
-        load_track_tape(i)
-      end
-      first[row] = x
-      local cut = x - 1
-      if track[i].play == 1 or track[i].start_launch == 1 then
-        local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
-        if env[i].active then
-          local e = {} e.t = eGATEON e.i = i event(e)
-        end
-      elseif track[i].play == 0 and track[i].start_launch > 1 then
-        clock.run(function()
-          local beats = track[i].start_launch == 2 and 1 or 4
-          clock.sync(beats)
-          local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+    if track[i].loaded then
+      if alt == 1 and mod == 0 then
+        toggle_playback(i)
+      elseif mod == 1 then -- "hold mode" as on cut page
+        heldmax[row] = x
+        loop_event(i, x, x)
+      elseif held[row] == 1 then -- cut at pos
+        first[row] = x
+        local cut = x - 1
+        if track[i].play == 1 or track[i].start_launch == 1 then
+          local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
           if env[i].active then
-            local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+            local e = {} e.t = eGATEON e.i = i event(e)
           end
-        end)
+        elseif track[i].play == 0 and track[i].start_launch > 1 then
+          clock.run(function()
+            local beats = track[i].start_launch == 2 and 1 or 4
+            clock.sync(beats)
+            local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+            if env[i].active then
+              local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+            end
+          end)
+        end
+      elseif held[row] == 2 then -- second keypress
+        second[row] = x
       end
-    elseif held[row] == 2 then -- second keypress
-      second[row] = x
+    else
+      queue_track_tape(i)
     end
   elseif z == 0 then
-    if held[row] == 1 and heldmax[row] == 2 then -- if two keys held at release then loop
-      local lstart = math.min(first[row], second[row])
-      local lend = math.max(first[row], second[row])
-      loop_event(i, lstart, lend)
-    else
-      if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-        local e = {} e.t = eSTOP e.i = i event(e)
+    if track[i].loaded then
+      if held[row] == 1 and heldmax[row] == 2 then -- if two keys held at release then loop
+        local lstart = math.min(first[row], second[row])
+        local lend = math.max(first[row], second[row])
+        loop_event(i, lstart, lend)
+      else
+        if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
+          local e = {} e.t = eSTOP e.i = i event(e)
+        end
+        if env[i].active and track[i].loop == 0 then
+          local e = {} e.t = eGATEOFF e.i = i event(e)
+        end
       end
-      if env[i].active and track[i].loop == 0 then
-        local e = {} e.t = eGATEOFF e.i = i event(e)
-      end
+      if held[row] < 1 then held[row] = 0 end
     end
-    if held[row] < 1 then held[row] = 0 end
   end
 end
 
@@ -382,7 +385,10 @@ function grd.rec_keys(x, y, z, offset)
         if alt == 1 and mod == 0 then
           params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
         elseif alt == 0 and mod == 1 then
-          params:set(track_focus.."buffer_sel", tp[track_focus].side == 1 and 2 or 1)
+          params:set(i.."buffer_sel", tp[i].side == 1 and 2 or 1)
+        end
+        if x == 3 and not track[i].loaded then
+          queue_track_tape(i)
         end
       end
     elseif x == 1 and alt == 0 and z == 1 then
@@ -497,50 +503,53 @@ function grd.cut_keys(x, y, z, offset)
         dirtyscreen = true
         if not autofocus and view == vTAPE then render_splice(track_focus) end
       end
-      if alt == 1 and y < 8 then
-        toggle_playback(i)
-      elseif mod == 1 and y < 8 then -- "hold mode"
-        heldmax[y] = x
-        loop_event(i, x, x)
-      elseif y < 8 and held[y] == 1 then
-        if not track[i].loaded then
-          load_track_tape(i)
-        end
-        first[y] = x
-        local cut = x - 1
-        if track[i].play == 1 or track[i].start_launch == 1 then
-          local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
-          if env[i].active then
-            local e = {} e.t = eGATEON e.i = i event(e)
-          end
-        elseif track[i].play == 0 and track[i].start_launch > 1 then
-          clock.run(function()
-            local beats = track[i].start_launch == 2 and 1 or 4
-            clock.sync(beats)
-            local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+      if track[i].loaded then
+        if alt == 1 and y < 8 then
+          toggle_playback(i)
+        elseif mod == 1 and y < 8 then -- "hold mode"
+          heldmax[y] = x
+          loop_event(i, x, x)
+        elseif y < 8 and held[y] == 1 then
+          first[y] = x
+          local cut = x - 1
+          if track[i].play == 1 or track[i].start_launch == 1 then
+            local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
             if env[i].active then
-              local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+              local e = {} e.t = eGATEON e.i = i event(e)
             end
-          end)
+          elseif track[i].play == 0 and track[i].start_launch > 1 then
+            clock.run(function()
+              local beats = track[i].start_launch == 2 and 1 or 4
+              clock.sync(beats)
+              local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+              if env[i].active then
+                local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+              end
+            end)
+          end
+        elseif y < 8 and held[y] == 2 then
+          second[y] = x
         end
-      elseif y < 8 and held[y] == 2 then
-        second[y] = x
+      else
+        queue_track_tape(i)
       end
     elseif z == 0 then
-      if y < 8 then 
-        if held[y] == 1 and heldmax[y] == 2 then
-          local lstart = math.min(first[y], second[y])
-          local lend = math.max(first[y], second[y])
-          loop_event(i, lstart, lend)
-        else
-          if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-            local e = {} e.t = eSTOP e.i = i event(e)
+      if track[i].loaded then
+        if y < 8 then 
+          if held[y] == 1 and heldmax[y] == 2 then
+            local lstart = math.min(first[y], second[y])
+            local lend = math.max(first[y], second[y])
+            loop_event(i, lstart, lend)
+          else
+            if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
+              local e = {} e.t = eSTOP e.i = i event(e)
+            end
+            if env[i].active and track[i].loop == 0 then
+              local e = {} e.t = eGATEOFF e.i = i event(e)
+            end
           end
-          if env[i].active and track[i].loop == 0 then
-            local e = {} e.t = eGATEOFF e.i = i event(e)
-          end
+          if held[y] < 1 then held[y] = 0 end
         end
-        if held[y] < 1 then held[y] = 0 end
       end
     end
   end
@@ -635,12 +644,24 @@ function grd.lfo_keys(x, y, z, offset)
         end
       end
       if x == 1 then
-        params:set("lfo_lfo_"..lfo_focus, params:get("lfo_lfo_"..lfo_focus) == 1 and 2 or 1)
+        local action = lfo[lfo_focus].enabled == 1 and "lfo_off" or "lfo_on"
+        if lfo_launch > 0 and action == "lfo_on" then
+          local beat_sync = lfo_launch == 2 and 4 or 1
+          clock.run(function()
+            clock.sync(beat_sync)
+            local e = {t = eLFO, i = lfo_focus, action = action , sync = true} event(e)
+          end)
+        else
+          local e = {t = eLFO, i = lfo_focus, action = action , sync = false} event(e)
+        end
       elseif x > 1 and x <= 16 then
         params:set("lfo_depth_lfo_"..lfo_focus, (x - 2) * util.round_up((100 / 14), 0.1))
       end
     end
     if y == 8 then
+      if x == 1 then
+        lfo_launch = util.wrap(lfo_launch + 1, 0, 2)
+      end
       if x > 2 and x < 9 then
         lfo_trksel = x - 2
       end
@@ -654,7 +675,7 @@ function grd.lfo_keys(x, y, z, offset)
       end
     end
   elseif z == 0 then
-    if x > 9 then
+    if x > 9 and y == 8 then
       lfo_dstview = 0
     end
   end
@@ -676,6 +697,7 @@ function grd.lfo_draw(offset)
   for i = 1, 7 do
     g:led(i + 9, 8 + off, (lfo_dstsel == i and lfo_dstview == 1) and 12 or 2)
   end
+  g:led(1, 8 + off, lfo_launch * 6)
 end
 
 function grd.env_keys(x, y, z, offset)
@@ -802,12 +824,18 @@ function grd.tape_keys(x, y, z, offset)
       arc_track_focus = i
       track[track_focus].splice_focus = x
       arc_splice_focus = track[track_focus].splice_focus
-      if alt == 1 and mod == 0 then
-        local e = {} e.t = eSPLICE e.i = track_focus e.active = x event(e)
-      elseif alt == 0 and mod == 1 then
-        local src = tp[track_focus].side == 1 and 1 or 2
-        local dst = tp[track_focus].side == 1 and 2 or 1
-        copy_buffer(track_focus, src, dst)
+      if track[i].loaded then
+        if alt == 1 and mod == 0 then
+          local e = {} e.t = eSPLICE e.i = track_focus e.active = x event(e)
+        elseif alt == 0 and mod == 1 then
+          local src = tp[track_focus].side == 1 and 1 or 2
+          local dst = tp[track_focus].side == 1 and 2 or 1
+          copy_buffer(track_focus, src, dst)
+        elseif alt == 1 and mod == 1 and x < 7 then
+          set_tape(i, x)
+        end
+      else
+        queue_track_tape(i)
       end
       render_splice()
     elseif x == 9 then
@@ -857,20 +885,24 @@ function grd.tape_keys(x, y, z, offset)
       if z == 0 then
         render_splice()
       end
-    elseif x == 15 and z == 1 then
-      if y < 6 then
-        track[i].t5 = 1 - track[i].t5
-        local e = {} e.t = eROUTE e.i = i e.ch = 5 e.route = track[i].t5 event(e)
+    elseif x == 15 and y < 6 and z == 1 then
+      if tp[i].buffer == tp[5].buffer then
+        show_message("assign   different   buffer")
+      else
+        track[i].route_t5 = 1 - track[i].route_t5
+        local e = {} e.t = eROUTE e.i = i e.ch = 5 e.route = track[i].route_t5 event(e)
       end
-    elseif x == 16 then
-      if y < 7 and z == 1 then
-        track[i].t6 = 1 - track[i].t6
-        local e = {} e.t = eROUTE e.i = i e.ch = 6 e.route = track[i].t6 event(e)
-      elseif y == 7 and z == 1 then
-        view_presets = not view_presets
-        if view_presets == false then
-          render_splice()
-        end
+    elseif x == 16 and y < 7 and z == 1 then
+      if tp[i].buffer == tp[6].buffer then
+        show_message("assign   different   buffer")
+      else
+        track[i].route_t6 = 1 - track[i].route_t6
+        local e = {} e.t = eROUTE e.i = i e.ch = 6 e.route = track[i].route_t6 event(e)
+      end
+    elseif x == 16 and y == 7 and z == 1 then
+      view_presets = not view_presets
+      if view_presets == false then
+        render_splice()
       end
     end
   elseif y == 8 then
@@ -913,11 +945,11 @@ function grd.tape_draw(offset)
   -- routing
   for i = 1, 4 do
     local y = i + 1 + off
-    g:led(15, y, track[i].t5 == 1 and 9 or 2)
+    g:led(15, y, track[i].route_t5 == 1 and 9 or 2)
   end
   for i = 1, 5 do
     local y = i + 1 + off
-    g:led(16, y, track[i].t6 == 1 and 9 or 2)
+    g:led(16, y, track[i].route_t6 == 1 and 9 or 2)
   end
   g:led(16, 7 + off, view_presets and 15 or 5)
   -- cut focus
