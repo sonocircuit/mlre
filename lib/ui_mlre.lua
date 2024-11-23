@@ -802,16 +802,13 @@ end
 function ui.tape_key(n, z)
   if view_presets then
     if n == 2 and z == 1 then
-      local num = get_pset_num(pset_list[pset_focus])
-      params:read(num)
+      params:read(pset_focus)
       show_message("pset   loaded")
       view_presets = false
     elseif n == 3 and z == 1 then
-      silent_load_tempo = shift == 1 and true or false
-      local num = string.format("%0.2i", get_pset_num(pset_list[pset_focus]))
+      local num = string.format("%0.2i", pset_focus)
       local pset_id = pset_list[pset_focus]
       silent_load(num, pset_id)
-      show_message("silent   load")
       view_presets = false
     end
   elseif view_track_send then
@@ -822,7 +819,7 @@ function ui.tape_key(n, z)
       if n == 2 then
         if tape_actions[tape_action] == "load" and z == 1 then
           screenredrawtimer:stop()
-          fileselect.enter(os.getenv("HOME").."/dust/audio", function(n) fileselect_callback(n, track_focus) end)
+          fileselect.enter(current_path, function(n) fileselect_callback(n, track_focus) end)
         elseif tape_actions[tape_action] == "clear" and z == 1 then
           clear_splice(track_focus)
         elseif tape_actions[tape_action] == "save" and z == 0 then
@@ -932,9 +929,9 @@ function ui.tape_enc(n, d)
     end
   elseif view_track_send then
     if n == 2 and sends_focus < 5 then
-      params:delta(sends_focus.."send_track5", d)
+      params:delta(sends_focus.."send_t5", d)
     elseif n == 3 and sends_focus < 6 then
-      params:delta(sends_focus.."send_track6", d)
+      params:delta(sends_focus.."send_t6", d)
     end
   else
     if shift == 0 then
@@ -995,10 +992,9 @@ function ui.tape_redraw()
     -- actions
     screen.level(pulse_key_mid)
     screen.move(4, 60)
-    screen.text("bang!  <")
-    screen.level(pulse_key_mid)
+    screen.text("pset  <")
     screen.move(124, 60)
-    screen.text_right(shift == 1 and ">  silent + tempo" or ">  silent")
+    screen.text_right(">  silent")
   -- track sends
   elseif view_track_send then
     screen.level(15)
@@ -1011,7 +1007,7 @@ function ui.tape_redraw()
       screen.font_size(16)
       screen.level(15)
       screen.move(35, 40)
-      screen.text_center(params:string(sends_focus.."send_track5"))
+      screen.text_center(params:string(sends_focus.."send_t5"))
       screen.font_size(8)
       screen.level(3)
       screen.move(35, 54)
@@ -1027,7 +1023,7 @@ function ui.tape_redraw()
       screen.font_size(16)
       screen.level(15)
       screen.move(94, 40)
-      screen.text_center(params:string(sends_focus.."send_track6"))
+      screen.text_center(params:string(sends_focus.."send_t6"))
       screen.font_size(8)
       screen.level(3)
       screen.move(94, 54)
