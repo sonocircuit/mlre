@@ -879,7 +879,7 @@ function grd.tape_keys(x, y, z, offset)
         track[i].t5 = 1 - track[i].t5
         local e = {} e.t = eROUTE e.i = i e.ch = 5 e.route = track[i].t5 event(e)
       end
-    elseif x == 16 and y < 7 and z == 1then
+    elseif x == 16 and y < 7 and z == 1 then
       if tp[i].buffer == tp[6].buffer then
         show_message("assign   different   buffer")
       else
