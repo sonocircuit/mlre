@@ -15,6 +15,7 @@
 
 -----------------------------------------------------------------------
 -- TODO: test silent load options
+-- TODO: minimize idle clocks and loops within clock coroutines.
 -----------------------------------------------------------------------
 
 norns.version.required = 231114
@@ -153,11 +154,11 @@ pset_focus = 1
 pset_list = {}
 
 -- silent load variables
-loadop_params = {"sync", "tempo", "scale", "buffers", "loops", "reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "route_t5", "route_t6"}
-load_dest_id = {"reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "route_t5", "route_t6"}
-load_default = {1, 4, 0, 0.5, 0.5, 0, 8, 1, 0, 0, 0, 0, 0, 0}
-load_param = {true, true, true, true, true, true, true, true, false, false, false, false, false, false}
 loadop = {}
+loadop.params = {"sync", "tempo", "transition", "scale", "loops", "reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "route_t5", "route_t6"}
+loadop.set_param = {"reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state"}
+loadop.param_default = {1, 4, 0, 0.5, 0.5, 0, 8, 1}
+loadop.set_tab = {"rev", "speed", "sel", "fade", "route_t5", "route_t6"}
 
 -- pattern page variables and tables
 pattern_playback = {"loop", "oneshot"}
@@ -283,7 +284,7 @@ function event_exec(e)
     toggle_transport()
     dirtygrid = true
   elseif e.t == eLOOP then
-    make_loop(e.i, e.loop_start, e.loop_end)
+    set_loop(e.i, e.loop_start, e.loop_end)
   elseif e.t == eUNLOOP then
     clear_loop(e.i)
   elseif e.t == eSPEED then
@@ -518,7 +519,7 @@ function set_clip(i)
   softcut.phase_quant(i, q)
   softcut.phase_offset(i, off)
   if track[i].loop == 1 then
-    make_loop(i, track[i].loop_start, track[i].loop_end)
+    set_loop(i, track[i].loop_start, track[i].loop_end)
   end
   update_rate(i)
 end
@@ -584,22 +585,21 @@ function set_tape(i, buffer) -- assign tape buffer
   render_splice()
 end
 
-function clear_tape(i) -- clear tape and reset splices
+function clear_tape(i) -- clear tape
   local buffer = tp[i].side
-  local start = tp[i].s
-  softcut.buffer_clear_region_channel(buffer, start, MAX_TAPELENGTH)
+  local start = tp[i].s - FADE_TIME
+  local length = MAX_TAPELENGTH + FADE_TIME
+  softcut.buffer_clear_region_channel(buffer, start, length)
   track[i].loop = 0
-  --init_splices(i)
   render_splice()
   show_message("track    "..i.."    tape    cleared")
   dirtygrid = true
 end
 
-function clear_buffers() -- clear both buffers and reset splices
+function clear_buffers() -- clear both buffers
   softcut.buffer_clear()
   for i = 1, 6 do
     track[i].loop = 0
-    --init_splices(i)
   end
   render_splice()
   show_message("buffers    cleared")
@@ -656,9 +656,9 @@ function set_tempo_map(i)
   page_redraw(vTAPE)
 end
 
-function recalc_splices()
+function recalc_splices() -- called when tempo changes
   for i = 1, 6 do
-    if track[i].tempo_map > 0 and track[i].loaded then -- and not tempo-ramp
+    if track[i].tempo_map > 0 then
       for j = 1, 8 do
         splice_resize(i, j) -- resize clip according to tempo settings
       end
@@ -748,6 +748,10 @@ function load_snapshot(n, i)
 end
 
 function recall_snapshot(n, i)
+  if not track[i].loaded then
+    load_track_tape(i)
+  end
+
   local e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] e.sync = true event(e)
   local e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] e.sync = true event(e)
   local e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] e.sync = true event(e)
@@ -855,6 +859,18 @@ function get_pos(i, pos) -- get and store softcut position (callback)
   end
 end
 
+function reset_pos(i)
+  if track[i].loop == 0 then
+    local cut = track[i].rev == 0 and clip[i].s or (clip[i].l + clip[i].s)
+    softcut.position(i, cut)
+  else
+    local lstart = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
+    local lend = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
+    local cut = track[i].rev == 0 and lstart or lend
+    softcut.position(i, cut)
+  end
+end
+
 function stop_track(i)
   softcut.query_position(i)
   track[i].play = 0
@@ -864,7 +880,7 @@ function stop_track(i)
   dirtygrid = true
 end
 
-function make_loop(i, lstart, lend)
+function set_loop(i, lstart, lend)
   track[i].loop = 1
   track[i].loop_start = lstart
   track[i].loop_end = lend
@@ -1714,19 +1730,27 @@ function track_reset()
         track[i].beat_count = track[i].beat_count + 1
         if track[i].beat_count >= track[i].beat_reset then
           if track[i].rec == 0 and track[i].loaded then
-            if track[i].loop == 0 then
-              local cut = track[i].rev == 0 and clip[i].s or (clip[i].l + clip[i].s)
-              softcut.position(i, cut)
-            else
-              local lstart = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
-              local lend = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
-              local cut = track[i].rev == 0 and lstart or lend
-              softcut.position(i, cut)
-            end
+            reset_pos(i)
           end
           track[i].beat_count = 0
         end
       end
+    end
+  end
+end
+
+function tempo_transition(beats, dest_tempo)
+  local delta_bpm = dest_tempo - current_tempo
+  local sync = math.abs(delta_bpm) / beats
+  if delta_bpm > 0 then
+    while current_tempo < dest_tempo do
+      clock.sync(sync)
+      params:delta("clock_tempo", 1)
+    end
+  else
+    while current_tempo > dest_tempo do
+      clock.sync(sync)
+      params:delta("clock_tempo", -1)
     end
   end
 end
@@ -1772,10 +1796,9 @@ function filesave_callback(txt)
     local start = tp[track_focus].splice[track[track_focus].splice_focus].s
     local length = tp[track_focus].splice[track[track_focus].splice_focus].l
     local buffer = tp[track_focus].side
-    util.make_dir(_path.audio .. "mlre")
-    softcut.buffer_write_mono(_path.audio.."mlre/"..txt..".wav", start, length, buffer)
+    softcut.buffer_write_mono(mlre_path .. txt .. ".wav", start, length, buffer)
     tp[track_focus].splice[track[track_focus].splice_focus].name = txt
-    print("saved " .. _path.audio .. "mlre/" .. txt .. ".wav", start, length)
+    print("saved " .. mlre_path .. txt .. ".wav", start, length)
   else
     print("save cancel")
   end
@@ -1800,30 +1823,6 @@ function build_pset_list()
       end
     end
   end
-end
-
-function get_pset_num(name)
-  local num = tab.key(pset_list, name)
-  return num
-  --[[
-  local files_data = util.scandir(norns.state.data)
-  for i = 1, #files_data do
-    if files_data[i]:match("^.+(%..+)$") == ".pset" then
-      local loaded_file = io.open(norns.state.data..files_data[i], "r")
-      if loaded_file then
-        io.input(loaded_file)
-        local pset_id = string.sub(io.read(), 4, -1)
-        if name == pset_id then
-          local filename = norns.state.data..files_data[i]
-          local pset_string = string.sub(filename, string.len(filename) - 6, -1)
-          local number = pset_string:gsub(".pset", "")
-          return util.round(number, 1) -- better to use tonumber?
-        end
-        io.close(loaded_file)
-      end
-    end
-  end
-  --]]
 end
 
 function load_patterns()
@@ -1871,7 +1870,7 @@ end
 
 function save_loadop_config()
   local data = {}
-  for _, v in pairs(loadop_params) do
+  for _, v in pairs(loadop.params) do
     data[v] = loadop[v]
   end
   tab.save(data, norns.state.lib.."load_options.data")
@@ -1879,7 +1878,7 @@ end
 
 function load_loadop_config()
   local data = tab.load(norns.state.lib.."load_options.data")
-  for _, v in pairs(loadop_params) do
+  for _, v in pairs(loadop.params) do
     if (v == "send_t5" or v == "send_t6" or v == "route_t5" or v == "route_t6") then
       params:set("loadop_sends", data[v])
     else
@@ -1894,29 +1893,17 @@ function silent_load(number, pset_id)
   loaded_sesh_data = tab.load(norns.state.data.."sessions/"..number.."/"..pset_id.."_session.data")
   if loaded_sesh_data then
     if loaded_sesh_data.newformat ~= nil then
-      -- re-assign tape buffers
-      if loadop.buffers == 2 then
-        for i = 1, 6 do
-          params:set(i.."tape_buffer", loaded_sesh_data[i].track_buffer)
-        end
-      elseif loadop.buffers == 3 then
-        for i = 1, 6 do
-          params:set(i.."tape_buffer", i)
-        end
-      end
-      for i = 1, 6 do
-        if tp[i].buffer ~= i then
-          params:set(i.."tape_buffer", i)
-        end
-      end
       -- load audio to temp buffer
       softcut.buffer_read_mono(norns.state.data.."sessions/"..number.."/"..pset_id.."_buffer.wav", 0, 0, -1, 1, 2)
       -- load pattern, recall and snapshot data
       load_patterns()
       -- set tempo
-      if loadop.tempo == 2 then
-        local bpm = loaded_sesh_data.tempo
-        params:set("clock_tempo", bpm)
+      if loadop.tempo > 1 and (current_tempo ~= loaded_sesh_data.tempo) then
+        if loadop.tempo == 2 then
+          params:set("clock_tempo", loaded_sesh_data.tempo)
+        elseif loadop.tempo == 3 then
+          tt_clk = clock.run(tempo_transition, loadop.transition, loaded_sesh_data.tempo)
+        end
       end
       -- set scale
       if loadop.scale == 2 then
@@ -1933,7 +1920,7 @@ function silent_load(number, pset_id)
       show_message("silent   load   "..pset_id)
       print("silent load: "..pset_id)
     else
-      show_message("wrong   format > save   pset")
+      show_message("wrong   format  >  save   pset")
     end
   else
     print("error: no data loaded")
@@ -1955,55 +1942,57 @@ end
 function load_track_tape(i)
   -- tape data
   tp[i].s = loaded_sesh_data[i].tape_s
-  tp[i].e  = loaded_sesh_data[i].tape_e
+  tp[i].e = loaded_sesh_data[i].tape_e
   tp[i].splice = {table.unpack(loaded_sesh_data[i].tape_splice)}
-  -- fixed track data
-  track[i].loaded = true
+  if tp[i].buffer ~= loaded_sesh_data[i].track_buffer then
+    params:set(i.."tape_buffer", loaded_sesh_data[i].track_buffer, true) -- silent (no need to re-calc splice markers as saved like og)
+  end
+  -- track data
   track[i].splice_active = 1
   track[i].splice_focus = 1
+
+  for k, v in pairs(loadop.set_param) do
+    if loadop[v] == 2 then -- load from pset data
+      local t = "track_"..v
+      params:set(i..v, loaded_sesh_data[i][t])
+    elseif loadop[v] == 3 then -- reset to default
+      params:set(i..v, loadop.param_default[k])
+    end
+  end
+  
+  for k, v in pairs(loadop.set_tab) do
+    if loadop[v] == 2 then -- load from pset data
+      local t = "track_"..v
+      track[i][v] = loaded_sesh_data[i][t]
+    elseif loadop[v] == 3 then -- reset to default
+      track[i][v] = 0
+    end
+  end
+
+  if loadop.loops == 2 then -- load
+    track[i].loop = loaded_sesh_data[i].track_loop
+    track[i].loop_start = loaded_sesh_data[i].track_loop_start
+    track[i].loop_end = loaded_sesh_data[i].track_loop_end
+    if loaded_sesh_data[i].track_loop == 0 then
+      clear_loop(i)
+    end
+  elseif loadop.loops == 3 then -- reset
+    clear_loop(i)
+  end
   -- set tempo map and clip
   params:set(i.."tempo_map_mode", loaded_sesh_data[i].track_tempo_map)
   set_tempo_map(i)
   set_clip(i)
-  -- set loops
-  local lstart = loaded_sesh_data[i].track_loop_start
-  local lend = loaded_sesh_data[i].track_loop_end
-  if loadop.loops == 2 then
-    if loaded_sesh_data[i].track_loop == 1 then
-      make_loop(i, lstart, lend)
-    else
-      clear_loop(i)
-    end
-  elseif loadop.loops == 3 then
-    clear_loop(i)
-  end
   -- set levels
   set_level(i)
   set_rec(i)
   -- load and clear tape
   softcut.buffer_copy_mono(2, 1, tp[i].s - FADE_TIME, tp[i].s - FADE_TIME, MAX_TAPELENGTH + FADE_TIME, 0.01)
   softcut.buffer_clear_region_channel(2, tp[i].s - 0.5, MAX_TAPELENGTH + 0.5, 0.01, 0)
-  -- user track data
-  for n, v in ipairs(load_dest_id) do
-    if loadop[v] == 2 then -- load from pset data
-      local k = "track_"..v
-      if load_param[n] then
-        params:set(i..v, loaded_sesh_data[i][k])
-      else
-        track[i][v] = loaded_sesh_data[i][k]
-      end
-    elseif loadop[v] == 3 then -- reset to default
-      if load_param[n] then
-        params:set(i..v, load_default[n])
-      else
-        track[i][v] = load_default[n]
-      end
-    end
-  end
-  -- set pos
-  local cut = track[i].rev == 0 and clip[i].s or (clip[i].l + clip[i].s)
-  softcut.position(i, cut)
+  -- reset pos and counter
+  reset_pos(i)
   track[i].beat_count = 0
+  track[i].loaded = true
   -- render
   clock.run(function() clock.sleep(0.1) render_splice() end)
   -- msg
@@ -2085,17 +2074,26 @@ function init()
 
   params:add_separator("loadop_globals", "global params")
 
-  params:add_option("loadop_tempo", "tempo", {"ignore", "load"}, 1)
-  params:set_action("loadop_tempo", function(x) loadop.tempo = x end)
+  params:add_option("loadop_tempo", "tempo", {"ignore", "load", "transition"}, 1)
+  params:set_action("loadop_tempo", function(x)
+    loadop.tempo = x
+    if x == 3 then
+      params:show("loadop_transition")
+    else
+      params:hide("loadop_transition")
+    end
+    _menu.rebuild_params()
+    dirtyscreen = true
+  end)
   params:set_save("loadop_tempo", false)
+
+  params:add_number("loadop_transition", "transition", 2, 16, 4, function(param) return param:get().." beats" end)
+  params:set_action("loadop_transition", function(x) loadop.transition = x end)
+  params:set_save("loadop_transition", false)
 
   params:add_option("loadop_scale", "scale", {"ignore", "load"}, 1)
   params:set_action("loadop_scale", function(x) loadop.scale = x end)
   params:set_save("loadop_scale", false)
-
-  params:add_option("loadop_buffers", "buffers", {"ignore", "load", "reset"}, 1)
-  params:set_action("loadop_buffers", function(x) loadop.buffers = x end)
-  params:set_save("loadop_buffers", false)
 
   params:add_separator("loadop_tracks", "track params")
 
