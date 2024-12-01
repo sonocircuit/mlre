@@ -482,16 +482,18 @@ function grd.cut_keys(x, y, z, offset)
   if z == 1 and held[y] then heldmax[y] = 0 end
   held[y] = held[y] + (z * 2 - 1)
   if held[y] > heldmax[y] then heldmax[y] = held[y] end
-  if y == 8 and z == 1 then
-    local i = track_focus
-    if mod == 0 then
-      if x >= 1 and x <=8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
-      if x >= 9 and x <=16 then local e = {} e.t = eTRSP e.i = i e.val = x - 1 event(e) end
-    elseif mod == 1 then
-      if x == 8 then
-        local n = util.clamp(track[i].speed - 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
-      elseif x == 9 then
-        local n = util.clamp(track[i].speed + 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+  if y == 8 then
+    if z == 1 then
+      local i = track_focus
+      if mod == 0 then
+        if x >= 1 and x <=8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
+        if x >= 9 and x <=16 then local e = {} e.t = eTRSP e.i = i e.val = x - 1 event(e) end
+      elseif mod == 1 then
+        if x == 8 then
+          local n = util.clamp(track[i].speed - 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+        elseif x == 9 then
+          local n = util.clamp(track[i].speed + 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+        end
       end
     end
   else
@@ -535,21 +537,19 @@ function grd.cut_keys(x, y, z, offset)
       end
     elseif z == 0 then
       if track[i].loaded then
-        if y < 8 then 
-          if held[y] == 1 and heldmax[y] == 2 then
-            local lstart = math.min(first[y], second[y])
-            local lend = math.max(first[y], second[y])
-            loop_event(i, lstart, lend)
-          else
-            if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-              local e = {} e.t = eSTOP e.i = i event(e)
-            end
-            if env[i].active and track[i].loop == 0 then
-              local e = {} e.t = eGATEOFF e.i = i event(e)
-            end
+        if held[y] == 1 and heldmax[y] == 2 then
+          local lstart = math.min(first[y], second[y])
+          local lend = math.max(first[y], second[y])
+          loop_event(i, lstart, lend)
+        else
+          if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
+            local e = {} e.t = eSTOP e.i = i event(e)
           end
-          if held[y] < 1 then held[y] = 0 end
+          if env[i].active and track[i].loop == 0 then
+            local e = {} e.t = eGATEOFF e.i = i event(e)
+          end
         end
+        if held[y] < 1 then held[y] = 0 end
       end
     end
   end
@@ -807,7 +807,8 @@ function grd.pattern_draw(offset)
     local x = i + 13
     for j = 1, 4 do
       local y = j + 2 + off
-      g:led(x, y, params:get("quant_rate") == (y - 2 + off) + (x - 14) * 4 and 10 or 4)
+      local num = (y - 2 - off) + (x - 14) * 4
+      g:led(x, y, params:get("quant_rate") == num and 10 or 4)
     end
   end
 end
