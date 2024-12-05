@@ -49,8 +49,8 @@ function grd.nav(x, z, pos)
       mod = 1
     elseif x == 14 and alt == 1 then
       retrig()  -- set all playing tracks to pos 1
-    elseif x == 13 and alt == 0 and stop_all_active then
-      stopall() -- stops all tracks
+    -- elseif x == 13 and alt == 0 and stop_all_active then
+    --   stopall() -- stops all tracks
     elseif x == 13 and alt == 1 then
       altrun()  -- stops all running tracks and runs all stopped tracks if track[i].sel == 1
     end
@@ -107,6 +107,7 @@ function grd.nav(x, z, pos)
                 load_snapshots(i)
               end
               snap[i].active = true
+              snapshot_last = i
             end
           end
         elseif not snapshot_mode then
@@ -247,6 +248,9 @@ function grd.drawnav(y)
             b = 10
           elseif snap[i].data then
             b = 6
+            if snapshot_last == i then
+              b = 10
+            end
           end
         else
           if recall[i].recording then
@@ -291,6 +295,9 @@ function grd.drawnav(y)
             b = 10
           elseif recall[i].has_data then
             b = 6
+            if snapshot_last == i then
+              b = 10
+            end
           end
         end
         g:led(i + 4, y, b)
@@ -362,7 +369,8 @@ function grd.cutfocus_draw(y)
     end
   end
   if track[track_focus].play == 1 then
-    g:led(track[track_focus].pos_grid, y, 15)
+    local dim = track[track_focus].mute == 1 and 6 or 0
+    g:led(track[track_focus].pos_grid, y, 15 - dim)
   end
 end
 
@@ -452,7 +460,7 @@ function grd.rec_draw(offset)
   for i = 1, 6 do
     local y = i + 1 + off
     g:led(1, y, track[i].rec == 1 and 15 or (track[i].fade == 1 and 7 or 3)) -- rec key
-    g:led(2, y, track[i].oneshot == 1 and pulse_key_mid or 0)
+    g:led(2, y, track[i].oneshot == 1 and pulse_key_fast or 0)
     g:led(3, y, track[i].loaded and (track_focus == i and 7 or 0) or pulse_key_mid)
     g:led(6, y, track[i].tempo_map == 1 and 7 or (track[i].tempo_map == 2 and 12 or (track_focus == i and 3 or 0)))
     g:led(8, y, track[i].rev == 1 and (track[i].warble == 1 and 15 or 11) or (track[i].warble == 1 and 8 or 4))
@@ -486,8 +494,8 @@ function grd.cut_keys(x, y, z, offset)
     if z == 1 then
       local i = track_focus
       if mod == 0 then
-        if x >= 1 and x <=8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
-        if x >= 9 and x <=16 then local e = {} e.t = eTRSP e.i = i e.val = x - 1 event(e) end
+        if x >= 1 and x <= 8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
+        if x >= 9 and x <= 16 then local e = {} e.t = eTRSP e.i = i e.val = x - 1 event(e) end
       elseif mod == 1 then
         if x == 8 then
           local n = util.clamp(track[i].speed - 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
@@ -564,7 +572,8 @@ function grd.cut_draw(offset)
       end
     end
     if track[i].play == 1 then
-      g:led(track[i].pos_grid, i + 1 + off, track[i].loaded and (track_focus == i and 15 or 10) or pulse_key_mid)
+      local dim = track[i].mute == 1 and 6 or 0
+      g:led(track[i].pos_grid, i + 1 + off, (track[i].loaded and (track_focus == i and 15 or 12) or pulse_key_mid) - dim)
     end
   end
   g:led(8, 8 + off, 6)
@@ -591,8 +600,8 @@ function grd.trsp_keys(x, y, z, offset)
         if not autofocus and view == vTAPE then render_splice(track_focus) end
       end
       if alt == 0 and mod == 0 then
-        if x >= 1 and x <=8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
-        if x >= 9 and x <=16 then local e = {} e.t = eTRSP e.i = i e.val = x - 1 event(e) end
+        if x >= 1 and x <= 8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
+        if x >= 9 and x <= 16 then local e = {} e.t = eTRSP e.i = i e.val = x - 1 event(e) end
       end
       if alt == 1 and x > 7 and x < 10 then
         toggle_playback(i)
