@@ -836,21 +836,21 @@ function ui.tape_key(n, z)
           local paste_track = track_focus
           local paste_splice = track[track_focus].splice_focus
           if copy_splice ~= nil then
-            local src_ch = tape[copy_track].side
-            local dst_ch = tape[paste_track].side
-            local start_src = tape[copy_track].splice[copy_splice].s
-            local start_dst = tape[paste_track].splice[paste_splice].s
-            local length = tape[copy_track].splice[copy_splice].e - tape[copy_track].splice[copy_splice].s
+            local src_ch = tp[copy_track].side
+            local dst_ch = tp[paste_track].side
+            local start_src = tp[copy_track].splice[copy_splice].s
+            local start_dst = tp[paste_track].splice[paste_splice].s
+            local length = tp[copy_track].splice[copy_splice].e - tp[copy_track].splice[copy_splice].s
             local preserve = alt == 1 and 0.5 or 0
-            if tape[paste_track].splice[paste_splice].e + length <= tape[paste_track].e then
+            if tp[paste_track].splice[paste_splice].e + length <= tp[paste_track].e then
               softcut.buffer_copy_mono(src_ch, dst_ch, start_src, start_dst, length, 0.01, preserve)
-              tape[paste_track].splice[paste_splice].e = start_dst + length
-              tape[paste_track].splice[paste_splice].l = length
-              tape[paste_track].splice[paste_splice].init_start = start_dst
-              tape[paste_track].splice[paste_splice].init_len = length
-              tape[paste_track].splice[paste_splice].beatnum = tape[copy_track].splice[copy_splice].beatnum
-              tape[paste_track].splice[paste_splice].bpm = 60 / length * tape[copy_track].splice[copy_splice].beatnum
-              tape[paste_track].splice[paste_splice].name = tape[copy_track].splice[copy_splice].name
+              tp[paste_track].splice[paste_splice].e = start_dst + length
+              tp[paste_track].splice[paste_splice].l = length
+              tp[paste_track].splice[paste_splice].init_start = start_dst
+              tp[paste_track].splice[paste_splice].init_len = length
+              tp[paste_track].splice[paste_splice].beatnum = tp[copy_track].splice[copy_splice].beatnum
+              tp[paste_track].splice[paste_splice].bpm = 60 / length * tp[copy_track].splice[copy_splice].beatnum
+              tp[paste_track].splice[paste_splice].name = tp[copy_track].splice[copy_splice].name
               splice_resize(paste_track, paste_splice, length)
               render_splice()
               copy_splice = nil
@@ -863,15 +863,15 @@ function ui.tape_key(n, z)
         end
       elseif n == 3 and z == 1 then
         -- set barnum
-        tape[track_focus].splice[track[track_focus].splice_focus].beatnum = track[track_focus].resize_val
+        tp[track_focus].splice[track[track_focus].splice_focus].beatnum = track[track_focus].resize_val
         splice_resize(track_focus, track[track_focus].splice_focus)
         render_splice()
       end
     else
       if n == 2 and z == 1 then
-        tape[track_focus].splice[track[track_focus].splice_focus].init_len = tape[track_focus].splice[track[track_focus].splice_focus].l
-        tape[track_focus].splice[track[track_focus].splice_focus].init_start = tape[track_focus].splice[track[track_focus].splice_focus].s
-        tape[track_focus].splice[track[track_focus].splice_focus].init_beatnum = tape[track_focus].splice[track[track_focus].splice_focus].beatnum
+        tp[track_focus].splice[track[track_focus].splice_focus].init_len = tp[track_focus].splice[track[track_focus].splice_focus].l
+        tp[track_focus].splice[track[track_focus].splice_focus].init_start = tp[track_focus].splice[track[track_focus].splice_focus].s
+        tp[track_focus].splice[track[track_focus].splice_focus].init_beatnum = tp[track_focus].splice[track[track_focus].splice_focus].beatnum
         show_message("default   markers   set")
       elseif n == 3 and z == 1 then
         splice_reset(track_focus, track[track_focus].splice_focus)
@@ -885,24 +885,24 @@ function edit_splices(n, d, src, sens)
   -- set local variables
   local i = track_focus
   local focus = track[track_focus].splice_focus
-  local min_start = tape[track_focus].s
-  local max_start = tape[track_focus].e - tape[track_focus].splice[track[track_focus].splice_focus].l
-  local min_end = tape[track_focus].splice[track[track_focus].splice_focus].s + 0.1
-  local max_end = tape[track_focus].e
+  local min_start = tp[track_focus].s
+  local max_start = tp[track_focus].e - tp[track_focus].splice[track[track_focus].splice_focus].l
+  local min_end = tp[track_focus].splice[track[track_focus].splice_focus].s + 0.1
+  local max_end = tp[track_focus].e
   -- edit splice markers
   if n == (src == "enc" and 2 or 3) then
     -- edit window
-    tape[i].splice[focus].s = util.clamp(tape[i].splice[focus].s + d / sens, min_start, max_start)
-    if tape[i].splice[focus].s > min_start then
-      tape[i].splice[focus].e = util.clamp(tape[i].splice[focus].e + d / sens, min_end, max_end)
+    tp[i].splice[focus].s = util.clamp(tp[i].splice[focus].s + d / sens, min_start, max_start)
+    if tp[i].splice[focus].s > min_start then
+      tp[i].splice[focus].e = util.clamp(tp[i].splice[focus].e + d / sens, min_end, max_end)
     end
-    local length = tape[i].splice[focus].e - tape[i].splice[focus].s
+    local length = tp[i].splice[focus].e - tp[i].splice[focus].s
     splice_resize(i, focus, length)
     if src == "enc" then render_splice() end
   elseif n == (src == "enc" and 3 or 4) then
     -- edit endpoint
-    tape[i].splice[focus].e = util.clamp(tape[i].splice[focus].e + d / sens, min_end, max_end)
-    local length = tape[i].splice[focus].e - tape[i].splice[focus].s
+    tp[i].splice[focus].e = util.clamp(tp[i].splice[focus].e + d / sens, min_end, max_end)
+    local length = tp[i].splice[focus].e - tp[i].splice[focus].s
     splice_resize(i, focus, length)
     if src == "enc" then render_splice() end
   end
@@ -1065,7 +1065,7 @@ function ui.tape_redraw()
     screen.move(76, 60)
     screen.text("length")
     if shift == 0 then
-      screen.level(track[track_focus].resize_val == (track[track_focus].tempo_map == 0 and tape[track_focus].splice[track[track_focus].splice_focus].l or tape[track_focus].splice[track[track_focus].splice_focus].beatnum) and 15 or 4)
+      screen.level(track[track_focus].resize_val == (track[track_focus].tempo_map == 0 and tp[track_focus].splice[track[track_focus].splice_focus].l or tp[track_focus].splice[track[track_focus].splice_focus].beatnum) and 15 or 4)
       screen.move(124, 60)
       screen.text_right(track[track_focus].tempo_map == 0 and track[track_focus].resize_val.."s" or params:string(track_focus.."splice_length"))
     else
@@ -1077,10 +1077,10 @@ function ui.tape_redraw()
     if view_splice_info then
       screen.level(8)
       screen.move(4, 30)
-      screen.text(">> "..str_format(tape[track_focus].splice[track[track_focus].splice_focus].name, 24))
+      screen.text(">> "..str_format(tp[track_focus].splice[track[track_focus].splice_focus].name, 24))
       screen.level(4)
       screen.move(64, 45)
-      screen.text_center("-- "..tape[track_focus].splice[track[track_focus].splice_focus].info.." --")
+      screen.text_center("-- "..tp[track_focus].splice[track[track_focus].splice_focus].info.." --")
     else
       -- display buffer
       screen.level(6)
@@ -1117,10 +1117,10 @@ function ui.tape_redraw()
       screen.line_rel(120, 0)
       screen.stroke()
       -- display splice markers
-      local splice_start = tape[track_focus].splice[track[track_focus].splice_focus].s
-      local splice_end = tape[track_focus].splice[track[track_focus].splice_focus].e
-      local startpos = util.linlin(tape[track_focus].s, tape[track_focus].e, 5, 123, splice_start)
-      local endpos = util.linlin(tape[track_focus].s, tape[track_focus].e, 5, 123, splice_end)
+      local splice_start = tp[track_focus].splice[track[track_focus].splice_focus].s
+      local splice_end = tp[track_focus].splice[track[track_focus].splice_focus].e
+      local startpos = util.linlin(tp[track_focus].s, tp[track_focus].e, 5, 123, splice_start)
+      local endpos = util.linlin(tp[track_focus].s, tp[track_focus].e, 5, 123, splice_end)
       screen.level(2)
       screen.rect(startpos, 18, endpos - startpos, 4)
       screen.fill()
@@ -1178,8 +1178,8 @@ function ui.arc_tape_draw()
     a:led(2, (i + (track[track_focus].splice_focus - 1) * 7 - 6) + 43 - arc_off, 15)
   end
   -- draw splice position
-  local splice_s = tape[track_focus].splice[track[track_focus].splice_focus].s - tape[track_focus].s
-  local splice_l = tape[track_focus].splice[track[track_focus].splice_focus].e - tape[track_focus].splice[track[track_focus].splice_focus].s
+  local splice_s = tp[track_focus].splice[track[track_focus].splice_focus].s - tp[track_focus].s
+  local splice_l = tp[track_focus].splice[track[track_focus].splice_focus].e - tp[track_focus].splice[track[track_focus].splice_focus].s
   local pos_startpoint = math.floor(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_s) * 58)
   local pos_endpoint = math.ceil(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_l) * 58)
   a:led(3, -28 - arc_off, 6)
