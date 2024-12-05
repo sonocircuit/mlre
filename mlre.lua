@@ -31,7 +31,7 @@ lattice = require 'lattice'
 
 ui = include 'lib/ui_mlre'
 grd = include 'lib/grid_mlre'
-_lfo = include 'lib/lfos_mlre'
+_lfo = include 'lib/lfo_mlre'
 scales = include 'lib/scales_mlre'
 pattern_time = include 'lib/pattern_time_mlre'
 
@@ -2480,7 +2480,7 @@ function init()
 
     -- warble params
     params:add_separator("warble_params"..i, "track "..i.." warble")
-    -- warble state
+    -- filter type
     params:add_option(i.."warble_state", "active", {"no", "yes"}, 1)
     params:set_action(i.."warble_state", function(option) track[i].warble = option - 1 grid_page(vREC) end)
     -- warble amount
