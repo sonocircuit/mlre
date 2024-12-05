@@ -14,8 +14,9 @@
 --
 
 -----------------------------------------------------------------------
+-- TODO: add second callback to batch load and rename to populate?
+-- TODO: revisit snapshot sync options
 -- TODO: test silent load and new features
--- TODO: review clock usage
 -----------------------------------------------------------------------
 
 norns.version.required = 231114
@@ -27,7 +28,6 @@ g = grid.connect()
 mu = require 'musicutil'
 textentry = require 'textentry' 
 fileselect = require 'fileselect'
-lattice = require 'lattice'
 
 ui = include 'lib/ui_mlre'
 grd = include 'lib/grid_mlre'
@@ -65,6 +65,7 @@ lfo_focus = 1
 env_focus = 1
 pattern_focus = 1
 held_focus = 0
+mutes_active = false
 
 alt = 0
 mod = 0
@@ -76,9 +77,9 @@ lfo_dstview = 0
 lfo_dstsel = 1
 
 -- viz variables 
-pulse_key_fast = 1
-pulse_key_mid = 1
-pulse_key_slow = 1
+pulse_key_fast = 8
+pulse_key_mid = 12
+pulse_key_slow = 12
 pulse_bar = false
 pulse_beat = false
 
@@ -157,6 +158,7 @@ loadop.params = {"sync", "tempo", "transition", "scale", "loops", "reset_active"
 loadop.set_param = {"reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state"}
 loadop.param_default = {1, 4, 0, 0.5, 0.5, 0, 8, 1}
 loadop.set_tab = {"rev", "speed", "sel", "fade", "route_t5", "route_t6"}
+loadop.active = false
 
 -- pattern page variables and tables
 pattern_playback = {"loop", "oneshot"}
@@ -296,6 +298,7 @@ function event_exec(e)
   elseif e.t == eMUTE then
     track[e.i].mute = e.mute
     set_level(e.i)
+    get_mute_state()
   elseif e.t == eTRSP then
     params:set(e.i.."transpose", e.val)
     grid_page(vCUT)
@@ -348,7 +351,6 @@ function event_exec(e)
       pattern_rec = false
     elseif e.action == "overdub_undo" then
       pattern[e.i]:set_overdub(-1)
-      pattern_rec = false
     end
   end
 end
@@ -676,6 +678,7 @@ snapshot_reset = false
 snapshot_splice = false
 snapshot_launch = "free"
 snapshot_launch_modes = {"free", "beat", "bar"}
+snapshot_last = 0
 snap = {}
 for i = 1, 8 do -- 8 snapshot slots
   snap[i] = {}
@@ -844,6 +847,16 @@ function set_track_sends(i) -- internal softcut routing
   else
     softcut.level_cut_cut(i, 6, 0)
   end
+end
+
+function get_mute_state()
+  local count = 0
+  for i = 1, 6 do
+    if track[i].mute == 1 then
+      count = count + 1
+    end
+  end
+  mutes_active = count > 0 and true or false
 end
 
 function get_pos(i, pos) -- get and store softcut position (callback)
@@ -1403,6 +1416,7 @@ for i = 1, 6 do
   env[i].prev_value = 0
   env[i].count = 0
   env[i].direction = 0
+  env[i].clock = nil
   env[i].id = "env "..i
 end
 
@@ -1447,68 +1461,66 @@ function env_stop(i)
 end
 
 --- make envelope
-function env_run()
+function env_run(i)
   while true do
     clock.sleep(1/10)
-    for i = 1, 6 do
-      env[i].count = env[i].count + env[i].direction
-      if env[i].gate then
-        if env[i].a_is_running then
-          if env[i].attack == 0 then
-            env_set_value(i, env[i].max_value)
+    env[i].count = env[i].count + env[i].direction
+    if env[i].gate then
+      if env[i].a_is_running then
+        if env[i].attack == 0 then
+          env_set_value(i, env[i].max_value)
+          env_get_value(i)
+          env[i].count = 0
+          env[i].a_is_running = false
+          env[i].d_is_running = true
+        else
+          local d = (env[i].max_value - env[i].prev_value) / env[i].attack
+          env_increment(i, d)
+          if env[i].count >= env[i].attack then
             env_get_value(i)
             env[i].count = 0
             env[i].a_is_running = false
             env[i].d_is_running = true
-          else
-            local d = (env[i].max_value - env[i].prev_value) / env[i].attack
-            env_increment(i, d)
-            if env[i].count >= env[i].attack then
-              env_get_value(i)
-              env[i].count = 0
-              env[i].a_is_running = false
-              env[i].d_is_running = true
-            end
           end
         end
-        if env[i].d_is_running then
-          if env[i].decay == 0 then
+      end
+      if env[i].d_is_running then
+        if env[i].decay == 0 then
+          env[i].direction = 0
+          env[i].count = 0
+          env[i].d_is_running = false
+          env_set_value(i, env[i].sustain)
+          env_get_value(i)
+        else
+          local d = -(env[i].prev_value - env[i].sustain) / env[i].decay
+          env_increment(i, d)
+          if env[i].count >= env[i].decay then
             env[i].direction = 0
             env[i].count = 0
             env[i].d_is_running = false
             env_set_value(i, env[i].sustain)
             env_get_value(i)
-          else
-            local d = -(env[i].prev_value - env[i].sustain) / env[i].decay
-            env_increment(i, d)
-            if env[i].count >= env[i].decay then
-              env[i].direction = 0
-              env[i].count = 0
-              env[i].d_is_running = false
-              env_set_value(i, env[i].sustain)
-              env_get_value(i)
-            end
           end
         end
-      else
-        if env[i].r_is_running then
-          if env[i].release == 0 then
+      end
+    else
+      if env[i].r_is_running then
+        if env[i].release == 0 then
+          env[i].direction = 0
+          env[i].count = 0
+          env[i].r_is_running = false
+          env_set_value(i, env[i].init_value)
+          env_stop(i)
+        else
+          local d = -(env[i].prev_value - env[i].init_value) / env[i].release
+          env_increment(i, d)
+          if env[i].count >= env[i].release then
             env[i].direction = 0
             env[i].count = 0
             env[i].r_is_running = false
+            env[i].trig = false
             env_set_value(i, env[i].init_value)
             env_stop(i)
-          else
-            local d = -(env[i].prev_value - env[i].init_value) / env[i].release
-            env_increment(i, d)
-            if env[i].count >= env[i].release then
-              env[i].direction = 0
-              env[i].count = 0
-              env[i].r_is_running = false
-              env[i].trig = false
-              env_set_value(i, env[i].init_value)
-              env_stop(i)
-            end
           end
         end
       end
@@ -1520,6 +1532,10 @@ function init_envelope(i)
   if env[i].active then
     track[i].prev_level = track[i].level
     params:set(i.."vol", env[i].init_value)
+    if env[i].clock ~= nil then
+      clock.cancel(env[i].clock)
+    end
+    env[i].clock = clock.run(env_run, i)
   else
     env[i].gate = false
     env[i].a_is_running = false
@@ -1528,6 +1544,9 @@ function init_envelope(i)
     env[i].count = 0
     env[i].direction = 1
     params:set(i.."vol", track[i].prev_level)
+    if env[i].clock ~= nil then
+      clock.cancel(env[i].clock)
+    end
   end
   grid_page(vENV)
 end
@@ -1556,16 +1575,31 @@ for i = 1, 6 do
   warble[i].slope = 0
   warble[i].amount = 0
   warble[i].depth = 0
+  warble[i].clock = nil
 end
 
-function make_warble() -- warbletimer function
-  for i = 1, 6 do
+function toggle_warble(i)
+  if track[i].warble == 0 then
+    if warble[i].clock ~= nil then
+      clock.cancel(warble[i].clock)
+    end
+  else
+    if warble[i].clock ~= nil then
+      clock.cancel(warble[i].clock)
+    end
+    warble[i].clock = clock.run(make_warble, i)
+  end
+end
+
+function make_warble(i) -- warbletimer function
+  while true do
+    clock.sleep(0.1)
     -- make sine (from hnds)
     local slope = 1 * math.sin(((tau / 100) * (warble[i].counter)) - (tau / (warble[i].freq)))
     warble[i].slope = util.linlin(-1, 1, -1, 0, math.max(-1, math.min(1, slope))) * warble[i].depth
     warble[i].counter = warble[i].counter + warble[i].freq
     -- activate warble
-    if track[i].warble == 1 and track[i].play == 1 and math.random(100) <= warble[i].amount then
+    if track[i].play == 1 and math.random(100) <= warble[i].amount then
       if not warble[i].active then
         warble[i].active = true
       end
@@ -1674,32 +1708,27 @@ end
 --------------------- CLOCK COROUTINES -----------------------
 
 function ledpulse_fast()
-  pulse_key_fast = pulse_key_fast == 8 and 12 or 8
-  for i = 1, 8 do
-    if (pattern[i].rec == 1 or pattern[i].overdub == 1) then
-      dirtygrid = true
-    end
-  end
-  for i = 1, 6 do
-    if track[i].oneshot == 1 then
-      dirtygrid = true
-    end
+  while true do
+    clock.sync(1/8)
+    pulse_key_fast = pulse_key_fast == 8 and 12 or 8
+    if pattern_rec then dirtygrid = true end
   end
 end
 
 function ledpulse_mid()
-  pulse_key_mid = util.wrap(pulse_key_mid + 1, 4, 12)
-  if view_presets then
-    dirtyscreen = true
+  while true do
+    clock.sync(1/4)
+    pulse_key_mid = util.wrap(pulse_key_mid + 1, 5, 12)
+    if view_presets then dirtyscreen = true end
+    if loadop.active then dirtygrid = true end
   end
 end
 
 function ledpulse_slow()
-  pulse_key_slow = util.wrap(pulse_key_slow + 1, 4, 12)
-  for i = 1, 6 do
-    if ((track[i].mute and view == vMAIN) or (not track[i].loaded and view == vTAPE)) or view == vENV then
-      dirtygrid = true
-    end
+  while true do
+    clock.sync(1/2)
+    pulse_key_slow = util.wrap(pulse_key_slow + 1, 5, 12)
+    if mutes_active or view == vENV then dirtygrid = true end
   end
 end
 
@@ -1966,6 +1995,7 @@ function silent_load(number, pset_id)
         params:set("scale", loaded_sesh_data.scale)
       end
       -- flip load state and load stopped tracks
+      loadop.active = true
       for i = 1, 6 do
         track[i].loaded = false
         if track[i].play == 0 then load_track_tape(i) end
@@ -2053,6 +2083,14 @@ function load_track_tape(i)
   reset_pos(i)
   track[i].beat_count = 0
   track[i].loaded = true
+  -- check for unloaded tracks
+  local count = 0
+  for n = 1, 6 do
+    if not track[n].loaded then
+      count = count + 1
+    end
+  end
+  loadop.active = count > 0 and true or false
   -- render
   clock.run(function() clock.sleep(0.1) render_splice() end)
   -- msg
@@ -2415,9 +2453,7 @@ function init()
     params:add_option(i.."reset_active", "track reset", {"off", "on"}, 1)
     params:set_action(i.."reset_active", function(mode)
       track[i].reset = mode == 2 and true or false
-      if num == 2 then
-        track[i].beat_count = 0
-      end
+      if mode == 2 then track[i].beat_count = 0 end
       page_redraw(vMAIN, 8)
     end)
     -- reset count
@@ -2482,7 +2518,7 @@ function init()
     params:add_separator("warble_params"..i, "track "..i.." warble")
     -- filter type
     params:add_option(i.."warble_state", "active", {"no", "yes"}, 1)
-    params:set_action(i.."warble_state", function(option) track[i].warble = option - 1 grid_page(vREC) end)
+    params:set_action(i.."warble_state", function(option) track[i].warble = option - 1 toggle_warble(i) grid_page(vREC) end)
     -- warble amount
     params:add_number(i.."warble_amount", "amount", 0, 100, 10, function(param) return (param:get().."%") end)
     params:set_action(i.."warble_amount", function(val) warble[i].amount = val end)
@@ -2772,41 +2808,24 @@ function init()
   screenredrawtimer = metro.init(function() screenredraw() end, 1/15, -1)
   screenredrawtimer:start()
 
-  warbletimer = metro.init(function() make_warble() end, 0.1, -1)
-  warbletimer:start()
-
   tracktimer = metro.init(function() count_length() end, 0.01, -1)
   tracktimer:stop()
 
   -- clocks
-  barpulse = clock.run(ledpulse_bar)
-  beatpulse = clock.run(ledpulse_beat)
   quantizer = clock.run(update_q_clock)
-  envcounter = clock.run(env_run)
   reset_clk = clock.run(track_reset)
 
-  -- lattice
-  vizclock = lattice:new()
+  barpulse = clock.run(ledpulse_bar)
+  beatpulse = clock.run(ledpulse_beat)
+  fastpulse = clock.run(ledpulse_fast)
+  midpulse = clock.run(ledpulse_mid)
+  slowpulse = clock.run(ledpulse_slow)
 
-  fastpulse = vizclock:new_sprocket{
-    action = function(t) ledpulse_fast() end,
-    division = 1/32,
-    enabled = true
-  }
-
-  midpulse = vizclock:new_sprocket{
-    action = function() ledpulse_mid() end,
-    division = 1/24,
-    enabled = true
-  }
-
-  slowpulse = vizclock:new_sprocket{
-    action = function() ledpulse_slow() end,
-    division = 1/12,
-    enabled = true
-  }
-
-  vizclock:start()
+  clock.run(function()
+    clock.sync(4)
+    pulse_key_mid = 5
+    pulse_key_slow = 5
+  end)
 
   for i = 1, 8 do
     pattern[i]:init_clock()
