@@ -1,0 +1,24 @@
+return {
+-- Table: {1}
+{
+   ["fade"]=3,
+   ["route_t5"]=2,
+   ["detune"]=3,
+   ["speed"]=3,
+   ["send_t5"]=2,
+   ["send_t6"]=2,
+   ["pan"]=1,
+   ["transition"]=8,
+   ["warble_state"]=3,
+   ["scale"]=2,
+   ["reset_count"]=2,
+   ["rev"]=3,
+   ["sync"]=3,
+   ["loops"]=1,
+   ["tempo"]=3,
+   ["route_t6"]=2,
+   ["reset_active"]=2,
+   ["sel"]=3,
+   ["transpose"]=3,
+},
+}
