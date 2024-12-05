@@ -1,8 +1,7 @@
 --- timed pattern event recorder/player
 -- @module lib.pattern
 --
--- added pattern sync to system clock for mlre
--- 0.1.0 @sonocircuit
+-- pattern sync for mlre @sonocircuit
 
 local pattern = {}
 pattern.__index = pattern
@@ -137,17 +136,6 @@ function pattern:overdub_event(e)
   self.count = self.count + 1
 end
 
---- stop this pattern
-function pattern:stop()
-  self.metro:stop()
-  self.play = 0
-  self.overdub = 0
-  self.step = 0
-  self.clock_tick = 0
-  dirtygrid = true
-  --print(self.id.." stop")
-end
-
 --- pattern_sync coroutine
 function pattern_sync(target)
   while true do
@@ -170,6 +158,17 @@ end
 -- start clocks (via main script init)
 function pattern:init_clock()
   self.sync_clock = clock.run(pattern_sync, self)
+end
+
+--- stop this pattern
+function pattern:stop()
+  self.metro:stop()
+  self.play = 0
+  self.overdub = 0
+  self.step = 0
+  self.clock_tick = 0
+  dirtygrid = true
+  --print(self.id.." stop")
 end
 
 --- start pattern

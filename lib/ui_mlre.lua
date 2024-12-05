@@ -79,7 +79,7 @@ function ui.main_redraw()
   screen.font_size(8)
   screen.level(15)
   screen.move(4, 12)
-  screen.text("TRACK "..track_focus)
+  screen.text("TRACK "..track_focus) -- TODO: add indicator if select is active
   for i = 1, 4 do
     screen.level(main_pageNum == i and 15 or 4)
     screen.rect(112 + (i - 1) * 4, 6, 2, 2)
@@ -802,27 +802,28 @@ end
 function ui.tape_key(n, z)
   if view_presets then
     if n == 2 and z == 1 then
-      local num = get_pset_num(pset_list[pset_focus])
-      params:read(num)
+      params:read(pset_focus)
       show_message("pset   loaded")
       view_presets = false
     elseif n == 3 and z == 1 then
-      silent_load_tempo = shift == 1 and true or false
-      local num = string.format("%0.2i", get_pset_num(pset_list[pset_focus]))
+      local num = string.format("%0.2i", pset_focus)
       local pset_id = pset_list[pset_focus]
       silent_load(num, pset_id)
-      show_message("silent   load")
       view_presets = false
     end
   elseif view_track_send then
     -- do nothing
   else
     -- tape view
+    local splice_focus = track[track_focus].splice_focus
     if shift == 0 then
       if n == 2 then
-        if tape_actions[tape_action] == "load" and z == 1 then
+        if tape_actions[tape_action] == "batch" and z == 1 then
           screenredrawtimer:stop()
-          fileselect.enter(os.getenv("HOME").."/dust/audio", function(n) fileselect_callback(n, track_focus) end)
+          fileselect.enter(current_path, function(path) batchload_callback(path, track_focus) end, "audio")
+        elseif tape_actions[tape_action] == "load" and z == 1 then
+          screenredrawtimer:stop()
+          fileselect.enter(current_path, function(path) fileselect_callback(path, track_focus) end, "audio")
         elseif tape_actions[tape_action] == "clear" and z == 1 then
           clear_splice(track_focus)
         elseif tape_actions[tape_action] == "save" and z == 0 then
@@ -830,11 +831,11 @@ function ui.tape_key(n, z)
           textentry.enter(filesave_callback, "mlre-" .. (math.random(9000) + 1000))
         elseif tape_actions[tape_action] == "copy" and z == 1 then
           copy_track = track_focus
-          copy_splice = track[track_focus].splice_focus
-          show_message("copied   to   clipboard")
+          copy_splice = splice_focus
+          show_message("ready   to   paste")
         elseif tape_actions[tape_action] == "paste" and z == 1 then
           local paste_track = track_focus
-          local paste_splice = track[track_focus].splice_focus
+          local paste_splice = splice_focus
           if copy_splice ~= nil then
             local src_ch = tp[copy_track].side
             local dst_ch = tp[paste_track].side
@@ -863,18 +864,18 @@ function ui.tape_key(n, z)
         end
       elseif n == 3 and z == 1 then
         -- set barnum
-        tp[track_focus].splice[track[track_focus].splice_focus].beatnum = track[track_focus].resize_val
-        splice_resize(track_focus, track[track_focus].splice_focus)
+        tp[track_focus].splice[splice_focus].beatnum = tp[track_focus].splice[splice_focus].resize
+        splice_resize(track_focus, splice_focus)
         render_splice()
       end
     else
       if n == 2 and z == 1 then
-        tp[track_focus].splice[track[track_focus].splice_focus].init_len = tp[track_focus].splice[track[track_focus].splice_focus].l
-        tp[track_focus].splice[track[track_focus].splice_focus].init_start = tp[track_focus].splice[track[track_focus].splice_focus].s
-        tp[track_focus].splice[track[track_focus].splice_focus].init_beatnum = tp[track_focus].splice[track[track_focus].splice_focus].beatnum
+        tp[track_focus].splice[splice_focus].init_len = tp[track_focus].splice[splice_focus].l
+        tp[track_focus].splice[splice_focus].init_start = tp[track_focus].splice[splice_focus].s
+        tp[track_focus].splice[splice_focus].init_beatnum = tp[track_focus].splice[splice_focus].beatnum
         show_message("default   markers   set")
       elseif n == 3 and z == 1 then
-        splice_reset(track_focus, track[track_focus].splice_focus)
+        splice_reset(track_focus, splice_focus)
         render_splice()
       end
     end
@@ -886,8 +887,8 @@ function edit_splices(n, d, src, sens)
   local i = track_focus
   local focus = track[track_focus].splice_focus
   local min_start = tp[track_focus].s
-  local max_start = tp[track_focus].e - tp[track_focus].splice[track[track_focus].splice_focus].l
-  local min_end = tp[track_focus].splice[track[track_focus].splice_focus].s + 0.1
+  local max_start = tp[track_focus].e - tp[track_focus].splice[focus].l
+  local min_end = tp[track_focus].splice[focus].s + 0.1
   local max_end = tp[track_focus].e
   -- edit splice markers
   if n == (src == "enc" and 2 or 3) then
@@ -932,16 +933,20 @@ function ui.tape_enc(n, d)
     end
   elseif view_track_send then
     if n == 2 and sends_focus < 5 then
-      params:delta(sends_focus.."send_track5", d)
+      params:delta(sends_focus.."send_t5", d)
     elseif n == 3 and sends_focus < 6 then
-      params:delta(sends_focus.."send_track6", d)
+      params:delta(sends_focus.."send_t6", d)
     end
   else
     if shift == 0 then
       if n == 2 then
         tape_action = util.clamp(tape_action + d, 1, #tape_actions)
       elseif n == 3 then
-        params:delta(track_focus.."splice_length", d)
+        tp[track_focus].splice[track[track_focus].splice_focus].resize = util.clamp(tp[track_focus].splice[track[track_focus].splice_focus].resize + d, 1, 64)
+        if track[track_focus].tempo_map == 0 and tp[track_focus].splice[track[track_focus].splice_focus].resize > 57 then
+          tp[track_focus].splice[track[track_focus].splice_focus].resize = 57
+        end
+        --params:delta(track_focus.."splice_length", d)
       end
     else
       edit_splices(n, d, "enc", 50)
@@ -951,6 +956,7 @@ function ui.tape_enc(n, d)
 end
 
 function ui.tape_redraw()
+  local splice_focus = track[track_focus].splice_focus
   screen.clear()
   screen.font_face(2)
   screen.font_size(8)
@@ -995,10 +1001,9 @@ function ui.tape_redraw()
     -- actions
     screen.level(pulse_key_mid)
     screen.move(4, 60)
-    screen.text("bang!  <")
-    screen.level(pulse_key_mid)
+    screen.text("pset  <")
     screen.move(124, 60)
-    screen.text_right(shift == 1 and ">  silent + tempo" or ">  silent")
+    screen.text_right(">  silent")
   -- track sends
   elseif view_track_send then
     screen.level(15)
@@ -1011,7 +1016,7 @@ function ui.tape_redraw()
       screen.font_size(16)
       screen.level(15)
       screen.move(35, 40)
-      screen.text_center(params:string(sends_focus.."send_track5"))
+      screen.text_center(params:string(sends_focus.."send_t5"))
       screen.font_size(8)
       screen.level(3)
       screen.move(35, 54)
@@ -1027,7 +1032,7 @@ function ui.tape_redraw()
       screen.font_size(16)
       screen.level(15)
       screen.move(94, 40)
-      screen.text_center(params:string(sends_focus.."send_track6"))
+      screen.text_center(params:string(sends_focus.."send_t6"))
       screen.font_size(8)
       screen.level(3)
       screen.move(94, 54)
@@ -1053,7 +1058,7 @@ function ui.tape_redraw()
     screen.move(124, 12)
     screen.text_right("TAPE")
     screen.move(4, 60)
-    screen.text("SPLICE "..track[track_focus].splice_focus)
+    screen.text("SPLICE "..splice_focus)
     screen.level(4)
     screen.move(53, 60)
     if shift == 0 then
@@ -1065,9 +1070,10 @@ function ui.tape_redraw()
     screen.move(76, 60)
     screen.text("length")
     if shift == 0 then
-      screen.level(track[track_focus].resize_val == (track[track_focus].tempo_map == 0 and tp[track_focus].splice[track[track_focus].splice_focus].l or tp[track_focus].splice[track[track_focus].splice_focus].beatnum) and 15 or 4)
+      screen.level(tp[track_focus].splice[splice_focus].resize == (track[track_focus].tempo_map == 0 and tp[track_focus].splice[splice_focus].l or tp[track_focus].splice[splice_focus].beatnum) and 15 or 4)
       screen.move(124, 60)
-      screen.text_right(track[track_focus].tempo_map == 0 and track[track_focus].resize_val.."s" or params:string(track_focus.."splice_length"))
+      local format = track[track_focus].tempo_map == 0 and "s" or "/4"
+      screen.text_right(tp[track_focus].splice[splice_focus].resize..format)
     else
       screen.level(4)
       screen.move(110, 60)
@@ -1077,10 +1083,10 @@ function ui.tape_redraw()
     if view_splice_info then
       screen.level(8)
       screen.move(4, 30)
-      screen.text(">> "..str_format(tp[track_focus].splice[track[track_focus].splice_focus].name, 24))
+      screen.text(">> "..str_format(tp[track_focus].splice[splice_focus].name, 24))
       screen.level(4)
       screen.move(64, 45)
-      screen.text_center("-- "..tp[track_focus].splice[track[track_focus].splice_focus].info.." --")
+      screen.text_center("-- "..tp[track_focus].splice[splice_focus].info.." --")
     else
       -- display buffer
       screen.level(6)
@@ -1097,7 +1103,7 @@ function ui.tape_redraw()
         render_splice()
       end
       -- display position
-      if track[track_focus].splice_focus == track[track_focus].splice_active then
+      if splice_focus == track[track_focus].splice_active then
         screen.level(15)
         if view_buffer then
           screen.move(math.floor(util.linlin(0, 1, 5, 123, track[track_focus].pos_clip)), 23)
@@ -1117,8 +1123,8 @@ function ui.tape_redraw()
       screen.line_rel(120, 0)
       screen.stroke()
       -- display splice markers
-      local splice_start = tp[track_focus].splice[track[track_focus].splice_focus].s
-      local splice_end = tp[track_focus].splice[track[track_focus].splice_focus].e
+      local splice_start = tp[track_focus].splice[splice_focus].s
+      local splice_end = tp[track_focus].splice[splice_focus].e
       local startpos = util.linlin(tp[track_focus].s, tp[track_focus].e, 5, 123, splice_start)
       local endpos = util.linlin(tp[track_focus].s, tp[track_focus].e, 5, 123, splice_end)
       screen.level(2)
