@@ -49,8 +49,8 @@ function grd.nav(x, z, pos)
       mod = 1
     elseif x == 14 and alt == 1 then
       retrig()  -- set all playing tracks to pos 1
-    -- elseif x == 13 and alt == 0 and stop_all_active then
-    --   stopall() -- stops all tracks
+    elseif x == 13 and alt == 0 and stop_all_active then
+      stopall() -- stops all tracks
     elseif x == 13 and alt == 1 then
       altrun()  -- stops all running tracks and runs all stopped tracks if track[i].sel == 1
     end

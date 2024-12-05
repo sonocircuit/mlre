@@ -2348,7 +2348,6 @@ function init()
     -- record enable
     params:add_binary(i.."tog_rec", "record", "trigger", 0)
     params:set_action(i.."tog_rec", function() toggle_rec(i) end)
-    params:set_save(i.."tog_rec", false)
     -- reverse
     params:add_binary(i.."tog_rev", "reverse", "trigger", 0)
     params:set_action(i.."tog_rev", function()
@@ -2441,7 +2440,6 @@ function init()
     -- select buffer side
     params:add_option(i.."buffer_sel", "tape side", {"main", "temp"}, 1)
     params:set_action(i.."buffer_sel", function(x) tp[i].side = x softcut.buffer(i, x) end)
-    params:set_save(i.."buffer_sel", false)
     -- play mode
     params:add_option(i.."play_mode", "play mode", {"loop", "oneshot", "gate"}, 1)
     params:set_action(i.."play_mode", function(option) track[i].play_mode = option page_redraw(vMAIN, 7) end)
@@ -2469,19 +2467,15 @@ function init()
     -- track volume
     params:add_control(i.."vol", "volume", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."vol", function(x) track[i].level = x set_level(i) end)
-    params:set_save(i.."vol", false)
     -- track pan
     params:add_control(i.."pan", "pan", controlspec.new(-1, 1, 'lin', 0, 0, ""), function(param) return pan_display(param:get()) end)
     params:set_action(i.."pan", function(x) track[i].pan = x softcut.pan(i, x) page_redraw(vMAIN, 1) end)
-    params:set_save(i.."pan", false)
     -- record level
     params:add_control(i.."rec", "rec level", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."rec", function(x) track[i].rec_level = x set_rec(i) end)
-    params:set_save(i.."rec", false)
     -- overdub level
     params:add_control(i.."dub", "dub level", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."dub", function(x) track[i].pre_level = x set_rec(i) end)
-    params:set_save(i.."dub", false)
     -- rate slew
     params:add_control(i.."rate_slew", "rate slew", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."rate_slew", function(x) track[i].rate_slew = x softcut.rate_slew_time(i, x) page_redraw(vMAIN, 6) end)
@@ -2510,19 +2504,15 @@ function init()
     -- cutoff
     params:add_control(i.."cutoff", "cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, ""), function(param) return (round_form(param:get(), 1, " hz")) end)
     params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) page_redraw(vMAIN, 3) end)
-    params:set_save(i.."cutoff", false)
     -- filter q
     params:add_control(i.."filter_q", "filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
     params:set_action(i.."filter_q", function(x) softcut.post_filter_rq(i, x) page_redraw(vMAIN, 3) end)
-    params:set_save(i.."filter_q", false)
     -- filter type
     params:add_option(i.."filter_type", "type", {"lp", "hp", "bp", "br", "off"}, 1)
     params:set_action(i.."filter_type", function(option) filter_select(i, option) page_redraw(vMAIN, 4) end)
-    params:set_save(i.."filter_type", false)
     -- post filter dry level
     params:add_control(i.."post_dry", "dry level", controlspec.new(0, 1, 'lin', 0, 0, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."post_dry", function(x) track[i].dry_level = x softcut.post_filter_dry(i, x) page_redraw(vMAIN, 4) end)
-    params:set_save(i.."post_dry", false)
 
     -- warble params
     params:add_separator("warble_params"..i, "track "..i.." warble")
@@ -2532,22 +2522,18 @@ function init()
     -- warble amount
     params:add_number(i.."warble_amount", "amount", 0, 100, 10, function(param) return (param:get().."%") end)
     params:set_action(i.."warble_amount", function(val) warble[i].amount = val end)
-    params:set_save(i.."warble_amount", false)
     -- warble depth
     params:add_number(i.."warble_depth", "depth", 0, 100, 12, function(param) return (param:get().."%") end)
     params:set_action(i.."warble_depth", function(val) warble[i].depth = val * 0.001 end)
-    params:set_save(i.."warble_depth", false)
     -- warble freq
     params:add_control(i.."warble_freq", "speed", controlspec.new(1.0, 10.0, "lin", 0.1, 6.0, ""))
     params:set_action(i.."warble_freq", function(val) warble[i].freq = val * 2 end)
-    params:set_save(i.."warble_freq", false)
 
     -- envelope params
     params:add_separator("envelope_params"..i, "track "..i.." envelope")
 
     params:add_option(i.."adsr_active", "envelope", {"off", "on"}, 1)
     params:set_action(i.."adsr_active", function(mode) env[i].active = mode == 2 and true or false init_envelope(i) grid_page(vENV) end)
-    params:set_save(i.."adsr_active", false)
     -- env amplitude
     params:add_control(i.."adsr_amp", "max vol", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."adsr_amp", function(val) env[i].max_value = val clamp_env_levels(i) page_redraw(vENV, 3) end)
@@ -2557,19 +2543,15 @@ function init()
     -- env attack
     params:add_control(i.."adsr_attack", "attack", controlspec.new(0, 10, 'lin', 0.1, 0.2, "s"))
     params:set_action(i.."adsr_attack", function(val) env[i].attack = val * 10 page_redraw(vENV, 1) page_redraw(vENV, 2) end)
-    params:set_save(i.."adsr_attack", false)
     -- env decay
     params:add_control(i.."adsr_decay", "decay", controlspec.new(0, 10, 'lin', 0.1, 0.5, "s"))
     params:set_action(i.."adsr_decay", function(val) env[i].decay = val * 10 page_redraw(vENV, 1) page_redraw(vENV, 2) end)
-    params:set_save(i.."adsr_decay", false)
     -- env sustain
     params:add_control(i.."adsr_sustain", "sustain", controlspec.new(0, 1, 'lin', 0, 1, ""), function(param) return (round_form(param:get() * 100, 1, "%")) end)
     params:set_action(i.."adsr_sustain", function(val) env[i].sustain = val clamp_env_levels(i) page_redraw(vENV, 1) page_redraw(vENV, 2) end)
-    params:set_save(i.."adsr_sustain", false)
     -- env release
     params:add_control(i.."adsr_release", "release", controlspec.new(0, 10, 'lin', 0.1, 1, "s"))
     params:set_action(i.."adsr_release", function(val) env[i].release = val * 10 page_redraw(vENV, 1) page_redraw(vENV, 2) end)    
-    params:set_save(i.."adsr_release", false)
 
     -- params for track to trigger
     params:add_separator(i.."trigger_params", "track "..i.." trigger")
