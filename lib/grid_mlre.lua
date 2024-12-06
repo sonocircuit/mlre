@@ -369,8 +369,7 @@ function grd.cutfocus_draw(y)
     end
   end
   if track[track_focus].play == 1 then
-    local dim = track[track_focus].mute == 1 and 6 or 0
-    g:led(track[track_focus].pos_grid, y, 15 - dim)
+    g:led(track[track_focus].pos_grid, y, 15)
   end
 end
 
@@ -572,8 +571,7 @@ function grd.cut_draw(offset)
       end
     end
     if track[i].play == 1 then
-      local dim = track[i].mute == 1 and 6 or 0
-      g:led(track[i].pos_grid, i + 1 + off, (track[i].loaded and (track_focus == i and 15 or 12) or pulse_key_mid) - dim)
+      g:led(track[i].pos_grid, i + 1 + off, track[i].loaded and (track_focus == i and 15 or 12) or pulse_key_mid)
     end
   end
   g:led(8, 8 + off, 6)
@@ -767,7 +765,8 @@ function grd.pattern_keys(x, y, z, offset)
       if y > 2 and y < 6 and GRID_SIZE == 128 then
         params:set("slot_assign", y - 2)
       elseif y == 6 then
-        snapshot_mode = not snapshot_mode
+        local mode = snapshot_mode and 1 or 2
+        params:set("recall_mode", mode)
       end
     elseif x > 4 and x < 13 then
       local i = x - 4
