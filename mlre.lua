@@ -14,7 +14,6 @@
 --
 
 -----------------------------------------------------------------------
--- TODO: add second callback to batch load and rename to populate?
 -- TODO: revisit snapshot sync options
 -- TODO: test silent load and new features
 -----------------------------------------------------------------------
@@ -139,7 +138,7 @@ patterns_page_names_l = {"meter", "launch"}
 patterns_page_names_r = {"length", "play   mode"}
 
 -- tape page variables
-tape_actions = {"batch", "load", "clear", "save", "copy", "paste"}
+tape_actions = {"populate", "load", "clear", "save", "copy", "paste"}
 tape_action = 2
 copy_track = nil
 copy_splice = nil
@@ -151,6 +150,11 @@ sends_focus = 1
 view_presets = false
 pset_focus = 1
 pset_list = {}
+
+view_batchload_options = false
+batchload_path = ""
+batchload_track = 1
+batchload_numfiles = 8
 
 -- silent load variables
 loadop = {}
@@ -313,6 +317,7 @@ function event_exec(e)
     end
   elseif e.t == eSPLICE then
     track[e.i].splice_active = e.active
+    track[e.i].splice_focus = e.active
     set_clip(e.i)
     render_splice()
     dirtygrid = true
@@ -383,8 +388,8 @@ function recall_watch(e)
 end
 
 function recall_exec(i)
-  for _,e in pairs(recall[i].event) do
-    event_exec(e)
+  for _, e in pairs(recall[i].event) do
+    event(e)
   end
 end
 
@@ -1303,14 +1308,15 @@ function chop(i) -- called when rec key is pressed
     else -- autolength mode
       -- get length of recording and stop timer
       local length = rec_dur / 100
+      local beat_num = get_beatnum(length)
       tracktimer:stop()
       -- set splice markers
       tp[i].splice[track[i].splice_active].l = length
       tp[i].splice[track[i].splice_active].e = tp[i].splice[track[i].splice_active].s + length
       tp[i].splice[track[i].splice_active].init_start = tp[i].splice[track[i].splice_active].s
       tp[i].splice[track[i].splice_active].init_len = length
-      tp[i].splice[track[i].splice_active].beatnum = get_beatnum(length)
-      tp[i].splice[track[i].splice_active].bpm = 60 / length * get_beatnum(length)
+      tp[i].splice[track[i].splice_active].beatnum = beat_num
+      tp[i].splice[track[i].splice_active].bpm = 60 / length * beat_num
       -- set clip
       set_clip(i)
       set_info(i, track[i].splice_active)
@@ -1802,14 +1808,16 @@ function load_audio(path, i, s)
     softcut.buffer_read_mono(path, 0, tp[i].splice[s].s, -1, 1, buffer)
     local max_length = tp[i].e - tp[i].splice[s].s
     local length = math.min(len / 48000, max_length)
+    local num_beats = get_beatnum(length)
     -- set splice   
     tp[i].splice[s].l = length
     tp[i].splice[s].e = tp[i].splice[s].s + length
     tp[i].splice[s].init_start = tp[i].splice[s].s
     tp[i].splice[s].init_len = length
-    tp[i].splice[s].init_beatnum = get_beatnum(length)
-    tp[i].splice[s].beatnum = get_beatnum(length)
-    tp[i].splice[s].bpm = 60 / length * get_beatnum(length)
+    tp[i].splice[s].init_beatnum = num_beats
+    tp[i].splice[s].beatnum = num_beats
+    tp[i].splice[s].resize = num_beats
+    tp[i].splice[s].bpm = 60 / length * num_beats
     tp[i].splice[s].name = path:match("[^/]*$")
     if s == track[i].splice_active then  
       set_clip(i)
@@ -1822,7 +1830,7 @@ function load_audio(path, i, s)
   end
 end
 
-function fileselect_callback(path, i)
+function fileload_callback(path, i)
   if path ~= "cancel" and path ~= "" then
     --current_path = path:match("(.*[/])"):sub(1, -2)
     load_audio(path, i, track[i].splice_focus)
@@ -1833,42 +1841,48 @@ function fileselect_callback(path, i)
   dirtygrid = true
 end
 
-
 function batchload_callback(path, i)
   if path ~= "cancel" and path ~= "" then
-    local filepath = path:match("[^/]*$")
-    local folder = path:match("(.*[/])")
-    local files = util.scandir(folder)
-    local filestart = 0
-    local fileend = 0
-    local s = 1
-    for index, filename in ipairs(files) do
-      if filename == filepath then
-        filestart = index
-        fileend = index + 7
-        --print("from:"..filestart, "to: "..fileend)
-        ::continue::
-      end
+    batchload_path = path
+    batchload_track = i
+  else
+    view_batchload_options = false
+  end
+  screenredrawtimer:start()
+  dirtyscreen = true
+end
+
+function run_batchload(path, i, num_files)
+  local filepath = path:match("[^/]*$")
+  local folder = path:match("(.*[/])")
+  local files = util.scandir(folder)
+  local filestart = 0
+  local fileend = 0
+  local s = 1
+  for index, filename in ipairs(files) do
+    if filename == filepath then
+      filestart = index
+      fileend = index + num_files
+      ::continue::
     end
-    ::continue::
-    local splicestart = tp[i].s
-    for f = filestart, fileend do
-      if files[f] ~= nil then
-        local filepath = folder.."/"..files[f]
-        local ch, len = audio.file_info(filepath)
-        local filelen = len / 48000
-        if splicestart + filelen <= tp[i].s + MAX_TAPELENGTH then
-          tp[i].splice[s].s = splicestart
-          splicestart = load_audio(filepath, i, s)
-          --print(filepath, "splice: "..s, splicestart)
-          s = s + 1
-        else
-          print("no more tape left > dropped splice: "..s)
-        end
+  end
+  ::continue::
+  local splicestart = tp[i].s
+  for f = filestart, fileend do
+    if files[f] ~= nil then
+      local filepath = folder.."/"..files[f]
+      local ch, len = audio.file_info(filepath)
+      local filelen = len / 48000
+      if splicestart + filelen <= tp[i].s + MAX_TAPELENGTH then
+        tp[i].splice[s].s = splicestart
+        splicestart = load_audio(filepath, i, s)
+        s = s + 1
+      else
+        print("no more tape left > dropped splice: "..s)
+        s = s + 1
       end
     end
   end
-  screenredrawtimer:start()
   render_splice()
   dirtyscreen = true
   dirtygrid = true
