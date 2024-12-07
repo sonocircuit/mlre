@@ -14,7 +14,8 @@
 --
 
 -----------------------------------------------------------------------
--- TODO: revisit snapshot sync options
+-- TODO: test snapshot q
+-- TODO: simplify pattern time handling / limit recording to one pattern at a time
 -- TODO: test silent load and new features
 -----------------------------------------------------------------------
 
@@ -27,6 +28,7 @@ g = grid.connect()
 mu = require 'musicutil'
 textentry = require 'textentry' 
 fileselect = require 'fileselect'
+lattice = require 'lattice'
 
 ui = include 'lib/ui_mlre'
 grd = include 'lib/grid_mlre'
@@ -212,7 +214,7 @@ eLFO = 15
 -- event funtions
 function event_record(e)
   for i = 1, 8 do
-    pattern[i]:watch(e)
+    pattern[i]:watch(e) -- TODO: make sure only one pattern at a time can be recorded. and remove loop.
   end
   recall_watch(e)
 end
@@ -228,11 +230,11 @@ function event(e)
   end
 end
 
-function update_q_clock()
+function q_clock()
   while true do
     clock.sync(q_rate)
     if #quantize_events > 0 then
-      for k, e in pairs(quantize_events) do
+      for _, e in ipairs(quantize_events) do -- NOTE: changed from pairs to ipairs to ensure the correct sequence. TODO: test and compare
         if e.t ~= ePATTERN then event_record(e) end
         event_exec(e)
       end
@@ -370,6 +372,7 @@ for i = 1, 8 do
 end
 
 recall = {}
+recall_last = 0
 for i = 1, 8 do
   recall[i] = {}
   recall[i].recording = false
@@ -676,14 +679,16 @@ end
 
 --------------------- SNAPSHOTS -----------------------
 
+snapshot_last = 0
+snapshot_launch = 0
+snapshot_launch_modes = {"free", "beat", "bar"}
+
 snapshot_mode = false
 snapshot_playback = false
 snapshot_cut = false
 snapshot_reset = false
 snapshot_splice = false
-snapshot_launch = "free"
-snapshot_launch_modes = {"free", "beat", "bar"}
-snapshot_last = 0
+
 snap = {}
 for i = 1, 8 do -- 8 snapshot slots
   snap[i] = {}
@@ -726,12 +731,10 @@ function save_snapshot(n)
     snap[n].rev[i] = track[i].rev
     snap[n].transpose_val[i] = params:get(i.."transpose")
     snap[n].active_splice[i] = track[i].splice_active
-    clock.run(
-      function()
-        clock.sleep(0.05) -- give get_pos() some time
-        snap[n].cut[i] = track[i].cut
-      end
-    )
+    clock.run(function()
+      clock.sleep(0.05) -- give get_pos() some time
+      snap[n].cut[i] = track[i].cut
+    end)
   end
   snap[n].data = true
 end
@@ -743,56 +746,58 @@ function load_snapshots(snapshot)
 end
 
 function load_snapshot(n, i)
-  local quant = quantizing and q_rate or nil
-  local queue = snapshot_launch == "bar" and 4 or (snapshot_launch == "beat" and 1 or quant)
-  if queue then
+  local sync = snapshot_launch == 1 and (quantizing and q_rate or nil) or (snapshot_launch == 3 and 4 or 1)
+  if sync ~= nil then
     clock.run(function()
-      clock.sync(queue)
-      recall_snapshot(n, i)
+      clock.sync(sync)
+      recall_snapshot(n, i, true)
     end)
   else
     recall_snapshot(n, i)
   end
 end
 
-function recall_snapshot(n, i)
+-- TODO: figure out best logic for loop and playback conditions.
+--       when UNLOOP then playback position is missed occasionally.
+function recall_snapshot(n, i, sync) 
+  -- flip the unflipped
   if not track[i].loaded then
     load_track_tape(i)
   end
-
-  local e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] e.sync = true event(e)
-  local e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] e.sync = true event(e)
-  local e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] e.sync = true event(e)
-  local e = {} e.t = eTRSP e.i = i e.val = snap[n].transpose_val[i] e.sync = true event(e)
+  -- load se snap
+  local e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] e.sync = sync event(e)
+  local e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] e.sync = sync event(e)
+  local e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] e.sync = sync event(e)
+  local e = {} e.t = eTRSP e.i = i e.val = snap[n].transpose_val[i] e.sync = sync event(e)
 
   if snap[n].loop[i] == 1 then
-    loop_event(i, snap[n].loop_start[i], snap[n].loop_end[i], true)
+    loop_event(i, snap[n].loop_start[i], snap[n].loop_end[i], sync)
   elseif snap[n].loop[i] == 0 then
-    local e = {} e.t = eUNLOOP e.i = i e.sync = true event(e)
+    local e = {} e.t = eUNLOOP e.i = i e.sync = sync event(e)
   end
-
+  
   if snapshot_splice then
     if snap[n].active_splice[i] ~= track[i].splice_active then
-      local e = {} e.t = eSPLICE e.i = i e.active = snap[n].active_splice[i] e.sync = true event(e)
+      local e = {} e.t = eSPLICE e.i = i e.active = snap[n].active_splice[i] e.sync = sync event(e)
       track[i].splice_focus = snap[n].active_splice[i]
     end
   end
-
+  
   if snapshot_playback then
     if snap[n].play[i] == 0 then
-      local e = {} e.t = eSTOP e.i = i e.sync = true event(e)
+      local e = {} e.t = eSTOP e.i = i e.sync = sync event(e)
     else
       if snapshot_cut then
-        local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = true} event(e)
+        local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = sync} event(e)
       elseif snapshot_reset then
         local cut = track[i].rev == 0 and clip[i].s or clip[i].e
         local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
         local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
         local loop = track[i].rev == 0 and s or e
         local pos = track[i].loop == 0 and cut or loop
-        local e = {t = eSTART, i = i, pos = pos, sync = true} event(e)
+        local e = {t = eSTART, i = i, pos = pos, sync = sync} event(e)
       elseif track[i].play == 0 then
-        local e = {t = eSTART, i = i, sync = true} event(e)
+        local e = {t = eSTART, i = i, sync = sync} event(e)
       end
     end
   end
@@ -1713,36 +1718,13 @@ end
 
 --------------------- CLOCK COROUTINES -----------------------
 
-function ledpulse_fast()
-  while true do
-    clock.sync(1/8)
-    pulse_key_fast = pulse_key_fast == 8 and 12 or 8
-    if pattern_rec then dirtygrid = true end
-  end
-end
-
-function ledpulse_mid()
-  while true do
-    clock.sync(1/4)
-    pulse_key_mid = util.wrap(pulse_key_mid + 1, 5, 12)
-    if view_presets then dirtyscreen = true end
-    if loadop.active then dirtygrid = true end
-  end
-end
-
-function ledpulse_slow()
-  while true do
-    clock.sync(1/2)
-    pulse_key_slow = util.wrap(pulse_key_slow + 1, 5, 12)
-    if mutes_active or view == vENV then dirtygrid = true end
-  end
-end
-
 function ledpulse_bar()
   while true do
     clock.sync(4)
     pulse_bar = true
     dirtygrid = true
+    pulse_key_mid = 12
+    pulse_key_slow = 12
     clock.run(function()
       clock.sleep(1/30)
       pulse_bar = false
@@ -1801,39 +1783,29 @@ end
 
 
 --------------------- FILE CALLBACKS -----------------------
-function load_audio(path, i, s)
+function get_length_audio(path)
   local ch, len = audio.file_info(path)
-  local buffer = tp[i].side
+  local l = 0
   if ch > 0 and len > 0 then
-    softcut.buffer_read_mono(path, 0, tp[i].splice[s].s, -1, 1, buffer)
-    local max_length = tp[i].e - tp[i].splice[s].s
-    local length = math.min(len / 48000, max_length)
-    local num_beats = get_beatnum(length)
-    -- set splice   
-    tp[i].splice[s].l = length
-    tp[i].splice[s].e = tp[i].splice[s].s + length
-    tp[i].splice[s].init_start = tp[i].splice[s].s
-    tp[i].splice[s].init_len = length
-    tp[i].splice[s].init_beatnum = num_beats
-    tp[i].splice[s].beatnum = num_beats
-    tp[i].splice[s].resize = num_beats
-    tp[i].splice[s].bpm = 60 / length * num_beats
-    tp[i].splice[s].name = path:match("[^/]*$")
-    if s == track[i].splice_active then  
-      set_clip(i)
-    end
-    set_info(i, s)
-    print("file: "..tp[i].splice[s].name.." "..string.format("%.2f", tp[i].splice[s].s).."s --> "..string.format("%.2f", tp[i].splice[s].e).."s")
-    return tp[i].splice[s].e + SPLICE_GAP
-  else
-    print("not a sound file")
+    l = len / 48000
   end
+  return l
 end
 
 function fileload_callback(path, i)
   if path ~= "cancel" and path ~= "" then
+    -- set startpoint
+    local s = track[i].splice_focus
+    tp[i].splice[s].s = s == 1 and tp[i].s or (tp[i].splice[s - 1].e + SPLICE_GAP)
+    local max_l = tp[i].e - tp[i].splice[s].s
+    local file_l = get_length_audio(path)
+    if file_l > 0 then
+      local l = math.min(file_l, max_l)
+      load_audio(path, i, s, l)
+    else
+      print("not a sound file")
+    end
     --current_path = path:match("(.*[/])"):sub(1, -2)
-    load_audio(path, i, track[i].splice_focus)
   end
   screenredrawtimer:start()
   render_splice()
@@ -1852,37 +1824,80 @@ function batchload_callback(path, i)
   dirtyscreen = true
 end
 
-function run_batchload(path, i, num_files)
+function set_splicemarker(i, s)
+  if s < 8 then
+    tp[i].splice[s + 1].s = tp[i].splice[s].e + SPLICE_GAP
+    tp[i].splice[s + 1].e = tp[i].splice[s + 1].s + DEFAULT_SPLICELEN
+    if tp[i].splice[s + 1].e > tp[i].e then
+      tp[i].splice[s + 1].e = tp[i].e
+    end
+  end
+end
+
+function load_audio(path, i, s, l)
+  -- load audio
+  softcut.buffer_read_mono(path, 0, tp[i].splice[s].s, l, 1, buffer)
+  -- set splice   
+  local buffer = tp[i].side
+  local num_beats = get_beatnum(l)
+  tp[i].splice[s].l = l
+  tp[i].splice[s].e = tp[i].splice[s].s + l
+  tp[i].splice[s].init_start = tp[i].splice[s].s
+  tp[i].splice[s].init_len = l
+  tp[i].splice[s].init_beatnum = num_beats
+  tp[i].splice[s].beatnum = num_beats
+  tp[i].splice[s].resize = num_beats
+  tp[i].splice[s].bpm = 60 / l * num_beats
+  tp[i].splice[s].name = path:match("[^/]*$")
+  if s == track[i].splice_active then  
+    set_clip(i)
+  end
+  --set_splicemarker(i, s)
+  set_info(i, s)
+  print("file: "..tp[i].splice[s].name.." "..string.format("%.2f", tp[i].splice[s].s).."s --> "..string.format("%.2f", tp[i].splice[s].e).."s")
+  return tp[i].splice[s].e + SPLICE_GAP
+end
+
+function load_batch(path, i, s, n)
   local filepath = path:match("[^/]*$")
   local folder = path:match("(.*[/])")
   local files = util.scandir(folder)
   local filestart = 0
   local fileend = 0
-  local s = 1
+  local s = s
+  local splice_s = s == 1 and tp[i].s or (tp[i].splice[s - 1].e + SPLICE_GAP)
+  -- get file index
   for index, filename in ipairs(files) do
     if filename == filepath then
       filestart = index
-      fileend = index + num_files
+      fileend = index + n
       ::continue::
     end
   end
   ::continue::
-  local splicestart = tp[i].s
   for f = filestart, fileend do
-    if files[f] ~= nil then
+    if files[f] ~= nil and s <= 8 then
+      -- file data
       local filepath = folder.."/"..files[f]
-      local ch, len = audio.file_info(filepath)
-      local filelen = len / 48000
-      if splicestart + filelen <= tp[i].s + MAX_TAPELENGTH then
-        tp[i].splice[s].s = splicestart
-        splicestart = load_audio(filepath, i, s)
-        s = s + 1
+      local file_l = get_length_audio(filepath)
+      if file_l > 0 then
+        -- load splice
+        if splice_s + file_l <= tp[i].e then
+          tp[i].splice[s].s = splice_s
+          splice_s = load_audio(filepath, i, s, file_l)
+          s = s + 1
+        else
+          print(files[f].." too long - can't populate further")
+          goto done
+        end
       else
-        print("no more tape left > dropped splice: "..s)
-        s = s + 1
+        print(files[f].." is not a sound file")
       end
+    else
+      print("no file - out of bounds")
     end
   end
+  ::done::
   render_splice()
   dirtyscreen = true
   dirtygrid = true
@@ -2027,7 +2042,7 @@ function silent_load(number, pset_id)
 end
 
 function queue_track_tape(i)
-  local sync = loadop.sync == 1 and (quantize and q_rate or nil) or (loadop.sync == 3 and 4 or 1)
+  local sync = loadop.sync == 1 and (quantizing and q_rate or nil) or (loadop.sync == 3 and 4 or 1)
   if sync ~= nil then
     clock.run(function()
       clock.sync(sync)
@@ -2153,7 +2168,7 @@ function init()
   params:add_separator("snapshot_options", "snapshot options")
 
   params:add_option("snapshot_launch", "launch", snapshot_launch_modes, 1)
-  params:set_action("snapshot_launch", function(x) snapshot_launch = snapshot_launch_modes[x] end)
+  params:set_action("snapshot_launch", function(mode) snapshot_launch = mode end)
 
   params:add_option("recall_playback_state", "playback", {"ignore", "state only", "state & pos", "state & pos reset"}, 1)
   params:set_action("recall_playback_state", function(x)
@@ -2428,7 +2443,7 @@ function init()
     params:add_option("patterns_playback"..i, "playback", pattern_playback, 1)
     params:set_action("patterns_playback"..i, function(mode) pattern[i].loop = mode == 1 and true or false end)
 
-    params:add_option("patterns_countin"..i, "count in", pattern_countin, 2)
+    params:add_option("patterns_countin"..i, "launch", pattern_countin, 2)
     params:set_action("patterns_countin"..i, function(mode) pattern[i].count_in = mode == 1 and 1 or 4 dirtygrid = true end)
 
     params:add_option("patterns_meter"..i, "meter", pattern_meter, 3)
@@ -2825,22 +2840,47 @@ function init()
   tracktimer = metro.init(function() count_length() end, 0.01, -1)
   tracktimer:stop()
 
-  -- clocks
-  quantizer = clock.run(update_q_clock)
-  reset_clk = clock.run(track_reset)
 
+  -- lattice
+  vizclock = lattice:new()
+
+  fastpulse = vizclock:new_sprocket{
+    action = function(t)
+      pulse_key_fast = pulse_key_fast == 8 and 12 or 8
+      if pattern_rec then dirtygrid = true end
+    end,
+    division = 1/32,
+    enabled = true
+  }
+
+  midpulse = vizclock:new_sprocket{
+    action = function(t)
+      pulse_key_mid = util.wrap(pulse_key_mid + 1, 5, 12)
+      if view_presets then dirtyscreen = true end
+      if loadop.active then dirtygrid = true end
+    end,
+    division = 1/16,
+    enabled = true
+  }
+
+  slowpulse = vizclock:new_sprocket{
+    action = function(t)
+      pulse_key_slow = util.wrap(pulse_key_slow + 1, 5, 12)
+      if mutes_active or view == vENV then dirtygrid = true end
+    end,
+    division = 1/8,
+    enabled = true
+  }
+
+  vizclock:start()
+
+
+  -- clocks
+  quantizer = clock.run(q_clock)
+  reset_clk = clock.run(track_reset)
   barpulse = clock.run(ledpulse_bar)
   beatpulse = clock.run(ledpulse_beat)
-  fastpulse = clock.run(ledpulse_fast)
-  midpulse = clock.run(ledpulse_mid)
-  slowpulse = clock.run(ledpulse_slow)
-
-  clock.run(function()
-    clock.sync(4)
-    pulse_key_mid = 5
-    pulse_key_slow = 5
-  end)
-
+  
   for i = 1, 8 do
     pattern[i]:init_clock()
   end
