@@ -802,7 +802,13 @@ end
 function ui.tape_key(n, z)
   if view_batchload_options then
     if n > 1 and z == 1 then
-      if n == 3 then run_batchload(batchload_path, batchload_track, batchload_numfiles) end
+      if n == 3 then
+        local path = batchload_path
+        local i = batchload_track
+        local s = track[i].splice_focus
+        local n = batchload_numfiles - 1
+        load_batch(path, i, s, n)
+      end
       view_batchload_options = false
       dirtyscreen = true
     end
