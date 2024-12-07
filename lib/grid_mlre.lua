@@ -123,6 +123,7 @@ function grd.nav(x, z, pos)
           elseif recall[i].has_data == true then
             recall_exec(i)
             recall[i].active = true
+            recall_last = i
           end
         end
       end
@@ -181,6 +182,7 @@ function grd.nav(x, z, pos)
                 load_snapshots(i)
               end
               snap[i].active = true
+              snapshot_last = i
             end
           end
         elseif not snapshot_mode then
@@ -196,6 +198,7 @@ function grd.nav(x, z, pos)
           elseif recall[i].has_data == true then
             recall_exec(i)
             recall[i].active = true
+            recall_last = i
           end
         end
       elseif pos == "z" and z == 0 then
@@ -232,11 +235,11 @@ function grd.drawnav(y)
         elseif pattern[i].overdub == 1 then
           g:led(i + 4, y, pulse_key_fast)
         elseif pattern[i].play == 1 then
-          g:led(i + 4, y, pattern[i].flash and 15 or 12)
+          g:led(i + 4, y, pattern[i].flash and 15 or 13)
         elseif pattern[i].count > 0 then
-          g:led(i + 4, y, 9)
+          g:led(i + 4, y, 7)
         else
-          g:led(i + 4, y, 4)
+          g:led(i + 4, y, 3)
         end
       end
     end
@@ -245,7 +248,7 @@ function grd.drawnav(y)
         local b = 2
         if snapshot_mode then
           if snap[i].active then
-            b = 10
+            b = 15
           elseif snap[i].data then
             b = 6
             if snapshot_last == i then
@@ -259,6 +262,9 @@ function grd.drawnav(y)
             b = 10
           elseif recall[i].has_data then
             b = 6
+            if recall_last == i then
+              b = 10
+            end
           end
         end
         g:led(i + 4, y, b)
@@ -274,19 +280,22 @@ function grd.drawnav(y)
         elseif pattern[i].overdub == 1 then
           g:led(i + 4, y, pulse_key_fast)
         elseif pattern[i].play == 1 then
-          g:led(i + 4, y, pattern[i].flash and 15 or 12)
+          g:led(i + 4, y, pattern[i].flash and 15 or 13)
         elseif pattern[i].count > 0 then
-          g:led(i + 4, y, 9)
+          g:led(i + 4, y, 7)
         else
-          g:led(i + 4, y, 4)
+          g:led(i + 4, y, 3)
         end
       elseif y == 9 then
         local b = 2
         if snapshot_mode then
           if snap[i].active then
-            b = 10
+            b = 15
           elseif snap[i].data then
             b = 6
+            if snapshot_last == i then
+              b = 10
+            end
           end
         else
           if recall[i].recording then
@@ -295,7 +304,7 @@ function grd.drawnav(y)
             b = 10
           elseif recall[i].has_data then
             b = 6
-            if snapshot_last == i then
+            if recall_last == i then
               b = 10
             end
           end
