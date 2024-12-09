@@ -123,6 +123,7 @@ function grd.nav(x, z, pos)
           elseif recall[i].has_data == true then
             recall_exec(i)
             recall[i].active = true
+            recall_last = i
           end
         end
       end
@@ -181,6 +182,7 @@ function grd.nav(x, z, pos)
                 load_snapshots(i)
               end
               snap[i].active = true
+              snapshot_last = i
             end
           end
         elseif not snapshot_mode then
@@ -196,6 +198,7 @@ function grd.nav(x, z, pos)
           elseif recall[i].has_data == true then
             recall_exec(i)
             recall[i].active = true
+            recall_last = i
           end
         end
       elseif pos == "z" and z == 0 then
@@ -232,11 +235,11 @@ function grd.drawnav(y)
         elseif pattern[i].overdub == 1 then
           g:led(i + 4, y, pulse_key_fast)
         elseif pattern[i].play == 1 then
-          g:led(i + 4, y, pattern[i].flash and 15 or 12)
+          g:led(i + 4, y, pattern[i].flash and 15 or 13)
         elseif pattern[i].count > 0 then
-          g:led(i + 4, y, 9)
+          g:led(i + 4, y, 7)
         else
-          g:led(i + 4, y, 4)
+          g:led(i + 4, y, 3)
         end
       end
     end
@@ -245,7 +248,7 @@ function grd.drawnav(y)
         local b = 2
         if snapshot_mode then
           if snap[i].active then
-            b = 10
+            b = 15
           elseif snap[i].data then
             b = 6
             if snapshot_last == i then
@@ -259,6 +262,9 @@ function grd.drawnav(y)
             b = 10
           elseif recall[i].has_data then
             b = 6
+            if recall_last == i then
+              b = 10
+            end
           end
         end
         g:led(i + 4, y, b)
@@ -274,19 +280,22 @@ function grd.drawnav(y)
         elseif pattern[i].overdub == 1 then
           g:led(i + 4, y, pulse_key_fast)
         elseif pattern[i].play == 1 then
-          g:led(i + 4, y, pattern[i].flash and 15 or 12)
+          g:led(i + 4, y, pattern[i].flash and 15 or 13)
         elseif pattern[i].count > 0 then
-          g:led(i + 4, y, 9)
+          g:led(i + 4, y, 7)
         else
-          g:led(i + 4, y, 4)
+          g:led(i + 4, y, 3)
         end
       elseif y == 9 then
         local b = 2
         if snapshot_mode then
           if snap[i].active then
-            b = 10
+            b = 15
           elseif snap[i].data then
             b = 6
+            if snapshot_last == i then
+              b = 10
+            end
           end
         else
           if recall[i].recording then
@@ -295,7 +304,7 @@ function grd.drawnav(y)
             b = 10
           elseif recall[i].has_data then
             b = 6
-            if snapshot_last == i then
+            if recall_last == i then
               b = 10
             end
           end
@@ -369,8 +378,7 @@ function grd.cutfocus_draw(y)
     end
   end
   if track[track_focus].play == 1 then
-    local dim = track[track_focus].mute == 1 and 6 or 0
-    g:led(track[track_focus].pos_grid, y, 15 - dim)
+    g:led(track[track_focus].pos_grid, y, 15)
   end
 end
 
@@ -572,8 +580,7 @@ function grd.cut_draw(offset)
       end
     end
     if track[i].play == 1 then
-      local dim = track[i].mute == 1 and 6 or 0
-      g:led(track[i].pos_grid, i + 1 + off, (track[i].loaded and (track_focus == i and 15 or 12) or pulse_key_mid) - dim)
+      g:led(track[i].pos_grid, i + 1 + off, track[i].loaded and (track_focus == i and 15 or 12) or pulse_key_mid)
     end
   end
   g:led(8, 8 + off, 6)
@@ -767,7 +774,8 @@ function grd.pattern_keys(x, y, z, offset)
       if y > 2 and y < 6 and GRID_SIZE == 128 then
         params:set("slot_assign", y - 2)
       elseif y == 6 then
-        snapshot_mode = not snapshot_mode
+        local mode = snapshot_mode and 1 or 2
+        params:set("recall_mode", mode)
       end
     elseif x > 4 and x < 13 then
       local i = x - 4

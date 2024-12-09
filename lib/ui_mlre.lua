@@ -800,7 +800,19 @@ end
 ---------------------- TAPE VIEW ------------------------
 
 function ui.tape_key(n, z)
-  if view_presets then
+  if view_batchload_options then
+    if n > 1 and z == 1 then
+      if n == 3 then
+        local path = batchload_path
+        local i = batchload_track
+        local s = track[i].splice_focus
+        local n = batchload_numfiles - 1
+        load_batch(path, i, s, n)
+      end
+      view_batchload_options = false
+      dirtyscreen = true
+    end
+  elseif view_presets then
     if n == 2 and z == 1 then
       params:read(pset_focus)
       show_message("pset   loaded")
@@ -811,19 +823,19 @@ function ui.tape_key(n, z)
       silent_load(num, pset_id)
       view_presets = false
     end
-  elseif view_track_send then
-    -- do nothing
   else
     -- tape view
     local splice_focus = track[track_focus].splice_focus
     if shift == 0 then
       if n == 2 then
-        if tape_actions[tape_action] == "batch" and z == 1 then
+        if tape_actions[tape_action] == "populate" and z == 1 then
+          view_batchload_options = true
+          dirtygrid = true
           screenredrawtimer:stop()
           fileselect.enter(current_path, function(path) batchload_callback(path, track_focus) end, "audio")
         elseif tape_actions[tape_action] == "load" and z == 1 then
           screenredrawtimer:stop()
-          fileselect.enter(current_path, function(path) fileselect_callback(path, track_focus) end, "audio")
+          fileselect.enter(current_path, function(path) fileload_callback(path, track_focus) end, "audio")
         elseif tape_actions[tape_action] == "clear" and z == 1 then
           clear_splice(track_focus)
         elseif tape_actions[tape_action] == "save" and z == 0 then
@@ -925,7 +937,11 @@ function ui.tape_enc(n, d)
       dirtygrid = true
     end
   end
-  if view_presets then
+  if view_batchload_options then
+    if n > 1 then
+      batchload_numfiles = util.clamp(batchload_numfiles + d, 1, 8)
+    end
+  elseif view_presets then
     if n == 2 then
       pset_focus = util.clamp(pset_focus + d, 1, #pset_list)
     elseif n == 3 then
@@ -946,7 +962,6 @@ function ui.tape_enc(n, d)
         if track[track_focus].tempo_map == 0 and tp[track_focus].splice[track[track_focus].splice_focus].resize > 57 then
           tp[track_focus].splice[track[track_focus].splice_focus].resize = 57
         end
-        --params:delta(track_focus.."splice_length", d)
       end
     else
       edit_splices(n, d, "enc", 50)
@@ -961,7 +976,20 @@ function ui.tape_redraw()
   screen.font_face(2)
   screen.font_size(8)
   -- preset view
-  if view_presets then
+  if view_batchload_options then
+    screen.level(15)
+    screen.move(64, 12)
+    screen.text_center("SELECT FILE COUNT")
+    screen.level(8)
+    screen.font_size(16)
+    screen.move(64, 39)
+    screen.text_center(batchload_numfiles)
+    screen.font_size(8)
+    screen.move(22, 56)
+    screen.text_center("cancel")
+    screen.move(104, 56)
+    screen.text_center("load")
+  elseif view_presets then
     screen.level(15)
     screen.move(64, 12)
     screen.text_center("PRESET LOADING")
@@ -1060,7 +1088,7 @@ function ui.tape_redraw()
     screen.move(4, 60)
     screen.text("SPLICE "..splice_focus)
     screen.level(4)
-    screen.move(53, 60)
+    screen.move(52, 60)
     if shift == 0 then
       screen.text_center(tape_actions[tape_action])
     else
