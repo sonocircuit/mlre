@@ -1,6 +1,94 @@
 -- grid for mlre
+
 local grd = {}
 
+-- grid key logic
+local held = {}
+local heldmax = {}
+local first = {}
+local second = {}
+for i = 1, 8 do
+  held[i] = 0
+  heldmax[i] = 0
+  first[i] = 0
+  second[i] = 0
+end
+
+local snapshot_last = 0
+
+local function pattern_events(i)
+  if alt == 1 then
+    pattern[i]:clear()
+    pattern_rec = false
+  elseif pattern[i].overdub == 1 then
+    if mod == 1 then
+      pattern[i]:set_overdub(-1) -- overdub flag undo
+    else
+      pattern[i]:set_overdub(0) -- overdub off
+    end
+    pattern_rec = false
+  elseif pattern[i].rec == 1 then
+    if mod == 1 then
+      pattern[i]:set_overdub(1) -- overdub on
+    else
+      local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
+      local e = {t = ePATTERN, i = i, action = "start"} event(e)
+      pattern_rec = false
+    end
+  elseif pattern[i].count == 0 then
+    pattern[i]:rec_start()
+    pattern_rec = true
+  elseif pattern[i].play == 1 then
+    if mod == 1 then
+      pattern[i]:set_overdub(1) -- overdub on
+      pattern_rec = true
+    else
+      local e = {t = ePATTERN, i = i, action = "stop"} event(e)
+    end
+  else
+    local e = {t = ePATTERN, i = i, action = "start"} event(e)
+  end
+end
+
+local function snapshot_events(i)
+  if alt == 1 then
+    snap[i].data = false
+    snap[i].active = false
+  else
+    if snap[i].data then
+      local snap_dest = held_focus > 0 and track_focus or "all"
+      load_snapshots(i, snap_dest)
+      snap[i].active = true
+      snapshot_last = i
+    else
+      save_snapshot(i)
+    end
+  end
+end
+
+local function recall_events(i)
+  if alt == 1 then
+    recall[i].event = {}
+    recall[i].recording = false
+    recall[i].has_data = false
+    recall[i].active = false
+  elseif recall[i].recording == true then
+    recall[i].recording = false
+  elseif recall[i].has_data == false then
+    recall[i].recording = true
+  elseif recall[i].has_data == true then
+    recall_exec(i)
+    recall[i].active = true
+    recall_last = i
+  end
+end
+
+function grd.clear_keylogic()-- reset key logic in case of stuck loops
+  for i = 1, 8 do
+    held[i] = 0
+  end
+end
+ 
 function grd.nav(x, z, pos)
   if z == 1 then
     if x == 1 then
@@ -35,7 +123,8 @@ function grd.nav(x, z, pos)
         set_view(vLFO)
       end
     elseif x == 15 and alt == 0 and mod == 0 and pos == "o" then
-      quantizing = not quantizing
+      keyquant_edit = true
+      dirtyscreen = true
     elseif x == 16 then alt = 1
       dirtyscreen = true
     elseif x == 15 and alt == 1 then
@@ -56,83 +145,28 @@ function grd.nav(x, z, pos)
     end
   elseif z == 0 then
     if x == 2 then cutview_hold = false end
-    if x == 16 then alt = 0 dirtyscreen = true
+    if x == 15 then keyquant_edit = false end
+    if x == 16 then alt = 0
     elseif x == 14 and alt == 0 then mod = 0 -- lock mod if mod released before alt is released
     end
+    dirtyscreen = true
   end
   if GRID_SIZE == 128 then
-    if z == 1 then
-      if x > 4 and x < (macro_slot_mode == 1 and 9 or 13) and macro_slot_mode ~= 3 then
-        local i = x - 4
-        if alt == 1 then
-          local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
-          local e = {t = ePATTERN, i = i, action = "stop"} event(e)
-          local e = {t = ePATTERN, i = i, action = "clear"} event(e)
-        elseif mod == 1 then
-          if pattern[i].count == 0 then
-            local e = {t = ePATTERN, i = i, action = "rec_start"} event(e)
-          elseif pattern[i].rec == 1 then
-            local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
-            local e = {t = ePATTERN, i = i, action = "start"} event(e)
-          elseif pattern[i].overdub == 1 then
-            local e = {t = ePATTERN, i = i, action = "overdub_undo"} event(e)
-          else
-            local e = {t = ePATTERN, i = i, action = "overdub_on"} event(e)
-          end
-        elseif pattern[i].overdub == 1 then
-          local e = {t = ePATTERN, i = i, action = "overdub_off"} event(e)
-        elseif pattern[i].rec == 1 then
-          local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
-          local e = {t = ePATTERN, i = i, action = "start"} event(e)
-        elseif pattern[i].count == 0 then
-          local e = {t = ePATTERN, i = i, action = "rec_start"} event(e)
-        elseif pattern[i].play == 1 and pattern[i].overdub == 0 then
-          local e = {t = ePATTERN, i = i, action = "stop"} event(e)
-        else
-          local e = {t = ePATTERN, i = i, action = "start"} event(e)
-        end
-      elseif x > (macro_slot_mode == 3 and 4 or 8) and x < 13 and macro_slot_mode ~= 2 then
-        local i = x - 4
-        if snapshot_mode then
-          if alt == 1 then
-            snap[i].data = false
-            snap[i].active = false
-          elseif alt == 0 then
-            if not snap[i].data then
-              save_snapshot(i)
-            elseif snap[i].data then
-              if held_focus > 0 then
-                load_snapshot(i, track_focus)
-              else
-                load_snapshots(i)
-              end
-              snap[i].active = true
-              snapshot_last = i
-            end
-          end
-        elseif not snapshot_mode then
-          if alt == 1 then
-            recall[i].event = {}
-            recall[i].recording = false
-            recall[i].has_data = false
-            recall[i].active = false
-          elseif recall[i].recording == true then
-            recall[i].recording = false
-          elseif recall[i].has_data == false then
-            recall[i].recording = true
-          elseif recall[i].has_data == true then
-            recall_exec(i)
-            recall[i].active = true
-            recall_last = i
-          end
-        end
+    local i = x - 4
+    if x > 4 and x < (macro_slot_mode == 1 and 9 or 13) and macro_slot_mode ~= 3 then
+      if z == 1 then
+        pattern_events(i)
       end
-    elseif z == 0 then
-      if x > (macro_slot_mode == 3 and 4 or 8) and x < 13 and macro_slot_mode ~= 2 then
-        if snapshot_mode then
-          snap[x - 4].active = false
-        else
-          recall[x - 4].active = false
+    elseif x > (macro_slot_mode == 3 and 4 or 8) and x < 13 and macro_slot_mode ~= 2 then
+      if snapshot_mode then
+        snap[i].active = z == 1 and true or false
+        if z == 1 then
+          snapshot_events(i)
+        end
+      else
+        recall[i].active = z == 1 and true or false
+        if z == 1 then
+          recall_events(i)
         end
       end
     end
@@ -140,79 +174,22 @@ function grd.nav(x, z, pos)
     local i = (x - 4)
     if x > 4 and x < 13 then
       if pos == "o" and z == 1 then
-        if alt == 1 then
-          local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
-          local e = {t = ePATTERN, i = i, action = "stop"} event(e)
-          local e = {t = ePATTERN, i = i, action = "clear"} event(e)
-        elseif mod == 1 then
-          if pattern[i].count == 0 then
-            local e = {t = ePATTERN, i = i, action = "rec_start"} event(e)
-          elseif pattern[i].rec == 1 then
-            local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
-            local e = {t = ePATTERN, i = i, action = "start"} event(e)
-          elseif pattern[i].overdub == 1 then
-            local e = {t = ePATTERN, i = i, action = "overdub_undo"} event(e)
-          else
-            local e = {t = ePATTERN, i = i, action = "overdub_on"} event(e)
-          end
-        elseif pattern[i].overdub == 1 then
-          local e = {t = ePATTERN, i = i, action = "overdub_off"} event(e)
-        elseif pattern[i].rec == 1 then
-          local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
-          local e = {t = ePATTERN, i = i, action = "start"} event(e)
-        elseif pattern[i].count == 0 then
-          local e = {t = ePATTERN, i = i, action = "rec_start"} event(e)
-        elseif pattern[i].play == 1 and pattern[i].overdub == 0 then
-          local e = {t = ePATTERN, i = i, action = "stop"} event(e)
-        else
-          local e = {t = ePATTERN, i = i, action = "start"} event(e)
-        end
-      elseif pos == "z" and z == 1 then
+        pattern_events(i)
+      elseif pos == "z" then
         if snapshot_mode then
-          if alt == 1 then
-            snap[i].data = false
-            snap[i].active = false
-          elseif alt == 0 then
-            if not snap[i].data then
-              save_snapshot(i)
-            elseif snap[i].data then
-              if held_focus > 0 then
-                load_snapshot(i, track_focus)
-              else
-                load_snapshots(i)
-              end
-              snap[i].active = true
-              snapshot_last = i
-            end
+          snap[i].active = z == 1 and true or false
+          if z == 1 then
+            snapshot_events(i)
           end
-        elseif not snapshot_mode then
-          if alt == 1 then
-            recall[i].event = {}
-            recall[i].recording = false
-            recall[i].has_data = false
-            recall[i].active = false
-          elseif recall[i].recording == true then
-            recall[i].recording = false
-          elseif recall[i].has_data == false then
-            recall[i].recording = true
-          elseif recall[i].has_data == true then
-            recall_exec(i)
-            recall[i].active = true
-            recall_last = i
-          end
-        end
-      elseif pos == "z" and z == 0 then
-        local row = pos == "o" and 0 or 1
-        local i = (x - 8) + row * 4
-        if snapshot_mode then
-          snap[i].active = false
         else
-          recall[i].active = false
+          recall[i].active = z == 1 and true or false
+          if z == 1 then
+            recall_events(i)
+          end
         end
-      end  
+      end
     end
   end
-  dirtygrid = true
 end
 
 function grd.drawnav(y)
@@ -322,34 +299,34 @@ function grd.cutfocus_keys(x, z)
   held[row] = held[row] + (z * 2 - 1)
   if held[row] > heldmax[row] then heldmax[row] = held[row] end
   if z == 1 then
-    if track[i].loaded then
-      if alt == 1 and mod == 0 then
-        toggle_playback(i)
-      elseif mod == 1 then -- "hold mode" as on cut page
-        heldmax[row] = x
-        loop_event(i, x, x)
-      elseif held[row] == 1 then -- cut at pos
-        first[row] = x
-        local cut = x - 1
-        if track[i].play == 1 or track[i].start_launch == 1 then
-          local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
-          if env[i].active then
-            local e = {} e.t = eGATEON e.i = i event(e)
-          end
-        elseif track[i].play == 0 and track[i].start_launch > 1 then
-          clock.run(function()
-            local beats = track[i].start_launch == 2 and 1 or 4
-            clock.sync(beats)
-            local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
-            if env[i].active then
-              local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
-            end
-          end)
+    if alt == 1 and mod == 0 then
+      toggle_playback(i)
+    elseif mod == 1 then -- "hold mode" as on cut page
+      heldmax[row] = x
+      loop_event(i, x, x)
+    elseif held[row] == 1 then -- cut at pos
+      first[row] = x
+      local cut = x - 1
+      if track[i].play == 1 or track[i].start_launch == 1 then
+        local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
+        if env[i].active then
+          local e = {} e.t = eGATEON e.i = i event(e)
         end
-      elseif held[row] == 2 then -- second keypress
-        second[row] = x
+      elseif track[i].play == 0 and track[i].start_launch > 1 then
+        clock.run(function()
+          local beat_sync = track[i].start_launch == 2 and 1 or bar_val
+          clock.sync(beat_sync)
+          local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+          if env[i].active then
+            local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+          end
+        end)
       end
-    else
+    elseif held[row] == 2 then -- second keypress
+      second[row] = x
+    end
+
+    if not track[i].loaded and alt == 0 and mod == 0 then
       queue_track_tape(i)
     end
   elseif z == 0 then
@@ -409,28 +386,12 @@ function grd.rec_keys(x, y, z, offset)
       end
     elseif x == 1 and alt == 0 and z == 1 then
       toggle_rec(i)
+      chop(i)
     elseif x == 1 and alt == 1 and z == 1 then
       track[i].fade = 1 - track[i].fade
       set_rec(i)
     elseif x == 2 and z == 1 then
-      track[i].oneshot = 1 - track[i].oneshot
-      for n = 1, 6 do
-        if n ~= i then
-          track[n].oneshot = 0
-        end
-      end
-      armed_track = i
-      arm_thresh_rec(i) -- amp_in poll starts
-      update_dur(i)  -- duration of oneshot is set
-      if alt == 1 then -- if alt then go into autolength mode and stop track
-        autolength = true
-        local e = {}
-        e.t = eSTOP
-        e.i = i
-        event(e)
-      else
-        autolength = false
-      end
+      arm_thresh_rec(i)
     elseif x == 16 and alt == 0 and mod == 0 and z == 1 then
       toggle_playback(i)
     elseif x == 16 and alt == 0 and mod == 1 and z == 1 then
@@ -453,7 +414,6 @@ function grd.rec_keys(x, y, z, offset)
     elseif x == 12 and alt == 1 and z == 1 then
       randomize(i)
     end
-    dirtygrid = true
   elseif y == 8 then -- cut for focused track
     if GRID_SIZE == 128 or offset == 8 then 
       grd.cutfocus_keys(x, z)
@@ -521,34 +481,35 @@ function grd.cut_keys(x, y, z, offset)
         dirtyscreen = true
         if not autofocus and view == vTAPE then render_splice(track_focus) end
       end
-      if track[i].loaded then
-        if alt == 1 and y < 8 then
-          toggle_playback(i)
-        elseif mod == 1 and y < 8 then -- "hold mode"
-          heldmax[y] = x
-          loop_event(i, x, x)
-        elseif y < 8 and held[y] == 1 then
-          first[y] = x
-          local cut = x - 1
-          if track[i].play == 1 or track[i].start_launch == 1 then
-            local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
-            if env[i].active then
-              local e = {} e.t = eGATEON e.i = i event(e)
-            end
-          elseif track[i].play == 0 and track[i].start_launch > 1 then
-            clock.run(function()
-              local beats = track[i].start_launch == 2 and 1 or 4
-              clock.sync(beats)
-              local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
-              if env[i].active then
-                local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
-              end
-            end)
+      if alt == 1 and y < 8 then
+        toggle_playback(i)
+      elseif mod == 1 and y < 8 then -- "hold mode"
+        heldmax[y] = x
+        loop_event(i, x, x)
+      elseif y < 8 and held[y] == 1 then
+        first[y] = x
+        local cut = x - 1
+        if track[i].play == 1 or track[i].start_launch == 1 then
+          local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
+          if env[i].active then
+            local e = {} e.t = eGATEON e.i = i event(e)
           end
-        elseif y < 8 and held[y] == 2 then
-          second[y] = x
+        elseif track[i].play == 0 and track[i].start_launch > 1 then
+          clock.run(function()
+            local beat_sync = track[i].start_launch == 2 and 1 or bar_val
+            clock.sync(beat_sync)
+            local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+            if env[i].active then
+              local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+            end
+          end)
         end
-      else
+      elseif y < 8 and held[y] == 2 then
+        second[y] = x
+      end
+
+
+      if not track[i].loaded and alt == 0 and mod == 0 then
         queue_track_tape(i)
       end
     elseif z == 0 then
@@ -662,7 +623,7 @@ function grd.lfo_keys(x, y, z, offset)
       if x == 1 then
         local action = lfo[lfo_focus].enabled == 1 and "lfo_off" or "lfo_on"
         if lfo_launch > 0 and action == "lfo_on" then
-          local beat_sync = lfo_launch == 2 and 4 or 1
+          local beat_sync = lfo_launch == 2 and bar_val or 1
           clock.run(function()
             clock.sync(beat_sync)
             local e = {t = eLFO, i = lfo_focus, action = action , sync = true} event(e)
@@ -696,7 +657,6 @@ function grd.lfo_keys(x, y, z, offset)
     end
   end
   dirtyscreen = true
-  dirtygrid = true
 end
 
 function grd.lfo_draw(offset)
@@ -746,7 +706,6 @@ function grd.env_keys(x, y, z, offset)
     end
   end
   dirtyscreen = true
-  dirtygrid = true
 end
 
 function grd.env_draw(offset)
@@ -802,7 +761,6 @@ function grd.pattern_keys(x, y, z, offset)
     end
   end
   dirtyscreen = true
-  dirtygrid = true
 end
 
 function grd.pattern_draw(offset)
@@ -929,7 +887,6 @@ function grd.tape_keys(x, y, z, offset)
     end
   end
   dirtyscreen = true
-  dirtygrid = true
 end
 
 function grd.tape_draw(offset)
