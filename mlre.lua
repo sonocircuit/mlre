@@ -14,9 +14,7 @@
 --
 
 -----------------------------------------------------------------------
--- TODO: test snapshot q
--- TODO: simplify pattern time handling / limit recording to one pattern at a time
--- TODO: test silent load and new features
+-- FIXME: click during thresh rec -> ask ezra about rec head offset implementation, write test script
 -----------------------------------------------------------------------
 
 norns.version.required = 231114
@@ -25,27 +23,24 @@ m = midi.connect()
 a = arc.connect()
 g = grid.connect()
 
-mu = require 'musicutil'
-textentry = require 'textentry' 
-fileselect = require 'fileselect'
-lattice = require 'lattice'
+local mu = require 'musicutil'
+local lattice = require 'lattice'
 
-ui = include 'lib/ui_mlre'
-grd = include 'lib/grid_mlre'
-_lfo = include 'lib/lfo_mlre'
-scales = include 'lib/scales_mlre'
-pattern_time = include 'lib/pattern_time_mlre'
+local ui = include 'lib/ui_mlre'
+local grd = include 'lib/grid_mlre'
+local _lfo = include 'lib/lfo_mlre'
+local scales = include 'lib/scales_mlre'
+local _pattern = include 'lib/pattern_time_mlre'
 
 
 --------- user variables --------
-pset_load = false -- if true default pset loaded at launch
-rotate_grid = false -- zero only. if true will rotate 90° CW
+local pset_load = false -- if true default pset loaded at launch
+local rotate_grid = false -- zero only. if true will rotate 90° CW
 autofocus = true -- zero only. if true norns screen automatically changes to last used grid layout
 
 
 --------- other variables --------
-mlre_path = _path.audio .. "mlre/"
-current_path = _path.audio
+local mlre_path = _path.audio .. "mlre/"
 
 -- constants
 GRID_SIZE = 0
@@ -56,7 +51,7 @@ MAX_TAPELENGTH = 57
 DEFAULT_SPLICELEN = 4
 DEFAULT_BEATNUM = 4
 
--- ui
+-- ui variables
 main_pageNum = 1
 lfo_pageNum = 1
 env_pageNum = 1
@@ -66,84 +61,20 @@ lfo_focus = 1
 env_focus = 1
 pattern_focus = 1
 held_focus = 0
-mutes_active = false
 
 alt = 0
 mod = 0
 shift = 0
+mutes_active = false
 cutview_hold = false
+keyquant_edit = false
 
 lfo_trksel = 1
 lfo_dstview = 0
 lfo_dstsel = 1
 
--- viz variables 
-pulse_key_fast = 8
-pulse_key_mid = 12
-pulse_key_slow = 12
-pulse_bar = false
-pulse_beat = false
-
-view_message = ""
-
--- oneshot recording variables
-amp_threshold = 1
-armed_track = 1
-oneshot_rec = false
-transport_run = false
-autolength = false
-loop_pos = 1
-rec_dur = 0
-
--- options variables
 stop_all_active = true
 macro_slot_mode = 1
-loading_pset = false
-current_scale = 1
-autorand_at_cycle = false
-rnd_stepcount = 16
-
--- arc variables
-arc_pageNum = 1
-arc_is = false
-enc2_wait = false
-arc_off = 0
-arc_inc1 = 0
-arc_inc2 = 0
-arc_inc3 = 0
-arc_inc4 = 0
-arc_inc5 = 0
-arc_render = 0
-arc_lfo_focus = 1
-arc_track_focus = 1
-arc_splice_focus = 1
-scrub_sens = 100
-tau = math.pi * 2
-
--- main page variables
-main_page_params_l = {"vol", "rec", "cutoff", "filter_type", "detune","rate_slew", "play_mode", "reset_active"}
-main_page_params_r = {"pan", "dub", "filter_q", "post_dry", "transpose", "level_slew", "start_launch", "reset_count"}
-main_page_names_l = {"volume", "rec   level", "cutoff", "filter   type", "detune", "rate   slew", "play   mode", "track   reset"}
-main_page_names_r = {"pan", "dub   level", "filter   q", "dry   level", "transpose", "level   slew", "track   launch", "reset   count"}
-
- -- lfo page variables
-lfo_rate_params = {"lfo_clocked_lfo_", "lfo_free_lfo_"}
-lfo_page_params_l = {"lfo_depth_lfo_", "lfo_shape_lfo_", "lfo_mode_lfo_"}
-lfo_page_params_r = {"lfo_offset_lfo_", "lfo_phase_lfo_", "lfo_free_lfo_"}
-lfo_page_names_l = {"depth", "shape", "mode"}
-lfo_page_names_r = {"offset", "phase", "rate"}
-
--- pattern page variables
-patterns_page_params_l = {"patterns_meter", "patterns_countin"}
-patterns_page_params_r = {"patterns_barnum", "patterns_playback"}
-patterns_page_names_l = {"meter", "launch"}
-patterns_page_names_r = {"length", "play   mode"}
-
--- tape page variables
-tape_actions = {"populate", "load", "clear", "save", "copy", "paste"}
-tape_action = 2
-copy_track = nil
-copy_splice = nil
 
 view_splice_info = false
 view_track_send = false
@@ -158,39 +89,57 @@ batchload_path = ""
 batchload_track = 1
 batchload_numfiles = 8
 
+-- arc variables
+arc_pageNum = 1
+arc_is = false
+enc2_wait = false
+arc_off = 0
+scrub_sens = 100
+tau = math.pi * 2
+
+-- viz variables 
+pulse_key_fast = 8
+pulse_key_mid = 12
+pulse_key_slow = 12
+pulse_bar = false
+pulse_beat = false
+
+view_message = ""
+
+-- oneshot recording variables
+local amp_threshold = 1
+local armed_track = 1
+local oneshot_rec = false
+local transport_run = false
+local autolength = false
+local loop_pos = 1
+local rec_dur = 0
+
+-- misc variables
+local current_scale = 1
+local current_tempo = 90
+local autorand_at_cycle = false
+local rnd_stepcount = 16
+
 -- silent load variables
-loadop = {}
-loadop.params = {"sync", "tempo", "transition", "scale", "loops", "reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "route_t5", "route_t6"}
+local loadop = {}
+loadop.params = {"sync", "tempo", "transition", "scale", "quant_rate", "time_signature", "loops", "reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "route_t5", "route_t6"}
 loadop.set_param = {"reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state"}
 loadop.param_default = {1, 4, 0, 0.5, 0.5, 0, 8, 1}
 loadop.set_tab = {"rev", "speed", "sel", "fade", "route_t5", "route_t6"}
 loadop.active = false
 
--- pattern page variables and tables
-pattern_playback = {"loop", "oneshot"}
-pattern_countin = {"beat", "bar"}
-pattern_meter = {"2/4", "3/4", "4/4", "5/4", "6/4", "7/4", "9/4", "11/4"}
-pattern_meter_val = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
+-- pattern page variables
+local pattern_meter = {"2/4", "3/4", "4/4", "5/4", "6/4", "7/4", "9/4", "11/4"}
+local pattern_meter_val = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
 
--- key quantization variables and tables
-quantize_events = {}
+-- key quantization variables
+local quantize_events = {}
+local event_q_options = {"off", "1/32", "1/24", "3/64", "1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4", "1/3", "3/8", "1/2"}
+local event_q_values = {1/4, 1/32, 1/24, 3/64, 1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2}
+local q_rate = 1/4
 quantizing = false
-quant_options = {"1bar", "1/2", "1/3", "1/4", "1/6", "1/8", "1/16", "1/32"}
-quant_values = {1, 1/2, 1/3, 1/4, 1/6, 1/8, 1/16, 1/32}
-q_rate = 1/4
-
--- key logic
-held = {}
-heldmax = {}
-first = {}
-second = {}
-for i = 1, 8 do
-  held[i] = 0
-  heldmax[i] = 0
-  first[i] = 0
-  second[i] = 0
-end
-
+bar_val = 4
 
 --------------------- EVENTS -----------------------
 
@@ -210,11 +159,12 @@ eGATEOFF = 12
 eSPLICE = 13
 eROUTE = 14
 eLFO = 15
+eREC = 16
 
 -- event funtions
 function event_record(e)
   for i = 1, 8 do
-    pattern[i]:watch(e) -- TODO: make sure only one pattern at a time can be recorded. and remove loop.
+    pattern[i]:watch(e)
   end
   recall_watch(e)
 end
@@ -230,11 +180,11 @@ function event(e)
   end
 end
 
-function q_clock()
+function quantizer()
   while true do
     clock.sync(q_rate)
     if #quantize_events > 0 then
-      for _, e in ipairs(quantize_events) do -- NOTE: changed from pairs to ipairs to ensure the correct sequence. TODO: test and compare
+      for _, e in ipairs(quantize_events) do
         if e.t ~= ePATTERN then event_record(e) end
         event_exec(e)
       end
@@ -278,7 +228,6 @@ function event_exec(e)
       set_level(e.i)
       toggle_transport()
     end
-    dirtygrid = true
   elseif e.t == eSTOP then
     stop_track(e.i)
   elseif e.t == eSTART then
@@ -288,7 +237,6 @@ function event_exec(e)
     set_rec(e.i)
     set_level(e.i)
     toggle_transport()
-    dirtygrid = true
   elseif e.t == eLOOP then
     set_loop(e.i, e.loop_start, e.loop_end)
   elseif e.t == eUNLOOP then
@@ -296,19 +244,15 @@ function event_exec(e)
   elseif e.t == eSPEED then
     track[e.i].speed = e.speed
     update_rate(e.i)
-    grid_page(vREC)
   elseif e.t == eREV then
     track[e.i].rev = e.rev
     update_rate(e.i)
-    dirtygrid = true
   elseif e.t == eMUTE then
     track[e.i].mute = e.mute
     set_level(e.i)
     get_mute_state()
   elseif e.t == eTRSP then
     params:set(e.i.."transpose", e.val)
-    grid_page(vCUT)
-    grid_page(vTRSP)
   elseif e.t == eGATEON then
     if env[e.i].active then
       env_gate_on(e.i)
@@ -322,7 +266,6 @@ function event_exec(e)
     track[e.i].splice_focus = e.active
     set_clip(e.i)
     render_splice()
-    dirtygrid = true
   elseif e.t == eROUTE then
     if e.ch == 5 then
       track[e.i].route_t5 = e.route
@@ -330,13 +273,15 @@ function event_exec(e)
       track[e.i].route_t6 = e.route
     end
     set_track_sends(e.i)
-    grid_page(vTAPE)
   elseif e.t == eLFO then
     if e.action == "lfo_on" then
       params:set("lfo_lfo_"..e.i, 2)
     elseif e.action == "lfo_off" then
       params:set("lfo_lfo_"..e.i, 1)
     end
+  elseif e.t == eREC then
+    track[e.i].rec = e.rec
+    set_rec(e.i)
   elseif e.t == ePATTERN then
     if e.action == "stop" then
       pattern[e.i]:stop()
@@ -344,22 +289,9 @@ function event_exec(e)
       pattern[e.i]:start()
     elseif e.action == "rec_stop" then
       pattern[e.i]:rec_stop()
-      pattern_rec = false
-    elseif e.action == "rec_start" then
-      pattern[e.i]:rec_start()
-      pattern_rec = true
-    elseif e.action == "clear" then
-      pattern[e.i]:clear()
-    elseif e.action == "overdub_on" then
-      pattern[e.i]:set_overdub(1)
-      pattern_rec = true
-    elseif e.action == "overdub_off" then
-      pattern[e.i]:set_overdub(0)
-      pattern_rec = false
-    elseif e.action == "overdub_undo" then
-      pattern[e.i]:set_overdub(-1)
     end
   end
+  dirtygrid = true
 end
 
 -- patterns and recall
@@ -367,7 +299,7 @@ patterns_only = false
 pattern_rec = false
 pattern = {}
 for i = 1, 8 do
-  pattern[i] = pattern_time.new("pattern "..i)
+  pattern[i] = _pattern.new("pattern "..i)
   pattern[i].process = event_exec
 end
 
@@ -416,13 +348,168 @@ function randomize(i)
     loop_event(i, lstart, lend)
   end
   if params:get("rnd_speed") == 2 then
-    local e = {} e.t = eSPEED e.i = i e.speed = math.random(- params:get("rnd_loct"), params:get("rnd_uoct"))
+    local e = {} e.t = eSPEED e.i = i e.speed = math.random(-params:get("rnd_loct"), params:get("rnd_uoct"))
     event(e)
   end
   if params:get("rnd_cut") == 2 then
     params:set(i.. "cutoff", math.random(params:get("rnd_lcut"), params:get("rnd_ucut")) )
   end
   track[i].step_count = 0
+end
+
+--------------------- SNAPSHOTS -----------------------
+local snap_flip_track = false
+local snap_set_rec = false
+local snap_set_mute = false
+local snap_set_rev = false
+local snap_set_speed = false
+local snap_set_trsp = false
+local snap_set_loop = false
+local snap_set_splice = false
+local snap_play_state = false
+local snap_cut_pos = false
+local snap_reset_pos = false
+local snap_launch = 1
+
+snapshot_mode = false
+
+snap = {}
+for i = 1, 8 do -- 8 snapshot slots
+  snap[i] = {}
+  snap[i].data = false
+  snap[i].active = false
+  snap[i].queued = false
+  snap[i].rec = {}
+  snap[i].play = {}
+  snap[i].mute = {}
+  snap[i].loop = {}
+  snap[i].loop_start = {}
+  snap[i].loop_end = {}
+  snap[i].cut = {}
+  snap[i].speed = {}
+  snap[i].rev = {}
+  snap[i].transpose_val = {}
+  snap[i].active_splice = {}
+  snap[i].route_t5 = {}
+  snap[i].route_t6 = {}
+  for j = 1, 6 do -- 6 tracks
+    snap[i].rec[j] = 0
+    snap[i].play[j] = 0
+    snap[i].mute[j] = 0
+    snap[i].loop[j] = 0
+    snap[i].loop_start[j] = 1
+    snap[i].loop_end[j] = 16
+    snap[i].cut[j] = 1
+    snap[i].speed[j] = 0
+    snap[i].rev[j] = 0
+    snap[i].transpose_val[j] = 8
+    snap[i].active_splice[j] = 1
+    snap[i].route_t5[j] = 0
+    snap[i].route_t6[j] = 0
+  end
+end
+
+function save_snapshot(n)
+  for i = 1, 6 do
+    softcut.query_position(i)
+    snap[n].rec[i] = track[i].rec
+    snap[n].play[i] = track[i].play
+    snap[n].mute[i] = track[i].mute
+    snap[n].loop[i] = track[i].loop
+    snap[n].loop_start[i] = track[i].loop_start
+    snap[n].loop_end[i] = track[i].loop_end
+    snap[n].speed[i] = track[i].speed
+    snap[n].rev[i] = track[i].rev
+    snap[n].transpose_val[i] = params:get(i.."transpose")
+    snap[n].active_splice[i] = track[i].splice_active
+    snap[n].route_t5[i] = track[i].route_t5
+    snap[n].route_t6[i] = track[i].route_t6
+    clock.run(function()
+      clock.sleep(0.05) -- give get_pos() some time
+      snap[n].cut[i] = track[i].cut
+    end)
+  end
+  snap[n].data = true
+end
+
+function load_snapshots(snapshot, target)
+  if target == "all" then
+    for track = 1, 6 do
+      load_snapshot(snapshot, track)
+    end
+  else
+    load_snapshot(snapshot, target)
+  end
+end
+
+function load_snapshot(n, i)
+  local beat_sync = snap_launch == 1 and (quantizing and q_rate or nil) or (snap_launch == 3 and bar_val or 1)
+  if beat_sync ~= nil then
+    clock.run(function()
+      clock.sync(beat_sync)
+      recall_snapshot(n, i, true)
+    end)
+  else
+    recall_snapshot(n, i)
+  end
+end
+
+function recall_snapshot(n, i, sync)
+  -- flip the unflipped
+  if snap_flip_track and not track[i].loaded then
+    load_track_tape(i)
+  end
+  -- load se snap
+  if snap_set_rec then
+    local e = {} e.t = eREC e.i = i e.rec = snap[n].rec[i] e.sync = sync event(e)
+  end
+  if snap_set_mute then
+    local e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] e.sync = sync event(e)
+  end
+  if snap_set_rev then
+    local e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] e.sync = sync event(e)
+  end
+  if snap_set_speed then
+    local e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] e.sync = sync event(e)
+  end
+  if snap_set_trsp then
+    local e = {} e.t = eTRSP e.i = i e.val = snap[n].transpose_val[i] e.sync = sync event(e)
+  end
+  if snap_set_route and snap[n].route_t5[i] ~= nil then
+    local e = {} e.t = eROUTE e.i = i e.ch = 5 e.route = snap[n].route_t5[i] event(e)
+    local e = {} e.t = eROUTE e.i = i e.ch = 6 e.route = snap[n].route_t6[i] event(e)
+  end
+  if snap_set_splice then
+    if snap[n].active_splice[i] ~= track[i].splice_active then
+      local e = {} e.t = eSPLICE e.i = i e.active = snap[n].active_splice[i] e.sync = sync event(e)
+      track[i].splice_focus = snap[n].active_splice[i]
+    end
+  end
+  if snap_set_loop then
+    if snap[n].loop[i] == 1 then
+      loop_event(i, snap[n].loop_start[i], snap[n].loop_end[i], sync)
+    elseif snap[n].loop[i] == 0 then
+      local e = {} e.t = eUNLOOP e.i = i e.sync = sync event(e)
+    end
+  end
+  if snap_play_state then
+    if snap[n].play[i] == 0 then
+      local e = {} e.t = eSTOP e.i = i e.sync = sync event(e)
+    else
+      if snap_cut_pos then
+        local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = sync} event(e)
+      elseif snap_reset_pos then
+        local cut = track[i].rev == 0 and clip[i].s or clip[i].e
+        local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
+        local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
+        local loop = track[i].rev == 0 and s or e
+        local pos = track[i].loop == 0 and cut or loop
+        local e = {t = eSTART, i = i, pos = pos, sync = sync} event(e)
+      elseif track[i].play == 0 then
+        local e = {t = eSTART, i = i, sync = sync} event(e)
+      end
+    end
+  end
 end
 
 --------------------- TRACK, TAPE AND CLIPS -----------------------
@@ -607,9 +694,6 @@ end
 
 function clear_buffers() -- clear both buffers
   softcut.buffer_clear()
-  for i = 1, 6 do
-    track[i].loop = 0
-  end
   render_splice()
   show_message("buffers    cleared")
   dirtygrid = true
@@ -677,140 +761,11 @@ function recalc_splices() -- called when tempo changes
 end
 
 
---------------------- SNAPSHOTS -----------------------
-
-snapshot_last = 0
-snapshot_launch = 0
-snapshot_launch_modes = {"free", "beat", "bar"}
-
-snapshot_mode = false
-snapshot_playback = false
-snapshot_cut = false
-snapshot_reset = false
-snapshot_splice = false
-
-snap = {}
-for i = 1, 8 do -- 8 snapshot slots
-  snap[i] = {}
-  snap[i].data = false
-  snap[i].active = false
-  snap[i].queued = false
-  snap[i].play = {}
-  snap[i].mute = {}
-  snap[i].loop = {}
-  snap[i].loop_start = {}
-  snap[i].loop_end = {}
-  snap[i].cut = {}
-  snap[i].speed = {}
-  snap[i].rev = {}
-  snap[i].transpose_val = {}
-  snap[i].active_splice = {}
-  for j = 1, 6 do -- 6 tracks
-    snap[i].play[j] = 0
-    snap[i].mute[j] = 0
-    snap[i].loop[j] = 0
-    snap[i].loop_start[j] = 1
-    snap[i].loop_end[j] = 16
-    snap[i].cut[j] = 1
-    snap[i].speed[j] = 0
-    snap[i].rev[j] = 0
-    snap[i].transpose_val[j] = 8
-    snap[i].active_splice[j] = 1
-  end
-end
-
-function save_snapshot(n)
-  for i = 1, 6 do
-    softcut.query_position(i)
-    snap[n].play[i] = track[i].play
-    snap[n].mute[i] = track[i].mute
-    snap[n].loop[i] = track[i].loop
-    snap[n].loop_start[i] = track[i].loop_start
-    snap[n].loop_end[i] = track[i].loop_end
-    snap[n].speed[i] = track[i].speed
-    snap[n].rev[i] = track[i].rev
-    snap[n].transpose_val[i] = params:get(i.."transpose")
-    snap[n].active_splice[i] = track[i].splice_active
-    clock.run(function()
-      clock.sleep(0.05) -- give get_pos() some time
-      snap[n].cut[i] = track[i].cut
-    end)
-  end
-  snap[n].data = true
-end
-
-function load_snapshots(snapshot)
-  for track = 1, 6 do
-    load_snapshot(snapshot, track)
-  end
-end
-
-function load_snapshot(n, i)
-  local sync = snapshot_launch == 1 and (quantizing and q_rate or nil) or (snapshot_launch == 3 and 4 or 1)
-  if sync ~= nil then
-    clock.run(function()
-      clock.sync(sync)
-      recall_snapshot(n, i, true)
-    end)
-  else
-    recall_snapshot(n, i)
-  end
-end
-
--- TODO: figure out best logic for loop and playback conditions.
---       when UNLOOP then playback position is missed occasionally.
-function recall_snapshot(n, i, sync) 
-  -- flip the unflipped
-  if not track[i].loaded then
-    load_track_tape(i)
-  end
-  -- load se snap
-  local e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] e.sync = sync event(e)
-  local e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] e.sync = sync event(e)
-  local e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] e.sync = sync event(e)
-  local e = {} e.t = eTRSP e.i = i e.val = snap[n].transpose_val[i] e.sync = sync event(e)
-
-  if snap[n].loop[i] == 1 then
-    loop_event(i, snap[n].loop_start[i], snap[n].loop_end[i], sync)
-  elseif snap[n].loop[i] == 0 then
-    local e = {} e.t = eUNLOOP e.i = i e.sync = sync event(e)
-  end
-  
-  if snapshot_splice then
-    if snap[n].active_splice[i] ~= track[i].splice_active then
-      local e = {} e.t = eSPLICE e.i = i e.active = snap[n].active_splice[i] e.sync = sync event(e)
-      track[i].splice_focus = snap[n].active_splice[i]
-    end
-  end
-  
-  if snapshot_playback then
-    if snap[n].play[i] == 0 then
-      local e = {} e.t = eSTOP e.i = i e.sync = sync event(e)
-    else
-      if snapshot_cut then
-        local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = sync} event(e)
-      elseif snapshot_reset then
-        local cut = track[i].rev == 0 and clip[i].s or clip[i].e
-        local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
-        local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
-        local loop = track[i].rev == 0 and s or e
-        local pos = track[i].loop == 0 and cut or loop
-        local e = {t = eSTART, i = i, pos = pos, sync = sync} event(e)
-      elseif track[i].play == 0 then
-        local e = {t = eSTART, i = i, sync = sync} event(e)
-      end
-    end
-  end
-end
-
-
 --------------------- SOFTCUT FUNCTIONS -----------------------
 
-function toggle_rec(i) -- toggle recording and trigger chop function
+function toggle_rec(i)
   track[i].rec = 1 - track[i].rec
-  set_rec(i)
-  chop(i)
-  grid_page(vREC)
+  local e = {} e.t = eREC e.i = i e.rec = track[i].rec event(e)
 end
 
 function set_rec(i) -- set softcut rec and pre levels
@@ -977,7 +932,9 @@ function phase_poll(i, pos)
   track[i].pos_abs = pos -- absoulute position on buffer
   track[i].pos_hi_res = util.clamp(a_pos + 1 % 64, 1, 64) -- fine mesh for arc
   track[i].pos_lo_res = util.clamp(g_pos + 1 % 16, 1, 16) -- coarse mesh for grid
+  -- if playing do stuff
   if track[i].play == 1 then
+    -- set positions
     if track[i].pos_lo_res ~= track[i].pos_grid then
       track[i].pos_grid = track[i].pos_lo_res
     end
@@ -1000,31 +957,21 @@ function phase_poll(i, pos)
       dirtygrid = true
     end
     page_redraw(vTAPE)
-  end
-  -- oneshot play_mode
-  if track[i].play_mode == 2 and track[i].loop == 0 and track[i].play == 1 then
-    if track[i].rev == 0 then
-      if track[i].pos_hi_res == 64 then
-        stop_track(i)
-      end
-    else
-      if track[i].pos_hi_res == 1 then
+    -- oneshot play_mode
+    if track[i].play_mode == 2 and track[i].loop == 0 then
+      local limit = track[i].rev == 0 and 64 or 1
+      if track[i].pos_hi_res == limit then
         stop_track(i)
       end
     end
-  end
-  -- randomize at cycle
-  if autorand_at_cycle and track[i].sel == 1 and not oneshot_rec then
-    if track[i].play == 1 then
+    -- randomize at cycle
+    if autorand_at_cycle and track[i].sel == 1 and not oneshot_rec then
       track[i].step_count = track[i].step_count + 1
       if track[i].step_count > rnd_stepcount * 4 then
         randomize(i)
       end
     end
-  end
-  -- track 2 trigger
-  if track[i].play == 1 then
-    -- rec @step
+    -- rec @step / track 2 trigger
     if trig[i].rec_step > 0 then
       if track[i].rev == 0 then
         if track[i].pos_hi_res == trig[i].rec_step * 4 - 3 then
@@ -1036,7 +983,7 @@ function phase_poll(i, pos)
         end
       end
     end
-    -- trig @step mode
+    -- trig @step mode / track 2 trigger
     if trig[i].step > 0 then
       if track[i].rev == 0 then
         if track[i].pos_hi_res == trig[i].step * 4 - 3 then
@@ -1048,7 +995,7 @@ function phase_poll(i, pos)
         end
       end
     end
-    -- trig @count mode
+    -- trig @count mode / track 2 trigger
     if trig[i].count > 0 then
       trig[i].tick = trig[i].tick + 1 -- count steps
       if trig[i].tick >= trig[i].count * 4 then
@@ -1116,7 +1063,7 @@ end
 
 
 --------------------- SCALE AND TRANSPOSITION -----------------------
-function set_scale(option) -- set scale id, thanks zebra
+function set_scale(option) -- set scale id, thanks ezra
   current_scale = option
   for i = 1, 6 do
     local p = params:lookup_param(i.."transpose")
@@ -1145,13 +1092,13 @@ function toggle_playback(i)
       local e = {t = eSTART, i = i} event(e)
     else
       clock.run(function()
-        local beats = track[i].start_launch == 2 and 1 or 4
+        local beat_sync = track[i].start_launch == 2 and 1 or bar_val
         local cut = track[i].rev == 0 and clip[i].s or clip[i].e
         local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
         local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
         local loop = track[i].rev == 0 and s or e
         local pos = track[i].loop == 0 and cut or loop
-        clock.sync(beats)
+        clock.sync(beat_sync)
         local e = {t = eSTART, i = i, pos = pos, sync = true} event(e)
       end)
     end
@@ -1221,113 +1168,114 @@ end
 
 --------------------- ONESHOT RECORDING -----------------------
 
-function arm_thresh_rec(i) -- start poll if oneshot == 1
-  if track[i].oneshot == 1 then
-    amp_in[1]:start()
-    amp_in[2]:start()
+function arm_thresh_rec(i)
+  if oneshot_rec then
+    chop(i)
   else
-    amp_in[1]:stop()
-    amp_in[2]:stop()
-  end
-  if track[i].play == 0 then
-    if track[i].rev == 0 then
-      track[i].pos_arc = 1
-      track[i].pos_grid = 1
-    else
-      track[i].pos_arc = 64
-      track[i].pos_grid = 16
-    end
-  end
-end
-
-function rec_at_threshold() -- start rec when threshold is reached
-  if track[armed_track].oneshot == 1 then
-    track[armed_track].rec = 1
-    set_rec(armed_track)
-    rec_dur = 0
-    if track[armed_track].play == 0 then
-      if track[armed_track].rev == 0 then
-        local e = {} e.t = eCUT e.i = armed_track e.pos = 0 event(e)
-      elseif track[armed_track].rev == 1 then
-        local e = {} e.t = eCUT e.i = armed_track e.pos = 15 event(e)
+    track[i].oneshot = 1 - track[i].oneshot
+    for n = 1, 6 do
+      if n ~= i then
+        track[n].oneshot = 0
       end
     end
-  end
-end
-
-function update_dur(i) -- calculate duration of length when oneshot == 1
-  oneshot_rec = false
-  if track[i].oneshot == 1 then
-    if track[i].tempo_map == 2 then
-      track[i].dur = ((beat_sec * clip[i].l) / math.pow(2, track[i].speed + track[i].transpose + track[i].detune)) * (clip[i].bpm / 60)
+    if track[i].oneshot == 1 then
+      armed_track = i
+      -- calc duration
+      if track[i].tempo_map == 2 then
+        track[i].dur = ((beat_sec * clip[i].l) / math.pow(2, track[i].speed + track[i].transpose + track[i].detune)) * (clip[i].bpm / 60)
+      else
+        track[i].dur = clip[i].l / math.pow(2, track[i].speed + track[i].transpose + track[i].detune)
+      end
+      if track[i].loop == 1 and track[i].play == 1 then
+        local len = track[i].loop_end - track[i].loop_start + 1
+        track[i].dur = (track[i].dur / 16) * len
+      end
+      -- set autolength
+      if alt == 1 then
+        local e = {} e.t = eSTOP e.i = i event(e)
+        autolength = true
+      else
+        autolength = false
+      end
+      -- set key position (purly cosmetic)
+      if track[i].play == 0 then
+        track[i].pos_arc =  track[i].rev == 0 and 1 or 64
+        track[i].pos_grid = track[i].rev == 0 and 1 or 16
+      end
+      amp_in[1]:start()
+      amp_in[2]:start()
     else
-      track[i].dur = clip[i].l / math.pow(2, track[i].speed + track[i].transpose + track[i].detune)
-    end
-    if track[i].loop == 1 and track[i].play == 1 then
-      local len = track[i].loop_end - track[i].loop_start + 1
-      track[i].dur = (track[i].dur / 16) * len
+      amp_in[1]:stop()
+      amp_in[2]:stop()
     end
   end
 end
 
-function oneshot(dur) -- called by clock coroutine at threshold
-  clock.sleep(dur) -- length of rec time specified by 'track[i].dur'
-  if track[armed_track].oneshot == 1 then
-    track[armed_track].rec = 0
-    track[armed_track].oneshot = 0
+function rec_at_threshold(i)
+  loop_pos = track[i].pos_grid
+  rec_dur = 0
+  if track[i].play == 0 then
+    if track[i].loop == 1 then
+      clear_loop(i)
+    end
+    local pos = track[i].rev == 0 and 0 or 15
+    local cut = (pos / 16) * clip[i].l + clip[i].s
+    local q = track[i].rev == 1 and clip[i].l / 16 or 0
+    softcut.position(i, cut + q)
+    track[i].play = 1
+    track[i].beat_count = 0
+    set_level(i)
+    toggle_transport()
   end
+  track[i].rec = 1
+  set_rec(i)
+  clock.run(oneshot_timer, track[armed_track].dur)
+  tracktimer:start()
+  amp_in[1]:stop()
+  amp_in[2]:stop()
+  oneshot_rec = true
+  dirtygrid = true
+end
+
+function oneshot_timer(dur)
+  clock.sleep(dur)
+  track[armed_track].rec = 0
+  track[armed_track].oneshot = 0
   set_rec(armed_track)
   tracktimer:stop()
   oneshot_rec = false
 end
 
-function count_length()
-  rec_dur = rec_dur + 1
-end
-
-function loop_point() -- set loop start point (loop_pos) for chop function
-  if track[armed_track].oneshot == 1 then
-    if track[armed_track].rev == 1 then
-      if track[armed_track].pos_grid == 16 then
-        loop_pos = 16
-      else
-        loop_pos = track[armed_track].pos_grid
-      end
-    else
-      if track[armed_track].pos_grid == 1 then
-        loop_pos = 1
-      else
-        loop_pos = track[armed_track].pos_grid
-      end
-    end
-  end
-end
-
-function chop(i) -- called when rec key is pressed
+function chop(i)
   if oneshot_rec == true and track[i].oneshot == 1 then
-    if not autolength then -- set-loop mode
+    if autolength then
+      -- get length of recording and stop timer
+      tracktimer:stop()
+      local length = rec_dur / 100
+      -- set splice markers
+      local beat_num = get_beatnum(length)
+      local s = track[i].splice_active
+      tp[i].splice[s].l = length
+      tp[i].splice[s].e = tp[i].splice[s].s + length
+      tp[i].splice[s].init_start = tp[i].splice[s].s
+      tp[i].splice[s].init_len = length
+      tp[i].splice[s].beatnum = beat_num
+      tp[i].splice[s].bpm = 60 / length * beat_num
+      -- set clip
+      set_clip(i)
+      set_info(i, s)
+      track[i].oneshot = 0
+      autolength = false
+    else
+      -- set loop points
       local lstart = math.min(loop_pos, track[i].pos_grid)
       local lend = math.max(loop_pos, track[i].pos_grid)
       loop_event(i, lstart, lend)
       track[i].oneshot = 0
-    else -- autolength mode
-      -- get length of recording and stop timer
-      local length = rec_dur / 100
-      local beat_num = get_beatnum(length)
-      tracktimer:stop()
-      -- set splice markers
-      tp[i].splice[track[i].splice_active].l = length
-      tp[i].splice[track[i].splice_active].e = tp[i].splice[track[i].splice_active].s + length
-      tp[i].splice[track[i].splice_active].init_start = tp[i].splice[track[i].splice_active].s
-      tp[i].splice[track[i].splice_active].init_len = length
-      tp[i].splice[track[i].splice_active].beatnum = beat_num
-      tp[i].splice[track[i].splice_active].bpm = 60 / length * beat_num
-      -- set clip
-      set_clip(i)
-      set_info(i, track[i].splice_active)
-      track[i].oneshot = 0
-      autolength = false
     end
+    -- stop rec
+    track[i].rec = 0
+    set_rec(i)
     oneshot_rec = false
   end
 end
@@ -1720,7 +1668,7 @@ end
 
 function ledpulse_bar()
   while true do
-    clock.sync(4)
+    clock.sync(bar_val)
     pulse_bar = true
     dirtygrid = true
     pulse_key_mid = 12
@@ -1767,15 +1715,15 @@ end
 
 function tempo_transition(beats, dest_tempo)
   local delta_bpm = dest_tempo - current_tempo
-  local sync = math.abs(delta_bpm) / beats
+  local beat_sync = math.abs(delta_bpm) / beats
   if delta_bpm > 0 then
     while current_tempo < dest_tempo do
-      clock.sync(sync)
+      clock.sync(beat_sync)
       params:delta("clock_tempo", 1)
     end
   else
     while current_tempo > dest_tempo do
-      clock.sync(sync)
+      clock.sync(beat_sync)
       params:delta("clock_tempo", -1)
     end
   end
@@ -1805,7 +1753,6 @@ function fileload_callback(path, i)
     else
       print("not a sound file")
     end
-    --current_path = path:match("(.*[/])"):sub(1, -2)
   end
   screenredrawtimer:start()
   render_splice()
@@ -1974,8 +1921,16 @@ function load_patterns()
     snap[i].speed = {table.unpack(loaded_sesh_data[i].snap_speed)}
     snap[i].rev = {table.unpack(loaded_sesh_data[i].snap_rev)}
     snap[i].transpose_val = {table.unpack(loaded_sesh_data[i].snap_transpose_val)}
+    -- remove conditionals eventually ()
     if loaded_sesh_data[i].snap_active_splice ~= nil then
       snap[i].active_splice = {table.unpack(loaded_sesh_data[i].snap_active_splice)}
+    end
+    if loaded_sesh_data[i].snap_rec ~= nil then
+      snap[i].rec = {table.unpack(loaded_sesh_data[i].snap_rec)}
+    end
+    if loaded_sesh_data[i].snap_route_t5 ~= nil then
+      snap[i].route_t5 = {table.unpack(loaded_sesh_data[i].snap_route_t5)}
+      snap[i].route_t6 = {table.unpack(loaded_sesh_data[i].snap_route_t6)}
     end
   end
 end
@@ -2006,7 +1961,7 @@ function silent_load(number, pset_id)
   loaded_sesh_data = {}
   loaded_sesh_data = tab.load(norns.state.data.."sessions/"..number.."/"..pset_id.."_session.data")
   if loaded_sesh_data then
-    if loaded_sesh_data.newformat ~= nil then
+    if loaded_sesh_data.newerformat ~= nil then
       -- load audio to temp buffer
       softcut.buffer_read_mono(norns.state.data.."sessions/"..number.."/"..pset_id.."_buffer.wav", 0, 0, -1, 1, 2)
       -- load pattern, recall and snapshot data
@@ -2022,6 +1977,14 @@ function silent_load(number, pset_id)
       -- set scale
       if loadop.scale == 2 then
         params:set("scale", loaded_sesh_data.scale)
+      end
+      -- set quantization
+      if loadop.quant_rate == 2 then
+        params:set("quant_rate", loaded_sesh_data.quant_rate)
+      end
+      -- set time signature
+      if loadop.time_signature == 2 then
+        params:set("time_signature", loaded_sesh_data.time_signature)
       end
       -- flip load state and load stopped tracks
       loadop.active = true
@@ -2042,10 +2005,10 @@ function silent_load(number, pset_id)
 end
 
 function queue_track_tape(i)
-  local sync = loadop.sync == 1 and (quantizing and q_rate or nil) or (loadop.sync == 3 and 4 or 1)
-  if sync ~= nil then
+  local beat_sync = loadop.sync == 1 and (quantizing and q_rate or nil) or (loadop.sync == 3 and bar_val or 1)
+  if beat_sync ~= nil then
     clock.run(function()
-      clock.sync(sync)
+      clock.sync(beat_sync)
       load_track_tape(i)
     end)
   else
@@ -2156,7 +2119,7 @@ function init()
   params:set_action("scale", function(option) set_scale(option) end)
 
   -- macro params
-  params:add_group("macro_params", "macros", 6)
+  params:add_group("macro_params", "macros", 14)
   
   params:add_option("slot_assign", "macro slots", {"split", "patterns only", "recall only"}, 1)
   params:set_action("slot_assign", function(option) macro_slot_mode = option dirtygrid = true end)
@@ -2167,22 +2130,46 @@ function init()
   
   params:add_separator("snapshot_options", "snapshot options")
 
-  params:add_option("snapshot_launch", "launch", snapshot_launch_modes, 1)
-  params:set_action("snapshot_launch", function(mode) snapshot_launch = mode end)
+  params:add_option("snap_launch", "launch", {"manual", "beat", "bar"}, 1)
+  params:set_action("snap_launch", function(mode) snap_launch = mode end)
 
-  params:add_option("recall_playback_state", "playback", {"ignore", "state only", "state & pos", "state & pos reset"}, 1)
+  params:add_option("recall_playback_state", "playback", {"ignore", "state only", "state & pos", "state & reset"}, 1)
   params:set_action("recall_playback_state", function(x)
-    snapshot_playback = x > 1 and true or false
-    snapshot_cut = x == 3 and true or false
-    snapshot_reset = x == 4 and true or false
+    snap_play_state = x > 1 and true or false
+    snap_cut_pos = x == 3 and true or false
+    snap_reset_pos = x == 4 and true or false
     dirtygrid = true
   end)
+
+  params:add_option("recall_active_splice", "active splice", {"ignore", "recall"}, 2)
+  params:set_action("recall_active_splice", function(x) snap_set_splice = x == 2 and true or false end)
+
+  params:add_option("recall_loop_state", "loops", {"ignore", "recall"}, 2)
+  params:set_action("recall_loop_state", function(x) snap_set_loop = x == 2 and true or false end)
   
-  params:add_option("recall_active_splice", "active splice", {"ignore", "recall"}, 1)
-  params:set_action("recall_active_splice", function(x) snapshot_splice = x == 2 and true or false end)
+  params:add_option("recall_rec_state", "rec state", {"ignore", "recall"}, 2)
+  params:set_action("recall_rec_state", function(x) snap_set_rec = x == 2 and true or false end)
+
+  params:add_option("recall_mute_state", "mute state", {"ignore", "recall"}, 2)
+  params:set_action("recall_mute_state", function(x) snap_set_mute = x == 2 and true or false end)
+
+  params:add_option("recall_rev_state", "rev state", {"ignore", "recall"}, 2)
+  params:set_action("recall_rev_state", function(x) snap_set_rev = x == 2 and true or false end)
+
+  params:add_option("recall_speed_state", "speed", {"ignore", "recall"}, 2)
+  params:set_action("recall_speed_state", function(x) snap_set_speed = x == 2 and true or false end)
+
+  params:add_option("recall_transpose_state", "transposition", {"ignore", "recall"}, 2)
+  params:set_action("recall_transpose_state", function(x) snap_set_trsp = x == 2 and true or false end)
+
+  params:add_option("recall_set_route", "track sends", {"ignore", "recall"}, 2)
+  params:set_action("recall_set_route", function(x) snap_set_route = x == 2 and true or false end)
+
+  params:add_option("recall_track_flip", "load silent tracks", {"no", "yes"}, 2)
+  params:set_action("recall_track_flip", function(x) snap_flip_track = x == 2 and true or false end)
 
   -- rec params
-  params:add_group("rec_params", "recording", 3)
+  params:add_group("rec_params", "recording", 4)
   
   params:add_option("rec_source", "rec source", {"adc/eng", "adc/tape", "eng/tape", "adc/eng/tape"})
   params:set_action("rec_source", function(option) set_track_source(option) end)
@@ -2193,8 +2180,18 @@ function init()
   params:add_control("rec_slew", "rec slew", controlspec.new(1, 10, 'lin', 0, 1, "ms"))
   params:set_action("rec_slew", function(val) for i = 1, 6 do softcut.recpre_slew_time(i, val * 0.001) end end)
 
+  params:add_option("rec_filter", "pre rec filter", {"off", "on"}, 2)
+  params:set_action("rec_filter", function(option)
+    local dry_level = option == 1 and 1 or 0
+    local lp_level = option == 1 and 0 or 1
+    for i = 1, 6 do
+      softcut.pre_filter_dry(i, dry_level)
+      softcut.pre_filter_lp(i, lp_level)
+    end
+  end)
+
   -- silent load config
-  params:add_group("loadop_config", "silent load", 23)
+  params:add_group("loadop_config", "silent load", 25)
 
   params:add_binary("loadop_save", ">> save options", "trigger")
   params:set_action("loadop_save", function() save_loadop_config() end)
@@ -2218,13 +2215,21 @@ function init()
   params:set_action("loadop_transition", function(x) loadop.transition = x end)
   params:set_save("loadop_transition", false)
 
+  params:add_option("loadop_quant_rate", "key quantization", {"ignore", "load"}, 1)
+  params:set_action("loadop_quant_rate", function(x) loadop.quant_rate = x end)
+  params:set_save("loadop_quant_rate", false)
+
+  params:add_option("loadop_time_signature", "time signature", {"ignore", "load"}, 1)
+  params:set_action("loadop_time_signature", function(x) loadop.time_signature = x end)
+  params:set_save("loadop_time_signature", false)
+
   params:add_option("loadop_scale", "scale", {"ignore", "load"}, 1)
   params:set_action("loadop_scale", function(x) loadop.scale = x end)
   params:set_save("loadop_scale", false)
 
   params:add_separator("loadop_tracks", "track params")
 
-  params:add_option("loadop_sync", "sync track load", {"off", "beat", "bar"}, 1)
+  params:add_option("loadop_sync", "launch track load", {"manual", "beat", "bar"}, 1)
   params:set_action("loadop_sync", function(x) loadop.sync = x end)
   params:set_save("loadop_sync", false)
 
@@ -2312,11 +2317,14 @@ function init()
   params:add_option("midi_trnsp","midi transport", {"off", "send", "receive"}, 1)
 
   -- global track control
-  params:add_group("track_control", "track control", 60)
+  params:add_group("track_control", "track control", 61)
   params:add_separator("global_track_control", "global control")
   -- start all
   params:add_binary("start_all", "start all", "trigger", 0)
   params:set_action("start_all", function() startall() end)
+  -- restart all
+  params:add_binary("restart_all", "restart all", "trigger", 0)
+  params:set_action("restart_all", function() retrig() end)
   -- stop all
   params:add_binary("stop_all", "stop all", "trigger", 0)
   params:set_action("stop_all", function() stopall() end)
@@ -2421,8 +2429,8 @@ function init()
 
   params:add_separator("randomize_filter", "")
   params:add_option("rnd_cut", "cutoff", {"off", "on"}, 1)
-  params:add_control("rnd_ucut", "upper freq", controlspec.new(20, 18000, 'exp', 1, 18000, "Hz"))
-  params:add_control("rnd_lcut", "lower freq", controlspec.new(20, 18000, 'exp', 1, 20, "Hz"))
+  params:add_control("rnd_ucut", "upper freq", controlspec.new(20, 12000, 'exp', 1, 12000, "Hz"))
+  params:add_control("rnd_lcut", "lower freq", controlspec.new(20, 12000, 'exp', 1, 20, "Hz"))
 
   -- arc settings
   params:add_group("arc_params", "arc settings", 5)
@@ -2440,10 +2448,10 @@ function init()
   for i = 1, 8 do
     params:add_separator("patterns_params"..i, "pattern "..i)
 
-    params:add_option("patterns_playback"..i, "playback", pattern_playback, 1)
+    params:add_option("patterns_playback"..i, "playback", {"loop", "oneshot"}, 1)
     params:set_action("patterns_playback"..i, function(mode) pattern[i].loop = mode == 1 and true or false end)
 
-    params:add_option("patterns_countin"..i, "launch", pattern_countin, 2)
+    params:add_option("patterns_countin"..i, "launch", {"beat", "bar"}, 2)
     params:set_action("patterns_countin"..i, function(mode) pattern[i].count_in = mode == 1 and 1 or 4 dirtygrid = true end)
 
     params:add_option("patterns_meter"..i, "meter", pattern_meter, 3)
@@ -2476,7 +2484,7 @@ function init()
     params:add_option(i.."tempo_map_mode", "tempo-map", {"none", "resize", "repitch"}, 1)
     params:set_action(i.."tempo_map_mode", function(mode) track[i].tempo_map = mode - 1 set_tempo_map(i) grid_page(vREC) end)
     -- play lauch
-    params:add_option(i.."start_launch", "track launch", {"free", "beat", "bar"}, 1)
+    params:add_option(i.."start_launch", "track launch", {"manual", "beat", "bar"}, 1)
     params:set_action(i.."start_launch", function(option) track[i].start_launch = option page_redraw(vMAIN, 7) end)
     -- reset active
     params:add_option(i.."reset_active", "track reset", {"off", "on"}, 1)
@@ -2531,7 +2539,7 @@ function init()
     -- filter params
     params:add_separator("track_filter_params"..i, "track "..i.." filter")
     -- cutoff
-    params:add_control(i.."cutoff", "cutoff", controlspec.new(20, 18000, 'exp', 1, 18000, ""), function(param) return (round_form(param:get(), 1, " hz")) end)
+    params:add_control(i.."cutoff", "cutoff", controlspec.new(20, 12000, 'exp', 1, 12000, ""), function(param) return (round_form(param:get(), 1, " hz")) end)
     params:set_action(i.."cutoff", function(x) softcut.post_filter_fc(i, x) page_redraw(vMAIN, 3) end)
     -- filter q
     params:add_control(i.."filter_q", "filter q", controlspec.new(0.1, 4.0, 'exp', 0.01, 2.0, ""))
@@ -2621,7 +2629,7 @@ function init()
     params:hide(i.."input_options")
 
 
-    -- softcut settings
+    -- init softcut
     softcut.enable(i, 1)
     softcut.buffer(i, 1)
 
@@ -2630,13 +2638,11 @@ function init()
 
     softcut.level(i, 1)
     softcut.pan(i, 0)
-
     softcut.pre_level(i, 1)
     softcut.rec_level(i, 0)
 
     softcut.fade_time(i, FADE_TIME)
     softcut.level_slew_time(i, 0.1)
-    softcut.rate_slew_time(i, 0)
 
     softcut.loop_start(i, clip[i].s)
     softcut.loop_end(i, clip[i].e)
@@ -2652,9 +2658,25 @@ function init()
   -- lfos
   init_lfos()
   
-  -- params for quant division
-  params:add_option("quant_rate", "quantization rate", quant_options, 7)
-  params:set_action("quant_rate", function(d) q_rate = quant_values[d] * 4 end)
+  -- params for time signature and key quantization
+  params:add_number("time_signature", "time signature", 2, 9, 4, function(param) return param:get().."/4" end)
+  params:set_action("time_signature", function(val) bar_val = val end)
+  params:hide("time_signature")
+
+  params:add_option("quant_rate", "quantization rate", event_q_options, 1)
+  params:set_action("quant_rate", function(idx)
+    q_rate = event_q_values[idx] * 4
+    if idx == 1 then
+      if event_clock ~= nil then
+        clock.cancel(event_clock)
+        event_clock = nil
+      end
+      quantizing = false
+    else
+      event_clock = clock.run(quantizer)
+      quantizing = true
+    end
+  end)
   params:hide("quant_rate")
 
   -- pset callbacks
@@ -2667,9 +2689,11 @@ function init()
     softcut.buffer_write_mono(norns.state.data.."sessions/"..number.."/"..name.."_buffer.wav", 0, -1, 1)
     -- save data in one big table
     local sesh_data = {}
-    sesh_data.newformat = true
+    sesh_data.newerformat = true
     sesh_data.tempo = current_tempo
     sesh_data.scale = current_scale
+    sesh_data.quant_rate = params:get("quant_rate")
+    sesh_data.time_signature = params:get("time_signature")
     for i = 1, 8 do
       sesh_data[i] = {}
       -- pattern data
@@ -2690,6 +2714,7 @@ function init()
       -- snapshot data
       sesh_data[i].snap_data = snap[i].data
       sesh_data[i].snap_active = snap[i].active
+      sesh_data[i].snap_rec = {table.unpack(snap[i].rec)}
       sesh_data[i].snap_play = {table.unpack(snap[i].play)}
       sesh_data[i].snap_mute = {table.unpack(snap[i].mute)}
       sesh_data[i].snap_loop = {table.unpack(snap[i].loop)}
@@ -2700,6 +2725,8 @@ function init()
       sesh_data[i].snap_rev = {table.unpack(snap[i].rev)}
       sesh_data[i].snap_transpose_val = {table.unpack(snap[i].transpose_val)}
       sesh_data[i].snap_active_splice = {table.unpack(snap[i].active_splice)}
+      sesh_data[i].snap_route_t5 = {table.unpack(snap[i].route_t5)}
+      sesh_data[i].snap_route_t6 = {table.unpack(snap[i].route_t6)}
     end
     for i = 1, 6 do
       -- tape data
@@ -2776,7 +2803,7 @@ function init()
             end
           end
           -- route data
-          if loaded_sesh_data.newformat ~= nil then
+          if loaded_sesh_data.newerformat ~= nil then
             track[i].route_t5 = loaded_sesh_data[i].track_route_t5
             track[i].route_t6 = loaded_sesh_data[i].track_route_t6
           else
@@ -2837,7 +2864,7 @@ function init()
   screenredrawtimer = metro.init(function() screenredraw() end, 1/15, -1)
   screenredrawtimer:start()
 
-  tracktimer = metro.init(function() count_length() end, 0.01, -1)
+  tracktimer = metro.init(function() rec_dur = rec_dur + 1 end, 0.01, -1)
   tracktimer:stop()
 
 
@@ -2847,7 +2874,7 @@ function init()
   fastpulse = vizclock:new_sprocket{
     action = function(t)
       pulse_key_fast = pulse_key_fast == 8 and 12 or 8
-      if pattern_rec then dirtygrid = true end
+      if pattern_rec or track[armed_track].oneshot == 1 then dirtygrid = true end
     end,
     division = 1/32,
     enabled = true
@@ -2874,9 +2901,7 @@ function init()
 
   vizclock:start()
 
-
   -- clocks
-  quantizer = clock.run(q_clock)
   reset_clk = clock.run(track_reset)
   barpulse = clock.run(ledpulse_bar)
   beatpulse = clock.run(ledpulse_beat)
@@ -2892,13 +2917,8 @@ function init()
     amp_in[ch] = poll.set(amp_src[ch])
     amp_in[ch].time = 0.01
     amp_in[ch].callback = function(val)
-      if val > amp_threshold then
-        loop_point()
-        clock.run(oneshot, track[armed_track].dur) -- when rec starts, clock coroutine starts
-        tracktimer:start()
-        rec_at_threshold()
-        oneshot_rec = true
-        amp_in[ch]:stop()
+      if val > amp_threshold and not oneshot_rec then
+        rec_at_threshold(armed_track)
       end
     end
   end
@@ -2989,9 +3009,7 @@ function set_gridview(x, pos)
     _gridkey_z = v.gridkey_z[x]
     _gridredraw_z = v.gridredraw_z[x]
   end
-  for i = 1, 8 do
-    held[i] = 0 -- reset key logic in case of stuck loops
-  end
+  grd.clear_keylogic()
   dirtyscreen = true
   dirtygrid = true
 end
@@ -3006,6 +3024,7 @@ function set_view(x)
   _arcdelta = v.arcdelta[x]
   _arcredraw = v.arcredraw[x]
   dirtyscreen = true
+  dirtygrid = true
 end
 
 function key(n, z)
@@ -3013,16 +3032,28 @@ function key(n, z)
     shift = z
     dirtyscreen = true
   else
-    _key(n, z)
+    if keyquant_edit then
+      -- do nothing
+    else
+      _key(n, z)
+    end
   end
 end
 
 function enc(n, d)
-  _enc(n, d)
+  if keyquant_edit then
+    ui.keyquant_enc()
+  else
+    _enc(n, d)
+  end
 end
 
 function redraw()
-  _redraw()
+  if keyquant_edit then
+    ui.keyquant_redraw()
+  else
+    _redraw()
+  end
 end
 
 function a.delta(n, d)
@@ -3051,6 +3082,7 @@ function g.key(x, y, z)
       _gridkey_z(x, y, z)
     end
   end
+  dirtygrid = true
 end
 
 function gridredraw()
