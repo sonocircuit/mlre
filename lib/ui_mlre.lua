@@ -57,6 +57,37 @@ local function display_message()
   end
 end
 
+---------------------- KEYQUANT MENU -------------------------
+
+function ui.keyquant_enc(n, d)
+  if n == 2 then
+    params:delta("time_signature", d)
+  elseif n == 3 then
+    params:delta("quant_rate", d)
+  end
+  dirtyscreen = true
+end
+
+function ui.keyquant_redraw()
+  screen.clear()
+  screen.font_size(8)
+  screen.level(15)
+  screen.move(64, 12)
+  screen.text_center("TIMING")
+  screen.font_size(16)
+  screen.move(30, 39)
+  screen.text_center(params:string("time_signature"))
+  screen.move(98, 39)
+  screen.text_center(params:string("quant_rate"))
+  screen.font_size(8)
+  screen.level(4)
+  screen.move(30, 60)
+  screen.text_center("time  signature")
+  screen.move(98, 60)
+  screen.text_center("key  quantization")
+  screen.update()
+end
+
 
 ---------------------- MAIN VIEW -------------------------
 
