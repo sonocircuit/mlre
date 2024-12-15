@@ -1,8 +1,47 @@
 -- ui for mlre
 
-ui = {}
+local ui = {}
 
-function display_message()
+local textentry = require 'textentry' 
+local fileselect = require 'fileselect'
+
+-- main page variables
+local main_page_params_l = {"vol", "rec", "cutoff", "filter_type", "detune","rate_slew", "play_mode", "reset_active"}
+local main_page_params_r = {"pan", "dub", "filter_q", "post_dry", "transpose", "level_slew", "start_launch", "reset_count"}
+local main_page_names_l = {"volume", "rec   level", "cutoff", "filter   type", "detune", "rate   slew", "play   mode", "track   reset"}
+local main_page_names_r = {"pan", "dub   level", "filter   q", "dry   level", "transpose", "level   slew", "track   launch", "reset   count"}
+
+-- lfo page variables
+local lfo_rate_params = {"lfo_clocked_lfo_", "lfo_free_lfo_"}
+local lfo_page_params_l = {"lfo_depth_lfo_", "lfo_shape_lfo_", "lfo_mode_lfo_"}
+local lfo_page_params_r = {"lfo_offset_lfo_", "lfo_phase_lfo_", "lfo_free_lfo_"}
+local lfo_page_names_l = {"depth", "shape", "mode"}
+local lfo_page_names_r = {"offset", "phase", "rate"}
+
+-- pattern page variables
+local patterns_page_params_l = {"patterns_meter", "patterns_countin"}
+local patterns_page_params_r = {"patterns_barnum", "patterns_playback"}
+local patterns_page_names_l = {"meter", "launch"}
+local patterns_page_names_r = {"length", "play   mode"}
+
+-- tape page variables
+local tape_actions = {"populate", "load", "clear", "save", "copy", "paste"}
+local tape_action = 2
+local copy_track = nil
+local copy_splice = nil
+
+-- arc variables
+local arc_inc1 = 0
+local arc_inc2 = 0
+local arc_inc3 = 0
+local arc_inc4 = 0
+local arc_inc5 = 0
+local arc_render = 0
+local arc_lfo_focus = 1
+local arc_track_focus = 1
+local arc_splice_focus = 1
+
+local function display_message()
   if view_message ~= "" then
     screen.clear()
     screen.font_size(8)
@@ -56,6 +95,7 @@ function ui.main_enc(n, d)
   if n == 1 then
     if shift == 0 then
       track_focus = util.clamp(track_focus + d, 1, 6)
+      dirtygrid = true
     elseif shift == 1 then
       params:delta("output_level", d)
     end
@@ -79,7 +119,7 @@ function ui.main_redraw()
   screen.font_size(8)
   screen.level(15)
   screen.move(4, 12)
-  screen.text("TRACK "..track_focus) -- TODO: add indicator if select is active
+  screen.text("TRACK "..track_focus)
   for i = 1, 4 do
     screen.level(main_pageNum == i and 15 or 4)
     screen.rect(112 + (i - 1) * 4, 6, 2, 2)
@@ -130,19 +170,17 @@ function ui.arc_main_delta(n, d)
       -- stop playback when enc stops
       if params:get(track_focus.."play_mode") == 3 then
         inc = (inc % 100) + 1
-        clock.run(
-          function()
-            local prev_inc = inc
-            clock.sleep(0.05)
-            if prev_inc == inc then
-              if params:get(track_focus.."adsr_active") == 2 then
-                local e = {} e.t = eGATEOFF e.i = track_focus event(e)
-              else
-                local e = {} e.t = eSTOP e.i = track_focus event(e)
-              end
+        clock.run(function()
+          local prev_inc = inc
+          clock.sleep(0.05)
+          if prev_inc == inc then
+            if params:get(track_focus.."adsr_active") == 2 then
+              local e = {} e.t = eGATEOFF e.i = track_focus event(e)
+            else
+              local e = {} e.t = eSTOP e.i = track_focus event(e)
             end
           end
-        )
+        end)
       end
       -- set direction
       if params:get("arc_enc_1_dir") == 2 then
@@ -157,23 +195,21 @@ function ui.arc_main_delta(n, d)
       -- temp warble
       if (d > 10 or d < -10) and params:get("arc_enc_1_mod") == 2 then
         if track[track_focus].play == 1 then
-          clock.run(
-            function()
-              local speedmod = 1 - d / 80
-              local n = math.pow(2, track[track_focus].speed + track[track_focus].transpose + track[track_focus].detune)
-              if track[track_focus].rev == 1 then n = -n end
-              if track[track_focus].tempo_map == 2 then
-                local bpmmod = clock.get_tempo() / clip[i].bpm
-                n = n * bpmmod
-              end
-              local rate = n * speedmod
-              softcut.rate_slew_time(track_focus, 0.25)
-              softcut.rate(track_focus, rate)
-              clock.sleep(0.4)
-              update_rate(track_focus)
-              softcut.rate_slew_time(track_focus, track[track_focus].rate_slew)
+          clock.run(function()
+            local speedmod = 1 - d / 80
+            local n = math.pow(2, track[track_focus].speed + track[track_focus].transpose + track[track_focus].detune)
+            if track[track_focus].rev == 1 then n = -n end
+            if track[track_focus].tempo_map == 2 then
+              local bpmmod = clock.get_tempo() / clip[i].bpm
+              n = n * bpmmod
             end
-          )
+            local rate = n * speedmod
+            softcut.rate_slew_time(track_focus, 0.25)
+            softcut.rate(track_focus, rate)
+            clock.sleep(0.4)
+            update_rate(track_focus)
+            softcut.rate_slew_time(track_focus, track[track_focus].rate_slew)
+          end)
         end
       end
       -- scrub
@@ -202,13 +238,11 @@ function ui.arc_main_delta(n, d)
         if params:get(track_focus.."adsr_active") == 2 then
           local e = {} e.t = eGATEON e.i = track_focus event(e)
         end
-        clock.run(
-          function()
-            clock.sleep(0.4)
-            enc2_wait = false
-            arc_inc2 = 0
-          end
-        )
+        clock.run(function()
+          clock.sleep(0.4)
+          enc2_wait = false
+          arc_inc2 = 0
+        end)
       end
       if track[track_focus].loop == 1 and alt == 1 then
         local e = {} e.t = eUNLOOP e.i = track_focus event(e)
@@ -445,10 +479,10 @@ function ui.lfo_enc(n, d)
     if lfo_pageNum == 3 then
       lfo_page_params_r[lfo_pageNum] = lfo_rate_params[params:get("lfo_mode_lfo_"..lfo_focus)]
     end
-    grid_page(vLFO)
   elseif n == 3 then
     params:delta(lfo_page_params_r[lfo_pageNum]..lfo_focus, d)
   end
+  dirtygrid = true
   dirtyscreen = true
 end
 
@@ -494,7 +528,6 @@ function ui.arc_lfo_delta(n, d)
     elseif lfo[lfo_focus].depth == 0 then
       params:set("lfo_lfo_"..lfo_focus, 1)
     end
-    grid_page(vLFO)
   elseif n == 2 then
     params:delta("lfo_offset_lfo_"..lfo_focus, d / 20)
   elseif n == 3 then
@@ -510,7 +543,8 @@ function ui.arc_lfo_delta(n, d)
     arc_lfo_focus = util.clamp(arc_lfo_focus + d / 100, 1, 6)
     lfo_focus = math.floor(arc_lfo_focus)
   end
-  if view == vLFO then dirtyscreen = true end
+  dirtygrid = true
+  dirtyscreen = true
 end
 
 function ui.arc_lfo_draw()
@@ -581,6 +615,7 @@ function ui.env_enc(n, d)
     if shift == 0 then
       env_focus = util.clamp(env_focus + d, 1, 6)
       dirtyscreen = true
+      dirtygrid = true
     else
       --
     end
@@ -772,14 +807,14 @@ function ui.patterns_redraw()
   if pattern[pattern_focus].synced then
     screen.text_center(params:string(patterns_page_params_l[patterns_pageNum]..pattern_focus))
   else
-    local str = patterns_pageNum == 1 and "-" or "free"
+    local str = patterns_pageNum == 1 and "-" or "manual"
     screen.text_center(str)
   end
   screen.move(94, 40)
   if pattern[pattern_focus].synced or patterns_pageNum == 2 then
     screen.text_center(params:string(patterns_page_params_r[patterns_pageNum]..pattern_focus))
   else
-    screen.text_center("free")
+    screen.text_center("manual")
   end
   -- display messages
   display_message()
@@ -830,12 +865,12 @@ function ui.tape_key(n, z)
       if n == 2 then
         if tape_actions[tape_action] == "populate" and z == 1 then
           view_batchload_options = true
-          dirtygrid = true
+          dirtyscreen = true
           screenredrawtimer:stop()
-          fileselect.enter(current_path, function(path) batchload_callback(path, track_focus) end, "audio")
+          fileselect.enter(_path.audio, function(path) batchload_callback(path, track_focus) end, "audio")
         elseif tape_actions[tape_action] == "load" and z == 1 then
           screenredrawtimer:stop()
-          fileselect.enter(current_path, function(path) fileload_callback(path, track_focus) end, "audio")
+          fileselect.enter(_path.audio, function(path) fileload_callback(path, track_focus) end, "audio")
         elseif tape_actions[tape_action] == "clear" and z == 1 then
           clear_splice(track_focus)
         elseif tape_actions[tape_action] == "save" and z == 0 then
