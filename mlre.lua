@@ -14,7 +14,8 @@
 --
 
 -----------------------------------------------------------------------
--- FIXME: click during thresh rec -> ask ezra about rec head offset implementation, write test script
+-- TODO: add quaratine
+-- TODO: add set next splice
 -----------------------------------------------------------------------
 
 norns.version.required = 231114
@@ -105,6 +106,9 @@ pulse_bar = false
 pulse_beat = false
 
 view_message = ""
+popup_message = ""
+popup_func = nil
+popup_view = false
 
 -- oneshot recording variables
 local amp_threshold = 1
@@ -224,6 +228,7 @@ function event_exec(e)
     if track[e.i].play == 0 then
       track[e.i].play = 1
       track[e.i].beat_count = 0
+      -- unquarantine()
       set_rec(e.i)
       set_level(e.i)
       toggle_transport()
@@ -234,6 +239,7 @@ function event_exec(e)
     softcut.position(e.i, e.pos or track[e.i].cut)
     track[e.i].play = 1
     track[e.i].beat_count = 0
+    -- unquarantine()
     set_rec(e.i)
     set_level(e.i)
     toggle_transport()
@@ -574,6 +580,7 @@ for i = 1, 6 do
   tp[i].s = TAPE_GAP * i + (i - 1) * MAX_TAPELENGTH
   tp[i].e = tp[i].s + MAX_TAPELENGTH
   tp[i].splice = {}
+  -- TODO: add quarantine variables start/end
   for j = 1, 8 do
     tp[i].splice[j] = {}
     tp[i].splice[j].s = tp[i].s + (DEFAULT_SPLICELEN + 0.01) * (j - 1)
@@ -660,7 +667,8 @@ function splice_reset(i, focus) -- reset splice to default length
   set_info(i, focus)
 end
 
-function clear_splice(i) -- clear focused splice
+function clear_splice() -- clear focused splice
+  local i = track_focus
   local buffer = tp[i].side
   local start = tp[i].splice[track[i].splice_focus].s
   local length = tp[i].splice[track[i].splice_focus].l + FADE_TIME
@@ -681,7 +689,8 @@ function set_tape(i, buffer) -- assign tape buffer
   render_splice()
 end
 
-function clear_tape(i) -- clear tape
+function clear_tape() -- clear tape
+  local i = track_focus
   local buffer = tp[i].side
   local start = tp[i].s - FADE_TIME
   local length = MAX_TAPELENGTH + FADE_TIME
@@ -769,22 +778,13 @@ function toggle_rec(i)
 end
 
 function set_rec(i) -- set softcut rec and pre levels
-  if track[i].fade == 0 then
-    if track[i].rec == 1 and track[i].play == 1 then
-      softcut.pre_level(i, track[i].pre_level)
-      softcut.rec_level(i, track[i].rec_level)
-    else
-      softcut.pre_level(i, 1)
-      softcut.rec_level(i, 0)
-    end
-  elseif track[i].fade == 1 then
-    if track[i].rec == 1 and track[i].play == 1 then
-      softcut.pre_level(i, track[i].pre_level)
-      softcut.rec_level(i, track[i].rec_level)
-    else
-      softcut.pre_level(i, track[i].pre_level)
-      softcut.rec_level(i, 0)
-    end
+  local fade = track[i].fade == 0 and 1 or track[i].pre_level
+  if track[i].rec == 1 and track[i].play == 1 then
+    softcut.pre_level(i, track[i].pre_level)
+    softcut.rec_level(i, track[i].rec_level)
+  else
+    softcut.pre_level(i, fade)
+    softcut.rec_level(i, 0)
   end
   page_redraw(vMAIN, 2)
 end
@@ -839,7 +839,7 @@ end
 
 function reset_pos(i)
   if track[i].loop == 0 then
-    local cut = track[i].rev == 0 and clip[i].s or (clip[i].l + clip[i].s)
+    local cut = track[i].rev == 0 and clip[i].s or clip[i].e
     softcut.position(i, cut)
   else
     local lstart = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
@@ -851,11 +851,7 @@ end
 
 function set_track_reset(i)
   local val = params:get(i.."reset_count")
-  if val == 1 then
-    track[i].beat_reset = tp[i].splice[track[i].splice_active].beatnum
-  else
-    track[i].beat_reset = val
-  end
+  track[i].beat_reset = val == 1 and tp[i].splice[track[i].splice_active].beatnum or val
 end
 
 function stop_track(i)
@@ -864,6 +860,9 @@ function stop_track(i)
   trig[i].tick = 0
   set_level(i)
   set_rec(i)
+  -- quarantine to halfsecond loop TODO: test whether the quarantine needs to be per track.
+  --softcut.loop_start(i, 0)
+  --softcut.loop_end(i, 0.5)
   dirtygrid = true
 end
 
@@ -948,12 +947,7 @@ function phase_poll(i, pos)
       track[i].pos_clip = pc -- relative position within allocated buffer space
     end
     -- display position
-    grid_page(vLFO)
-    grid_page(vTAPE)
-    if (grido_view < vLFO or grido_view == vTAPE) then
-      dirtygrid = true
-    end
-    if (gridz_view < vLFO or gridz_view == vTAPE) then
+    if (grido_view < vLFO or gridz_view < vLFO or grido_view == vTAPE) then
       dirtygrid = true
     end
     page_redraw(vTAPE)
@@ -1116,11 +1110,8 @@ end
 
 function startall() -- start all tracks at the beginning
   for i = 1, 6 do
-    if track[i].rev == 0 then
-      local e = {} e.t = eCUT e.i = i e.pos = 0 event(e)
-    elseif track[i].rev == 1 then
-      local e = {} e.t = eCUT e.i = i e.pos = 15 event(e)
-    end
+    local pos = track[i].rev == 0 and 0 or 15
+    local e = {} e.t = eCUT e.i = i e.pos = pos event(e)
   end
   if params:get("midi_trnsp") == 2 and not transport_run then
     m:start()
@@ -1156,11 +1147,8 @@ end
 function retrig() -- retrig function for playing tracks
   for i = 1, 6 do
     if track[i].play == 1 then
-      if track[i].rev == 0 then
-        local e = {} e.t = eCUT e.i = i e.pos = 0 event(e)
-      elseif track[i].rev == 1 then
-        local e = {} e.t = eCUT e.i = i e.pos = 15 event(e)
-      end
+      local pos = track[i].rev == 0 and 0 or 15
+      local e = {} e.t = eCUT e.i = i e.pos = pos event(e)
     end
   end
 end
@@ -1288,7 +1276,7 @@ lfo_launch = 0
 lfo_destination = {"volume", "pan", "dub   level", "transpose", "detune", "rate   slew", "cutoff"}
 lfo_params = {"vol", "pan", "dub", "transpose", "detune", "rate_slew", "cutoff"}
 lfo_min = {0, -1, 0, 1, -600, 0, 20}
-lfo_max = {1, 1, 1, 15, 600, 1, 18000}
+lfo_max = {1, 1, 1, 15, 600, 1, 12000}
 lfo_baseline = {'min', 'center', 'min', 'center', 'center', 'min', 'max'}
 lfo_baseline_options = {'min', 'center', 'max'}
 
@@ -1352,6 +1340,10 @@ function set_lfo(i, track, destination)
       end
     end)
   end
+end
+
+function update_param_lfo_rate()
+  ui.update_lfo_param()
 end
 
 
@@ -1616,12 +1608,10 @@ function midi_connected()
 end
 
 function midi_disconnected()
-  clock.run(
-    function()
-      clock.sleep(0.2)
-      build_midi_device_list()
-    end
-  )
+  clock.run(function()
+    clock.sleep(0.2)
+    build_midi_device_list()
+  end)
 end
 
 function send_trig(i)
@@ -1782,11 +1772,11 @@ function set_splicemarker(i, s)
 end
 
 function load_audio(path, i, s, l)
+  local buffer = tp[i].side
+  local num_beats = get_beatnum(l)
   -- load audio
   softcut.buffer_read_mono(path, 0, tp[i].splice[s].s, l, 1, buffer)
   -- set splice   
-  local buffer = tp[i].side
-  local num_beats = get_beatnum(l)
   tp[i].splice[s].l = l
   tp[i].splice[s].e = tp[i].splice[s].s + l
   tp[i].splice[s].init_start = tp[i].splice[s].s
@@ -3027,12 +3017,23 @@ function set_view(x)
   dirtygrid = true
 end
 
+function popupscreen(msg, func)
+  popup_message = msg
+  popup_func = func
+  if popup_func ~= nil then
+    popup_view = true
+    dirtyscreen = true
+  end
+end
+
 function key(n, z)
   if n == 1 then
     shift = z
     dirtyscreen = true
   else
-    if keyquant_edit then
+    if popup_view then
+      ui.popup_key(n, z)
+    elseif keyquant_edit then
       -- do nothing
     else
       _key(n, z)
@@ -3041,7 +3042,9 @@ function key(n, z)
 end
 
 function enc(n, d)
-  if keyquant_edit then
+  if popup_view then
+    -- do nothing
+  elseif keyquant_edit then
     ui.keyquant_enc()
   else
     _enc(n, d)
@@ -3049,7 +3052,9 @@ function enc(n, d)
 end
 
 function redraw()
-  if keyquant_edit then
+  if popup_view then
+    ui.popup_redraw()
+  elseif keyquant_edit then
     ui.keyquant_redraw()
   else
     _redraw()
