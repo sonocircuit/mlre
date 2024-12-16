@@ -93,14 +93,16 @@ function grd.nav(x, z, pos)
   if z == 1 then
     if x == 1 then
       if alt == 1 then
-        clear_splice(track_focus)
+        local msg = "clear   splice"
+        popupscreen(msg, clear_splice)
       else
         set_gridview(vREC, pos)
         set_view(vMAIN)
       end
     elseif x == 2 then
       if alt == 1 then
-        clear_tape(track_focus)
+        local msg = "clear   tape"
+        popupscreen(msg, clear_tape)
       else
         set_gridview(vCUT, pos)
         set_view(vMAIN)
@@ -108,7 +110,8 @@ function grd.nav(x, z, pos)
       end
     elseif x == 3 then
       if alt == 1 then
-        clear_buffers()
+        local msg = "clear   buffers"
+        popupscreen(msg, clear_buffers)
       else
         set_gridview(vTRSP, pos)
         set_view(vMAIN)
@@ -299,6 +302,11 @@ function grd.cutfocus_keys(x, z)
   held[row] = held[row] + (z * 2 - 1)
   if held[row] > heldmax[row] then heldmax[row] = held[row] end
   if z == 1 then
+    -- flip the unflipped
+    if not track[i].loaded and alt == 0 and mod == 0 then
+      queue_track_tape(i)
+    end
+    -- cutfocus 
     if alt == 1 and mod == 0 then
       toggle_playback(i)
     elseif mod == 1 then -- "hold mode" as on cut page
@@ -325,26 +333,20 @@ function grd.cutfocus_keys(x, z)
     elseif held[row] == 2 then -- second keypress
       second[row] = x
     end
-
-    if not track[i].loaded and alt == 0 and mod == 0 then
-      queue_track_tape(i)
-    end
   elseif z == 0 then
-    if track[i].loaded then
-      if held[row] == 1 and heldmax[row] == 2 then -- if two keys held at release then loop
-        local lstart = math.min(first[row], second[row])
-        local lend = math.max(first[row], second[row])
-        loop_event(i, lstart, lend)
-      else
-        if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-          local e = {} e.t = eSTOP e.i = i event(e)
-        end
-        if env[i].active and track[i].loop == 0 then
-          local e = {} e.t = eGATEOFF e.i = i event(e)
-        end
+    if held[row] == 1 and heldmax[row] == 2 then -- if two keys held at release then loop
+      local lstart = math.min(first[row], second[row])
+      local lend = math.max(first[row], second[row])
+      loop_event(i, lstart, lend)
+    else
+      if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
+        local e = {} e.t = eSTOP e.i = i event(e)
       end
-      if held[row] < 1 then held[row] = 0 end
+      if env[i].active and track[i].loop == 0 then
+        local e = {} e.t = eGATEOFF e.i = i event(e)
+      end
     end
+    if held[row] < 1 then held[row] = 0 end
   end
 end
 
@@ -373,7 +375,7 @@ function grd.rec_keys(x, y, z, offset)
           track_focus = i
           arc_track_focus = track_focus
           dirtyscreen = true
-          if not autofocus and view == vTAPE then render_splice(track_focus) end
+          if not autofocus and view == vTAPE then render_splice() end
         end
         if alt == 1 and mod == 0 then
           params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
@@ -475,11 +477,16 @@ function grd.cut_keys(x, y, z, offset)
   else
     local i = y - 1
     if z == 1 then
+      -- flip the unflipped
+      if not track[i].loaded and alt == 0 and mod == 0 then
+        queue_track_tape(i)
+      end
+      -- cutpage
       if track_focus ~= i then
         track_focus = i
         arc_track_focus = track_focus
         dirtyscreen = true
-        if not autofocus and view == vTAPE then render_splice(track_focus) end
+        if not autofocus and view == vTAPE then render_splice() end
       end
       if alt == 1 and y < 8 then
         toggle_playback(i)
@@ -507,27 +514,20 @@ function grd.cut_keys(x, y, z, offset)
       elseif y < 8 and held[y] == 2 then
         second[y] = x
       end
-
-
-      if not track[i].loaded and alt == 0 and mod == 0 then
-        queue_track_tape(i)
-      end
     elseif z == 0 then
-      if track[i].loaded then
-        if held[y] == 1 and heldmax[y] == 2 then
-          local lstart = math.min(first[y], second[y])
-          local lend = math.max(first[y], second[y])
-          loop_event(i, lstart, lend)
-        else
-          if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-            local e = {} e.t = eSTOP e.i = i event(e)
-          end
-          if env[i].active and track[i].loop == 0 then
-            local e = {} e.t = eGATEOFF e.i = i event(e)
-          end
+      if held[y] == 1 and heldmax[y] == 2 then
+        local lstart = math.min(first[y], second[y])
+        local lend = math.max(first[y], second[y])
+        loop_event(i, lstart, lend)
+      else
+        if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
+          local e = {} e.t = eSTOP e.i = i event(e)
         end
-        if held[y] < 1 then held[y] = 0 end
+        if env[i].active and track[i].loop == 0 then
+          local e = {} e.t = eGATEOFF e.i = i event(e)
+        end
       end
+      if held[y] < 1 then held[y] = 0 end
     end
   end
 end
@@ -565,7 +565,7 @@ function grd.trsp_keys(x, y, z, offset)
         track_focus = i
         arc_track_focus = track_focus
         dirtyscreen = true
-        if not autofocus and view == vTAPE then render_splice(track_focus) end
+        if not autofocus and view == vTAPE then render_splice() end
       end
       if alt == 0 and mod == 0 then
         if x >= 1 and x <= 8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
@@ -616,9 +616,7 @@ function grd.lfo_keys(x, y, z, offset)
       if lfo_focus ~= i then
         lfo_focus = i
         arc_lfo_focus = lfo_focus
-        if lfo_pageNum == 3 then
-          lfo_page_params_r[lfo_pageNum] = lfo_rate_params[params:get("lfo_mode_lfo_"..lfo_focus)]
-        end
+        update_param_lfo_rate()
       end
       if x == 1 then
         local action = lfo[lfo_focus].enabled == 1 and "lfo_off" or "lfo_on"
@@ -678,12 +676,12 @@ end
 
 function grd.env_keys(x, y, z, offset)
   local y = offset and y - offset or y
+  local i = y - 1
   if z == 1 and view ~= vENV and autofocus then
     set_view(vENV)
   end
   if z == 1 then
     if y > 1 and y < 8 then
-      local i = y - 1
       if x == 1 then
         params:set(i.."adsr_active", env[i].active and 1 or 2)
       elseif x == 2 then
@@ -697,7 +695,6 @@ function grd.env_keys(x, y, z, offset)
     end
   elseif z == 0 then
     if y > 1 and y < 8 then
-      local i = y - 1
       if x == 2 then
         if env[i].active then
           local e = {} e.t = eGATEOFF e.i = i event(e)
