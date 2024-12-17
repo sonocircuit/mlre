@@ -1,4 +1,4 @@
--- mlre v2.2.0 @sonocircuit
+nc-- mlre v2.2.0 @sonocircuit
 -- llllllll.co/t/mlre
 --
 -- an adaption of
@@ -3045,7 +3045,7 @@ function enc(n, d)
   if popup_view then
     -- do nothing
   elseif keyquant_edit then
-    ui.keyquant_enc()
+    ui.keyquant_enc(n, d)
   else
     _enc(n, d)
   end
