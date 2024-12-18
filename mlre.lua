@@ -1,4 +1,4 @@
-nc-- mlre v2.2.0 @sonocircuit
+-- mlre v2.2.0 @sonocircuit
 -- llllllll.co/t/mlre
 --
 -- an adaption of
@@ -184,6 +184,20 @@ function event(e)
   end
 end
 
+function set_quantizer(idx)
+  q_rate = event_q_values[idx] * 4
+  if idx == 1 then
+    if event_clock ~= nil then
+      clock.cancel(event_clock)
+      event_clock = nil
+    end
+    quantizing = false
+  elseif not quantizing then
+    event_clock = clock.run(quantizer)
+    quantizing = true
+  end
+end
+
 function quantizer()
   while true do
     clock.sync(q_rate)
@@ -307,6 +321,10 @@ pattern = {}
 for i = 1, 8 do
   pattern[i] = _pattern.new("pattern "..i)
   pattern[i].process = event_exec
+  pattern[i].start_callback = function() start_pulse(i) end
+  --pattern[i].event_callback = function() start_pulse(i) end -- @arthur: un-comment for blinkenlights
+  pattern[i].count_in = 1
+  pattern[i].flash = false
 end
 
 recall = {}
@@ -332,6 +350,16 @@ function recall_exec(i)
   for _, e in pairs(recall[i].event) do
     event(e)
   end
+end
+
+function start_pulse(i)
+  pattern[i].flash = true
+  dirtygrid = true
+  clock.run(function()
+    clock.sleep(1/15)
+    pattern[i].flash = false
+    dirtygrid = true
+  end)
 end
 
 function randomize(i)
@@ -449,7 +477,7 @@ function load_snapshots(snapshot, target)
 end
 
 function load_snapshot(n, i)
-  local beat_sync = snap_launch == 1 and (quantizing and q_rate or nil) or (snap_launch == 3 and bar_val or 1)
+  local beat_sync = snap_launch > 1 and (snap_launch == 3 and bar_val or 1) or (quantizing and q_rate or nil)
   if beat_sync ~= nil then
     clock.run(function()
       clock.sync(beat_sync)
@@ -1719,7 +1747,6 @@ function tempo_transition(beats, dest_tempo)
   end
 end
 
-
 --------------------- FILE CALLBACKS -----------------------
 function get_length_audio(path)
   local ch, len = audio.file_info(path)
@@ -1995,7 +2022,7 @@ function silent_load(number, pset_id)
 end
 
 function queue_track_tape(i)
-  local beat_sync = loadop.sync == 1 and (quantizing and q_rate or nil) or (loadop.sync == 3 and bar_val or 1)
+  local beat_sync = loadop.sync > 1 and (loadop.sync == 3 and bar_val or 1) or (quantizing and q_rate or nil)
   if beat_sync ~= nil then
     clock.run(function()
       clock.sync(beat_sync)
@@ -2400,8 +2427,10 @@ function init()
 
   -- randomize settings
   params:add_group("randomization_params", "randomization", 16)
+ 
   params:add_option("auto_rand_cycle","randomize @ step count", {"off", "on"}, 1)
   params:set_action("auto_rand_cycle", function(option) autorand_at_cycle = option == 2 and true or false end)
+  
   params:add_number("rnd_step_count", ">> step count", 1, 128, 16)
   params:set_action("rnd_step_count", function(num) rnd_stepcount = num end)
 
@@ -2441,14 +2470,14 @@ function init()
     params:add_option("patterns_playback"..i, "playback", {"loop", "oneshot"}, 1)
     params:set_action("patterns_playback"..i, function(mode) pattern[i].loop = mode == 1 and true or false end)
 
-    params:add_option("patterns_countin"..i, "launch", {"beat", "bar"}, 2)
-    params:set_action("patterns_countin"..i, function(mode) pattern[i].count_in = mode == 1 and 1 or 4 dirtygrid = true end)
+    params:add_option("patterns_countin"..i, "launch", {"manual", "beat", "bar"}, 1)
+    params:set_action("patterns_countin"..i, function(mode) pattern[i].count_in = mode dirtygrid = true end)
 
     params:add_option("patterns_meter"..i, "meter", pattern_meter, 3)
-    params:set_action("patterns_meter"..i, function(idx) pattern[i].sync_meter = pattern_meter_val[idx] end)
+    params:set_action("patterns_meter"..i, function(idx) pattern[i].sync_meter = pattern_meter_val[idx] pattern[i]:set_ticks() end)
 
     params:add_number("patterns_barnum"..i, "length", 1, 32, 4, function(param) return param:get()..(pattern[i].sync_beatnum <= 4 and " bar" or " bars") end)
-    params:set_action("patterns_barnum"..i, function(num) pattern[i].sync_beatnum = num * 4 dirtygrid = true end)
+    params:set_action("patterns_barnum"..i, function(num) pattern[i].sync_beatnum = num * 4 pattern[i]:set_ticks() end)
   end
 
   -- params for tracks
@@ -2654,19 +2683,7 @@ function init()
   params:hide("time_signature")
 
   params:add_option("quant_rate", "quantization rate", event_q_options, 1)
-  params:set_action("quant_rate", function(idx)
-    q_rate = event_q_values[idx] * 4
-    if idx == 1 then
-      if event_clock ~= nil then
-        clock.cancel(event_clock)
-        event_clock = nil
-      end
-      quantizing = false
-    else
-      event_clock = clock.run(quantizer)
-      quantizing = true
-    end
-  end)
+  params:set_action("quant_rate", function(idx) set_quantizer(idx) end)
   params:hide("quant_rate")
 
   -- pset callbacks
@@ -2895,11 +2912,11 @@ function init()
   reset_clk = clock.run(track_reset)
   barpulse = clock.run(ledpulse_bar)
   beatpulse = clock.run(ledpulse_beat)
-  
+
   for i = 1, 8 do
     pattern[i]:init_clock()
   end
-
+  
   -- threshold rec poll
   amp_in = {}
   local amp_src = {"amp_in_l", "amp_in_r"}
@@ -3580,9 +3597,12 @@ end
 
 function cleanup()
   for i = 1, 8 do
-    pattern[i]:stop()
+    pattern[i]:cleanup()
     pattern[i] = nil
   end
+  clock.cancel(reset_clk)
+  clock.cancel(barpulse)
+  clock.cancel(beatpulse)
   grid.add = function() end
   arc.add = function() end
   arc.remove = function() end
