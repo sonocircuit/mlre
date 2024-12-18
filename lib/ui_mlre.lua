@@ -792,7 +792,7 @@ end
 function ui.patterns_enc(n, d)
   if n == 1 then
     pattern_focus = util.clamp(pattern_focus + d, 1, 8)
-  elseif n == 2 and pattern[pattern_focus].synced then
+  elseif n == 2 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
     params:delta(patterns_page_params_l[patterns_pageNum]..pattern_focus, d)
   elseif n == 3 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
     params:delta(patterns_page_params_r[patterns_pageNum]..pattern_focus, d)
@@ -823,11 +823,10 @@ function ui.patterns_redraw()
   screen.font_size(16)
   screen.level(15)
   screen.move(35, 40)
-  if pattern[pattern_focus].synced then
+  if pattern[pattern_focus].synced or patterns_pageNum == 2 then
     screen.text_center(params:string(patterns_page_params_l[patterns_pageNum]..pattern_focus))
   else
-    local str = patterns_pageNum == 1 and "-" or "manual"
-    screen.text_center(str)
+    screen.text_center("-")
   end
   screen.move(94, 40)
   if pattern[pattern_focus].synced or patterns_pageNum == 2 then
