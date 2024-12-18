@@ -46,7 +46,15 @@ local function pattern_events(i)
       local e = {t = ePATTERN, i = i, action = "stop"} event(e)
     end
   else
-    local e = {t = ePATTERN, i = i, action = "start"} event(e)
+    local beat_sync = pattern[i].count_in > 1 and (pattern[i].count_in == 2 and 1 or bar_val) or (quantizing and q_rate or nil)
+    if beat_sync ~= nil then
+      clock.run(function()
+        clock.sync(beat_sync)
+        local e = {t = ePATTERN, i = i, action = "start", sync = true} event(e)
+      end)
+    else
+      local e = {t = ePATTERN, i = i, action = "start"} event(e)
+    end
   end
 end
 
@@ -745,9 +753,8 @@ function grd.pattern_keys(x, y, z, offset)
       if y == 3 then
         pattern[i].synced = not pattern[i].synced
       elseif y == 4 then
-        if pattern[i].synced then 
-          params:set("patterns_countin"..i, pattern[i].count_in == 1 and 2 or 1)
-        end
+        local val = util.wrap(pattern[i].count_in + 1, 1, 3)
+        params:set("patterns_countin"..i, val)
       end
     elseif x > 13 and x < 16 then
       if y > 2 and y < 7 then
@@ -771,7 +778,7 @@ function grd.pattern_draw(offset)
   end
   for i = 1, 8 do
     g:led(i + 4, 3 + off, pattern[i].synced and 10 or 4)
-    g:led(i + 4, 4 + off, pattern[i].synced and (pattern[i].count_in == 4 and 6 or 2) or 0)
+    g:led(i + 4, 4 + off, (pattern[i].count_in - 1) * 4)
     g:led(i + 4, 5 + off, pattern_focus == i and 6 or 0)
     g:led(i + 4, 6 + off, pattern_focus == i and 6 or 0)
   end
