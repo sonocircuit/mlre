@@ -25,10 +25,8 @@ local patterns_page_names_l = {"meter", "launch"}
 local patterns_page_names_r = {"length", "play   mode"}
 
 -- tape page variables
-local tape_actions = {"populate", "load", "clear", "save", "copy", "paste"}
+local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "format >", "format >>>"}
 local tape_action = 2
-local copy_track = nil
-local copy_splice = nil
 
 -- arc variables
 local arc_inc1 = 0
@@ -79,14 +77,14 @@ function ui.popup_redraw()
   screen.level(15)
   screen.move(64, 35)
   screen.text_center(popup_message)
-  screen.level(15)
+  screen.level(4)
   screen.move(64, 60)
   screen.text_center("are   you   sure  ?")
-  screen.level(4)
-  screen.move(24, 60)
-  screen.text_center("NO <")
-  screen.move(104, 60)
-  screen.text_center("> YES")
+  screen.level(15)
+  screen.move(20, 60)
+  screen.text_center("no   <")
+  screen.move(108, 60)
+  screen.text_center(">   yes")
   screen.update()
 end
 
@@ -878,69 +876,47 @@ function ui.tape_key(n, z)
     end
   else
     -- tape view
-    local splice_focus = track[track_focus].splice_focus
+    local i = track_focus
+    local s = track[i].splice_focus
     if shift == 0 then
       if n == 2 then
         if tape_actions[tape_action] == "populate" and z == 1 then
           view_batchload_options = true
           dirtyscreen = true
           screenredrawtimer:stop()
-          fileselect.enter(_path.audio, function(path) batchload_callback(path, track_focus) end, "audio")
+          fileselect.enter(_path.audio, function(path) batchload_callback(path, i) end, "audio")
         elseif tape_actions[tape_action] == "load" and z == 1 then
           screenredrawtimer:stop()
-          fileselect.enter(_path.audio, function(path) fileload_callback(path, track_focus) end, "audio")
+          fileselect.enter(_path.audio, function(path) fileload_callback(path, i) end, "audio")
         elseif tape_actions[tape_action] == "clear" and z == 1 then
-          clear_splice(track_focus)
+          popupscreen("clear   splice", clear_splice)
         elseif tape_actions[tape_action] == "save" and z == 0 then
           screenredrawtimer:stop()
-          textentry.enter(filesave_callback, "mlre-" .. (math.random(9000) + 1000))
+          textentry.enter(filesave_callback, "mlre_" .. (math.random(9000) + 1000))
         elseif tape_actions[tape_action] == "copy" and z == 1 then
-          copy_track = track_focus
-          copy_splice = splice_focus
+          copy_ref.track = i
+          copy_ref.splice = s
           show_message("ready   to   paste")
         elseif tape_actions[tape_action] == "paste" and z == 1 then
-          local paste_track = track_focus
-          local paste_splice = splice_focus
-          if copy_splice ~= nil then
-            local src_ch = tp[copy_track].side
-            local dst_ch = tp[paste_track].side
-            local start_src = tp[copy_track].splice[copy_splice].s
-            local start_dst = tp[paste_track].splice[paste_splice].s
-            local length = tp[copy_track].splice[copy_splice].e - tp[copy_track].splice[copy_splice].s
-            local preserve = alt == 1 and 0.5 or 0
-            if tp[paste_track].splice[paste_splice].e + length <= tp[paste_track].e then
-              softcut.buffer_copy_mono(src_ch, dst_ch, start_src, start_dst, length, 0.01, preserve)
-              tp[paste_track].splice[paste_splice].e = start_dst + length
-              tp[paste_track].splice[paste_splice].l = length
-              tp[paste_track].splice[paste_splice].init_start = start_dst
-              tp[paste_track].splice[paste_splice].init_len = length
-              tp[paste_track].splice[paste_splice].beatnum = tp[copy_track].splice[copy_splice].beatnum
-              tp[paste_track].splice[paste_splice].bpm = 60 / length * tp[copy_track].splice[copy_splice].beatnum
-              tp[paste_track].splice[paste_splice].name = tp[copy_track].splice[copy_splice].name
-              splice_resize(paste_track, paste_splice, length)
-              render_splice()
-              copy_splice = nil
-            else
-              show_message("out   of   boundries")
-            end
-          else
-            show_message("clipboard   empty")
-          end
+          copy_splice_audio()
+        elseif tape_actions[tape_action] == "format >" and z == 1 then
+          popupscreen("format   next   splice", format_splice)
+        elseif tape_actions[tape_action] == "format >>>" and z == 1 then
+          popupscreen("format   consecutive   splices", format_next_splices)
         end
       elseif n == 3 and z == 1 then
-        -- set barnum
-        tp[track_focus].splice[splice_focus].beatnum = tp[track_focus].splice[splice_focus].resize
-        splice_resize(track_focus, splice_focus)
+        tp[i].splice[s].beatnum = tp[i].splice[s].resize
+        splice_resize(i, s)
         render_splice()
       end
     else
       if n == 2 and z == 1 then
-        tp[track_focus].splice[splice_focus].init_len = tp[track_focus].splice[splice_focus].l
-        tp[track_focus].splice[splice_focus].init_start = tp[track_focus].splice[splice_focus].s
-        tp[track_focus].splice[splice_focus].init_beatnum = tp[track_focus].splice[splice_focus].beatnum
+        tp[i].splice[s].init_len = tp[i].splice[s].l
+        tp[i].splice[s].init_start = tp[i].splice[s].s
+        tp[i].splice[s].init_beatnum = tp[i].splice[s].beatnum
         show_message("default   markers   set")
       elseif n == 3 and z == 1 then
-        splice_reset(track_focus, splice_focus)
+        splice_reset(i, s)
         render_splice()
       end
     end
