@@ -14,8 +14,7 @@
 --
 
 -----------------------------------------------------------------------
--- TODO: add quaratine
--- TODO: add set next splice
+-- TODO: add auto backup when rec is pressed (include as rec param) undo -> mod + rec
 -----------------------------------------------------------------------
 
 norns.version.required = 231114
@@ -84,6 +83,7 @@ sends_focus = 1
 view_presets = false
 pset_focus = 1
 pset_list = {}
+copy_ref = {}
 
 view_batchload_options = false
 batchload_path = ""
@@ -233,30 +233,11 @@ end
 -- exec function
 function event_exec(e)
   if e.t == eCUT then
-    if track[e.i].loop == 1 then
-      clear_loop(e.i)
-    end
-    local cut = (e.pos / 16) * clip[e.i].l + clip[e.i].s
-    local q = track[e.i].rev == 1 and clip[e.i].l / 16 or 0
-    softcut.position(e.i, cut + q)
-    if track[e.i].play == 0 then
-      track[e.i].play = 1
-      track[e.i].beat_count = 0
-      -- unquarantine()
-      set_rec(e.i)
-      set_level(e.i)
-      toggle_transport()
-    end
+    cut_track(e.i, e.pos)
+  elseif e.t == eSTART then
+    start_track(e.i, e.pos)
   elseif e.t == eSTOP then
     stop_track(e.i)
-  elseif e.t == eSTART then
-    softcut.position(e.i, e.pos or track[e.i].cut)
-    track[e.i].play = 1
-    track[e.i].beat_count = 0
-    -- unquarantine()
-    set_rec(e.i)
-    set_level(e.i)
-    toggle_transport()
   elseif e.t == eLOOP then
     set_loop(e.i, e.loop_start, e.loop_end)
   elseif e.t == eUNLOOP then
@@ -322,7 +303,7 @@ for i = 1, 8 do
   pattern[i] = _pattern.new("pattern "..i)
   pattern[i].process = event_exec
   pattern[i].start_callback = function() start_pulse(i) end
-  --pattern[i].event_callback = function() start_pulse(i) end -- @arthur: un-comment for blinkenlights
+  --pattern[i].event_callback = function() start_pulse(i) end -- @arthur: uncomment for blinkenlights
   pattern[i].count_in = 1
   pattern[i].flash = false
 end
@@ -602,26 +583,27 @@ end
 tp = {}
 for i = 1, 6 do
   tp[i] = {}
-  tp[i].input = 1
-  tp[i].side = 1
-  tp[i].buffer = i
+  tp[i].input = 1 -- softcut input
+  tp[i].side = 1 -- main or temp buffer (1, 2)
+  tp[i].buffer = i -- selected tape buffer (1-6)
   tp[i].s = TAPE_GAP * i + (i - 1) * MAX_TAPELENGTH
   tp[i].e = tp[i].s + MAX_TAPELENGTH
+  tp[i].qs = tp[i].s - 0.75 -- quarantine start
+  tp[i].qe = tp[i].s - 0.25 -- quarantine end
   tp[i].splice = {}
-  -- TODO: add quarantine variables start/end
-  for j = 1, 8 do
-    tp[i].splice[j] = {}
-    tp[i].splice[j].s = tp[i].s + (DEFAULT_SPLICELEN + 0.01) * (j - 1)
-    tp[i].splice[j].e = tp[i].splice[j].s + DEFAULT_SPLICELEN
-    tp[i].splice[j].l = tp[i].splice[j].e - tp[i].splice[j].s
-    tp[i].splice[j].name = "-"
-    tp[i].splice[j].info = "length: "..string.format("%.2f", DEFAULT_SPLICELEN).."s"
-    tp[i].splice[j].init_start = tp[i].splice[j].s
-    tp[i].splice[j].init_len = DEFAULT_SPLICELEN
-    tp[i].splice[j].init_beatnum = DEFAULT_BEATNUM
-    tp[i].splice[j].beatnum = DEFAULT_BEATNUM
-    tp[i].splice[j].bpm = 60 
-    tp[i].splice[j].resize = 4
+  for s = 1, 8 do
+    tp[i].splice[s] = {}
+    tp[i].splice[s].s = tp[i].s + (DEFAULT_SPLICELEN + 0.01) * (s - 1)
+    tp[i].splice[s].e = tp[i].splice[s].s + DEFAULT_SPLICELEN
+    tp[i].splice[s].l = tp[i].splice[s].e - tp[i].splice[s].s
+    tp[i].splice[s].name = "-"
+    tp[i].splice[s].info = "length: "..string.format("%.2f", DEFAULT_SPLICELEN).."s"
+    tp[i].splice[s].init_start = tp[i].splice[s].s
+    tp[i].splice[s].init_len = DEFAULT_SPLICELEN
+    tp[i].splice[s].init_beatnum = DEFAULT_BEATNUM
+    tp[i].splice[s].beatnum = DEFAULT_BEATNUM
+    tp[i].splice[s].bpm = 60 
+    tp[i].splice[s].resize = 4
   end
 end
 
@@ -637,10 +619,11 @@ end
 
 function set_clip(i) 
   -- set playback window
-  clip[i].s = tp[i].splice[track[i].splice_active].s
-  clip[i].l = tp[i].splice[track[i].splice_active].l
+  local s = track[i].splice_active
+  clip[i].s = tp[i].splice[s].s
+  clip[i].l = tp[i].splice[s].l
   clip[i].e = clip[i].s + clip[i].l
-  clip[i].bpm = tp[i].splice[track[i].splice_active].bpm
+  clip[i].bpm = tp[i].splice[s].bpm
   -- set softcut
   softcut.loop_start(i, clip[i].s)
   softcut.loop_end(i, clip[i].e)
@@ -655,54 +638,55 @@ function set_clip(i)
   set_track_reset(i)
 end
 
-function splice_resize(i, focus, length)
+function splice_resize(i, s, length)
   -- if no length argument recalculate
   if length == nil then
     if track[i].tempo_map == 0 then
-      length = tp[i].splice[focus].beatnum
+      length = tp[i].splice[s].beatnum
     elseif track[i].tempo_map == 1 then
-      length = beat_sec * tp[i].splice[focus].beatnum
+      length = beat_sec * tp[i].splice[s].beatnum
     elseif track[i].tempo_map == 2 then
-      length = tp[i].splice[focus].l
+      length = tp[i].splice[s].l
     end
   end
   -- set splice variables
-  if tp[i].splice[focus].s + length <= tp[i].e then
-    tp[i].splice[focus].e = tp[i].splice[focus].s + length
-    tp[i].splice[focus].l = length
-    tp[i].splice[focus].bpm = 60 / length * tp[i].splice[focus].beatnum
-    if track[i].splice_focus == track[i].splice_active then
+  if tp[i].splice[s].s + length <= tp[i].e then
+    tp[i].splice[s].e = tp[i].splice[s].s + length
+    tp[i].splice[s].l = length
+    tp[i].splice[s].bpm = 60 / length * tp[i].splice[s].beatnum
+    if s == track[i].splice_active then
       set_clip(i)
     end
-    set_info(i, focus)
+    set_info(i, s)
   else
     show_message("splice   too   long")
   end
 end
 
-function splice_reset(i, focus) -- reset splice to default length
-  local focus = focus or track[i].splice_focus
+function splice_reset(i, s) -- reset splice to saved default length
+  local s = s or track[i].splice_focus
   -- reset variables
-  tp[i].splice[focus].s = tp[i].splice[focus].init_start
-  tp[i].splice[focus].l = tp[i].splice[focus].init_len
-  tp[i].splice[focus].e = tp[i].splice[focus].s + tp[i].splice[focus].l
-  tp[i].splice[focus].beatnum = tp[i].splice[focus].init_beatnum
-  tp[i].splice[focus].bpm = 60 / tp[i].splice[focus].l * tp[i].splice[focus].beatnum
+  tp[i].splice[s].s = tp[i].splice[s].init_start
+  tp[i].splice[s].l = tp[i].splice[s].init_len
+  tp[i].splice[s].e = tp[i].splice[s].s + tp[i].splice[s].l
+  tp[i].splice[s].beatnum = tp[i].splice[s].init_beatnum
+  tp[i].splice[s].bpm = 60 / tp[i].splice[s].l * tp[i].splice[s].beatnum
   -- set clip
-  if track[i].splice_focus == track[i].splice_active then
+  if s == track[i].splice_active then
     set_clip(i) 
   end
-  set_info(i, focus)
+  set_info(i, s)
 end
 
 function clear_splice() -- clear focused splice
   local i = track_focus
+  local s = track[i].splice_focus
   local buffer = tp[i].side
-  local start = tp[i].splice[track[i].splice_focus].s
-  local length = tp[i].splice[track[i].splice_focus].l + FADE_TIME
+  local start = tp[i].splice[s].s
+  local length = tp[i].splice[s].l + FADE_TIME
   softcut.buffer_clear_region_channel(buffer, start, length)
   render_splice()
-  show_message("track    "..i.."    splice    "..track[i].splice_focus.."    cleared")
+  show_message("track    "..i.."    splice    "..s.."    cleared")
 end
 
 function set_tape(i, buffer) -- assign tape buffer
@@ -737,37 +721,66 @@ function clear_buffers() -- clear both buffers
 end
 
 function init_splices(i)
-  for j = 1, 8 do
-    tp[i].splice[j] = {}
-    tp[i].splice[j].s = tp[i].s + (DEFAULT_SPLICELEN + 0.01) * (j - 1)
-    tp[i].splice[j].e = tp[i].splice[j].s + DEFAULT_SPLICELEN
-    tp[i].splice[j].l = tp[i].splice[j].e - tp[i].splice[j].s
-    tp[i].splice[j].init_start = tp[i].splice[j].s
-    tp[i].splice[j].init_len = DEFAULT_SPLICELEN
-    tp[i].splice[j].beatnum = DEFAULT_BEATNUM
-    tp[i].splice[j].bpm = 60 
-    tp[i].splice[j].name = "-"
-    set_info(i, j)
+  for s = 1, 8 do
+    tp[i].splice[s] = {}
+    tp[i].splice[s].s = tp[i].s + (DEFAULT_SPLICELEN + 0.01) * (s - 1)
+    tp[i].splice[s].e = tp[i].splice[s].s + DEFAULT_SPLICELEN
+    tp[i].splice[s].l = tp[i].splice[s].e - tp[i].splice[s].s
+    tp[i].splice[s].init_start = tp[i].splice[s].s
+    tp[i].splice[s].init_len = DEFAULT_SPLICELEN
+    tp[i].splice[s].beatnum = DEFAULT_BEATNUM
+    tp[i].splice[s].bpm = 60 
+    tp[i].splice[s].name = "-"
+    set_info(i, s)
   end
   track[i].splice_active = 1
   set_clip(i)
 end
 
-function save_all_markers()
-  for t = 1, 6 do
-    for s = 1, 8 do
-      tp[t].splice[s].init_len = tp[t].splice[s].l
-      tp[t].splice[s].init_start = tp[t].splice[s].s
-      tp[t].splice[s].init_beatnum = tp[t].splice[s].beatnum
+function format_splice(i, s) -- copy format to next splice
+  local i = i or track_focus
+  local s = s or track[i].splice_focus
+  if s < 8 then
+    local s_start = tp[i].splice[s].e + SPLICE_GAP
+    local length = tp[i].splice[s].l
+    if s_start + length <= tp[i].e then
+      tp[i].splice[s + 1].s = s_start
+      tp[i].splice[s + 1].l = length
+      tp[i].splice[s + 1].e = s_start + length
+      tp[i].splice[s + 1].init_start = s_start
+      tp[i].splice[s + 1].init_len = tp[i].splice[s].l
+      tp[i].splice[s + 1].beatnum = tp[i].splice[s].beatnum
+      tp[i].splice[s + 1].bpm = tp[i].splice[s].bpm
+      tp[i].splice[s + 1].resize = track[i].tempo_map > 1 and num_beats or math.ceil(length)
+      set_info(i, s + 1)
+    else
+      show_message("splice  "..(s + 1).."   too   long")
     end
   end
 end
 
-function set_info(i, n)
+function format_next_splices()
+  local n = track[track_focus].splice_focus
+  for s = n, 8 do
+    format_splice(track_focus, s)
+  end
+end
+
+function save_all_markers()
+  for i = 1, 6 do
+    for s = 1, 8 do
+      tp[i].splice[s].init_len = tp[i].splice[s].l
+      tp[i].splice[s].init_start = tp[i].splice[s].s
+      tp[i].splice[s].init_beatnum = tp[i].splice[s].beatnum
+    end
+  end
+end
+
+function set_info(i, s)
   if track[i].tempo_map == 2 then
-    tp[i].splice[n].info = "repitch factor: "..string.format("%.2f", current_tempo / tp[i].splice[n].bpm)
+    tp[i].splice[s].info = "repitch factor: "..string.format("%.2f", current_tempo / tp[i].splice[s].bpm)
   else
-    tp[i].splice[n].info = "length: "..string.format("%.2f", tp[i].splice[n].l).."s"
+    tp[i].splice[s].info = "length: "..string.format("%.2f", tp[i].splice[s].l).."s"
   end
   if view == vTAPE and view_splice_info then dirtyscreen = true end
 end
@@ -882,15 +895,46 @@ function set_track_reset(i)
   track[i].beat_reset = val == 1 and tp[i].splice[track[i].splice_active].beatnum or val
 end
 
+function cut_track(i, pos)
+  if track[i].oneshot == 1 then
+    set_quarantine(i, false)
+  end
+  if track[i].loop == 1 then
+    clear_loop(i)
+  end
+  local cut = (pos / 16) * clip[i].l + clip[i].s
+  local q = track[i].rev == 1 and clip[i].l / 16 or 0
+  softcut.position(i, cut + q)
+  if track[i].play == 0 then
+    track[i].play = 1
+    track[i].beat_count = 0
+    set_rec(i)
+    set_level(i)
+    toggle_transport()
+  end
+end
+
+function start_track(i, pos)
+  if track[i].oneshot == 1 then
+    set_quarantine(i, false)
+  end
+  softcut.position(i, pos or track[i].cut)
+  track[i].play = 1
+  track[i].beat_count = 0
+  set_rec(i)
+  set_level(i)
+  toggle_transport()
+end
+
 function stop_track(i)
+  if track[i].oneshot == 1 then
+    set_quarantine(i, true)
+  end
   softcut.query_position(i)
   track[i].play = 0
   trig[i].tick = 0
   set_level(i)
   set_rec(i)
-  -- quarantine to halfsecond loop TODO: test whether the quarantine needs to be per track.
-  --softcut.loop_start(i, 0)
-  --softcut.loop_end(i, 0.5)
   dirtygrid = true
 end
 
@@ -910,6 +954,21 @@ function clear_loop(i)
   track[i].loop = 0
   softcut.loop_start(i, clip[i].s) 
   softcut.loop_end(i, clip[i].e)
+end
+
+function set_quarantine(i, isolate)
+  if isolate then
+    track[i].pos_arc =  track[i].rev == 0 and 1 or 64
+    track[i].pos_grid = track[i].rev == 0 and 1 or 16
+    softcut.loop_start(i, tp[i].qs)
+    softcut.loop_end(i, tp[i].qe)
+  else
+    if track[i].loop == 0 then
+      clear_loop(i)
+    else
+      set_loop(i, track[i].loop_start, track[i].loop_end)
+    end
+  end
 end
 
 function copy_buffer(i, src, dst) -- copy splice to the other buffer
@@ -1213,14 +1272,14 @@ function arm_thresh_rec(i)
       else
         autolength = false
       end
-      -- set key position (purly cosmetic)
+      -- enter quarantine if not playing
       if track[i].play == 0 then
-        track[i].pos_arc =  track[i].rev == 0 and 1 or 64
-        track[i].pos_grid = track[i].rev == 0 and 1 or 16
+        set_quarantine(i, true)
       end
       amp_in[1]:start()
       amp_in[2]:start()
     else
+      set_quarantine(i, false)
       amp_in[1]:stop()
       amp_in[2]:stop()
     end
@@ -1231,9 +1290,7 @@ function rec_at_threshold(i)
   loop_pos = track[i].pos_grid
   rec_dur = 0
   if track[i].play == 0 then
-    if track[i].loop == 1 then
-      clear_loop(i)
-    end
+    set_quarantine(i, false)
     local pos = track[i].rev == 0 and 0 or 15
     local cut = (pos / 16) * clip[i].l + clip[i].s
     local q = track[i].rev == 1 and clip[i].l / 16 or 0
@@ -1810,7 +1867,7 @@ function load_audio(path, i, s, l)
   tp[i].splice[s].init_len = l
   tp[i].splice[s].init_beatnum = num_beats
   tp[i].splice[s].beatnum = num_beats
-  tp[i].splice[s].resize = num_beats
+  tp[i].splice[s].resize = track[i].tempo_map > 1 and num_beats or math.ceil(l)
   tp[i].splice[s].bpm = 60 / l * num_beats
   tp[i].splice[s].name = path:match("[^/]*$")
   if s == track[i].splice_active then  
@@ -1865,6 +1922,38 @@ function load_batch(path, i, s, n)
   render_splice()
   dirtyscreen = true
   dirtygrid = true
+end
+
+function copy_splice_audio()
+  if copy_ref.track ~= nil then
+    local i = track_focus
+    local s = track[i].splice_focus
+    local ci = copy_ref.track
+    local cs = copy_ref.splice
+    local src_ch = tp[ci].side
+    local dst_ch = tp[i].side
+    local start_src = tp[ci].splice[cs].s
+    local start_dst = tp[i].splice[s].s
+    local length = tp[ci].splice[cs].e - tp[ci].splice[cs].s
+    local preserve = alt == 1 and 0.5 or 0
+    if tp[i].splice[s].e + length <= tp[i].e then
+      softcut.buffer_copy_mono(src_ch, dst_ch, start_src, start_dst, length, 0.01, preserve)
+      tp[i].splice[s].e = start_dst + length
+      tp[i].splice[s].l = length
+      tp[i].splice[s].init_start = start_dst
+      tp[i].splice[s].init_len = length
+      tp[i].splice[s].beatnum = tp[ci].splice[cs].beatnum
+      tp[i].splice[s].bpm = 60 / length * tp[ci].splice[cs].beatnum
+      tp[i].splice[s].name = tp[ci].splice[cs].name
+      splice_resize(i, s, length)
+      render_splice()
+      copy_ref = {}
+    else
+      show_message("out   of   boundries")
+    end
+  else
+    show_message("clipboard   empty")
+  end
 end
 
 function filesave_callback(txt)
