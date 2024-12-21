@@ -65,7 +65,7 @@ local function snapshot_events(i)
   else
     if snap[i].data then
       local snap_dest = held_focus > 0 and track_focus or "all"
-      load_snapshots(i, snap_dest)
+      load_snapshot(i, snap_dest)
       snap[i].active = true
       snapshot_last = i
     else
@@ -395,8 +395,12 @@ function grd.rec_keys(x, y, z, offset)
         end
       end
     elseif x == 1 and alt == 0 and z == 1 then
-      toggle_rec(i)
-      chop(i)
+      if mod == 0 then
+        toggle_rec(i)
+        chop(i)
+      else
+        backup_rec(i, "undo")
+      end
     elseif x == 1 and alt == 1 and z == 1 then
       track[i].fade = 1 - track[i].fade
       set_rec(i)
@@ -802,17 +806,16 @@ function grd.tape_keys(x, y, z, offset)
     if x < 9 and z == 1 then
       track_focus = i
       arc_track_focus = i
-      track[track_focus].splice_focus = x
-      arc_splice_focus = track[track_focus].splice_focus
+      track[i].splice_focus = x
+      arc_splice_focus = track[i].splice_focus
       if track[i].loaded then
         if alt == 1 and mod == 0 then
-          local e = {} e.t = eSPLICE e.i = track_focus e.active = x event(e)
+          load_splice(i, x)
         elseif alt == 0 and mod == 1 then
-          local src = tp[track_focus].side == 1 and 1 or 2
-          local dst = tp[track_focus].side == 1 and 2 or 1
-          copy_buffer(track_focus, src, dst)
-        elseif alt == 1 and mod == 1 and x < 7 then
-          set_tape(i, x)
+          local src = tp[i].side == 1 and 1 or 2
+          local dst = tp[i].side == 1 and 2 or 1
+          mirror_splice(i, src, dst)
+          show_message("splice   copied   to   "..(dst == 1 and "main" or "temp").."   buffer")
         end
       else
         queue_track_tape(i)
@@ -834,7 +837,7 @@ function grd.tape_keys(x, y, z, offset)
       end
     elseif x == 11 then
       track_focus = i
-      arc_track_focus = track_focus
+      arc_track_focus = i
       view_splice_info = z == 1 and true or false
       if z == 0 then
         render_splice()
@@ -902,7 +905,7 @@ function grd.tape_draw(offset)
       if i == track[j].splice_active then
         g:led(i, j + 1 + off, track[j].loaded and 10 or pulse_key_mid)
       elseif i == track[j].splice_focus then
-        g:led(i, j + 1 + off, 5)
+        g:led(i, j + 1 + off, splice_queued and pulse_key_fast or 5)
       end
     end
   end
