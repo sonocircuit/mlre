@@ -5,9 +5,9 @@ list of additions:
 * these are also found under `parameters > quantization` together with the quantization options for `snapshot recalls` and `splice changes`.
 * snapshots are now configurable under under `parameters > macros`. you can choose which events will be recalled or not.
 * the tape page has new actions:
-  * `populate` let’s you load up to 8 files which are distributed along the 8 available splices.
+  * `populate` let’s you load up to 8 files simultaniously, which are distributed along the 8 available tape splices.
   * `load` is not new but the startpoint is automatically set to the end of the previous splice, so you don’t have to worry about overwriting stuff.
-  * `format >` sets the start point of the next splice to the end of the current splice and set the length to the current length.
+  * `format >` sets the start point of the next splice to the end of the current splice and sets the length to the current length.
   * `format >>>` does the same as `format >` but for all consecutive splices.
 * tracks can now share the same buffer, by default each track has it’s own buffer aka tape. change under `parameters > tracks > track options`.
 * there’s a `popup screen` when clearing splices/tape/buffer. you need to confirm your actions to proceed.
