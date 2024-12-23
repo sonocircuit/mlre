@@ -2474,12 +2474,6 @@ function init()
     end
   end
   
-  if pset_load then
-    params:default()
-  else
-    params:bang()
-  end
-
   for i = 1, 6 do
     stop_track(i) -- set all track levels to 0 post params:bang
   end
@@ -2487,6 +2481,12 @@ function init()
   set_view(vMAIN)
   set_gridview(vCUT, "z")
   set_gridview(vREC, "o")
+
+  if pset_load then
+    params:default()
+  else
+    params:bang()
+  end
  
   print("mlre loaded and ready. enjoy!")
 
