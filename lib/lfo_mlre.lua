@@ -81,7 +81,7 @@ function LFO.new(shape, min, max, depth, mode, period, action, phase, baseline, 
     formatter = nil
   }
   i.action = action == nil and (function(scaled, raw) end) or action
-  i.state_callback = state_callback == nil and (function(enabled) end) or state_callback
+  i.state_callback = state_callback == nil and (function(is_enabled) end) or state_callback
   i.percentage = math.abs(i.min-i.max) * i.depth
   i.scaled_min = i.min
   i.scaled_max = i.max
@@ -103,7 +103,7 @@ end
 -- @tparam function action A callback function to perform as the LFO advances. This library passes both the scaled and the raw value to the callback function.
 -- @param number phase The phase shift amount for this LFO (range: 0.0 to 1.0,; default: 0)
 -- @param string baseline From where the LFO should start (options: 'min', 'center', 'max'; default: 'min')
--- @param function state_callback A callback function that returns the state of the lfo.
+-- @param function state_callback A callback function that passes the enabled state as a bool.
 
 function LFO:add(args)
   return self.new(args.shape, args.min, args.max, args.depth, args.mode, args.period, args.action, args.phase, args.baseline, args.state_callback)
@@ -183,7 +183,7 @@ end
 
 local function change_bound(target, which, value)
   target[which] = value
-  target.percentage = math.abs(target.min-target.max) * target.depth
+  target.percentage = math.abs(target.min - target.max) * target.depth
   scale_lfo(target)
 end
 
@@ -208,27 +208,27 @@ end
 
 local function change_depth(target, value)
   target.depth = value
-  target.percentage = math.abs(target.min-target.max) * value
+  target.percentage = math.abs(target.min - target.max) * value
   scale_lfo(target)
 end
 
 local function change_ppqn(target, ppqn)
   target.ppqn = ppqn
   if target.sprocket then
-    target.sprocket:set_division(1/(4*ppqn))
+    target.sprocket:set_division(1 / (4 * ppqn))
   end
 end
 
 local function change_period(target, new_period)
-  local new_phase_counter = target.phase_counter + (1/target.ppqn)
+  local new_phase_counter = target.phase_counter + (1 / target.ppqn)
   local new_phase
   local adjusted_phase_counter
   if target.mode == "clocked" then
     new_phase = new_phase_counter / target.period
-    adjusted_phase_counter = (new_phase * new_period) - 1/target.ppqn
+    adjusted_phase_counter = (new_phase * new_period) - 1 / target.ppqn
   else
     new_phase = new_phase_counter * clock.get_beat_sec() / target.period
-    adjusted_phase_counter = (new_phase * new_period / clock.get_beat_sec()) - 1/target.ppqn
+    adjusted_phase_counter = (new_phase * new_period / clock.get_beat_sec()) - 1 / target.ppqn
   end
 
   target.period = new_period
@@ -246,7 +246,7 @@ local function process_lfo(id)
     beat_sec = curr_beat_sec
   end
 
-  _lfo.phase_counter = _lfo.phase_counter + (1/_lfo.ppqn)
+  _lfo.phase_counter = _lfo.phase_counter + (1 / _lfo.ppqn)
   if _lfo.mode == "clocked" then
     phase = _lfo.phase_counter / _lfo.period
   else
@@ -258,9 +258,9 @@ local function process_lfo(id)
 
     local current_val;
     if _lfo.shape == 'sine' then
-      current_val = (math.sin(2*math.pi*phase) + 1)/2
+      current_val = (math.sin(2 * math.pi * phase) + 1) / 2
     elseif _lfo.shape == 'tri' then
-      current_val = phase < 0.5 and phase/0.5 or 1-(phase-0.5)/(0.5)
+      current_val = phase < 0.5 and phase / 0.5 or 1 - (phase - 0.5) / (0.5)
     elseif _lfo.shape == 'up' then
       current_val = phase
     elseif _lfo.shape == 'down' then
@@ -268,7 +268,7 @@ local function process_lfo(id)
     elseif _lfo.shape == 'square' then
       current_val = phase < 0.5 and 1 or 0
     elseif _lfo.shape == 'random' then
-      current_val = (math.sin(2*math.pi*phase) + 1)/2
+      current_val = (math.sin(2 * math.pi * phase) + 1) / 2
     end
 
     local min = _lfo.min
@@ -391,29 +391,18 @@ end
 
 --- reset the LFO's phase
 function LFO:reset_phase()
-  if self.mode == "free" then
-    local baseline = clock.get_beat_sec()/self.period
-    if self.reset_target == "floor" then
-      self.phase_counter = 0.75/baseline
-    elseif self.reset_target == "ceiling" then
-      self.phase_counter = 0.25/baseline
-    elseif self.reset_target == "mid: falling" then
-      self.phase_counter = 0.5/baseline
-    elseif self.reset_target == "mid: rising" then
-      self.phase_counter = baseline
-    end
-  else
-    if self.reset_target == "floor" then
-      self.phase_counter = 0.75 * (self.period)
-    elseif self.reset_target == "ceiling" then
-      self.phase_counter = 0.25 * (self.period)
-    elseif self.reset_target == "mid: falling" then
-      self.phase_counter = 0.5 * (self.period)
-    elseif self.reset_target == "mid: rising" then
-      self.phase_counter = self.period
-    end
+  local baseline = self.mode == "free" and (clock.get_beat_sec() / self.period) or self.period
+  if self.reset_target == "floor" then
+    self.phase_counter = 0.75 / baseline
+  elseif self.reset_target == "ceiling" then
+    self.phase_counter = 0.25 / baseline
+  elseif self.reset_target == "mid: falling" then
+    self.phase_counter = 0.5 / baseline
+  elseif self.reset_target == "mid: rising" then
+    self.phase_counter = baseline
   end
 end
+
 
 
 -- / SCRIPT LFOS
@@ -440,15 +429,15 @@ function LFO:add_params(id,sep,group)
 
       params:add_option("lfo_"..id, "lfo state", {"off","on"}, self:get('enabled')+1)
       params:set_action("lfo_"..id, function(x)
-        local enabled = x == 2 and true or false
-        self.state_callback(enabled)
+        local is_enabled = x == 2 and true or false
+        self.state_callback(is_enabled)
         if x == 1 then
-          lfo_params_visibility("hide", id)
+          --lfo_params_visibility("hide", id)
           params:set("lfo_scaled_"..id,"")
           params:set("lfo_raw_"..id,"")
           self:stop()
         elseif x == 2 then
-          lfo_params_visibility("show", id)
+          --lfo_params_visibility("show", id)
           self:start(true)
         end
         self:set('enabled', x - 1)

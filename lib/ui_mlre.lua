@@ -127,7 +127,7 @@ function ui.main_key(n, z)
   if n == 2 and z == 1 then
     if shift == 0 then
       main_pageNum = util.wrap(main_pageNum - 1, 1, 8)
-    else
+    elseif GRID_SIZE == 128 then
       local mode = macro_slot_mode == 2 and 3 or 2
       local msg = macro_slot_mode == 2 and "recall   slots" or "pattern   slots"
       params:set("slot_assign", mode)
@@ -137,12 +137,10 @@ function ui.main_key(n, z)
   elseif n == 3 and z == 1 then
     if shift == 0 then
       main_pageNum = util.wrap(main_pageNum + 1, 1, 8)
-    else
-      if arc_is then
-        arc_pageNum = util.wrap(arc_pageNum + 1, 1, 2)
-        local msg = arc_pageNum == 1 and "arc  -  play head" or "arc  -  levels"
-        show_message(msg)
-      end
+    elseif arc_is then
+      arc_pageNum = util.wrap(arc_pageNum + 1, 1, 2)
+      local msg = arc_pageNum == 1 and "arc  -  play head" or "arc  -  levels"
+      show_message(msg)
     end
     dirtyscreen = true
   end
@@ -154,14 +152,22 @@ function ui.main_enc(n, d)
     dirtygrid = true
     dirtyscreen = true
   elseif n == 2 then
-    params:delta(track_focus..main_page_params_l[main_pageNum], d)
-  elseif n == 3 then
-    if main_page_params_r[main_pageNum] == "post_dry" then
-      if params:get(track_focus.."filter_type") < 5 then
-        params:delta(track_focus..main_page_params_r[main_pageNum], d)
-      end
+    if shift == 0 then
+      params:delta(track_focus..main_page_params_l[main_pageNum], d)
     else
-      params:delta(track_focus..main_page_params_r[main_pageNum], d)
+      for i = 1, 6 do
+        params:delta(i..main_page_params_l[main_pageNum], d)
+      end
+    end
+  elseif n == 3 then
+    if not (main_page_params_r[main_pageNum] == "post_dry" and params:get(track_focus.."filter_type") == 5) then
+      if shift == 0 then
+        params:delta(track_focus..main_page_params_r[main_pageNum], d)
+      else
+        for i = 1, 6 do
+          params:delta(i..main_page_params_r[main_pageNum], d)
+        end
+      end
     end
   end
 end
@@ -173,13 +179,15 @@ function ui.main_redraw()
   screen.level(15)
   screen.move(4, 12)
   screen.text("TRACK "..track_focus)
+  local hi = shift == 0 and 15 or 4
+  local lo = shift == 1 and 15 or 4
   for i = 1, 4 do
-    screen.level(main_pageNum == i and 15 or 4)
+    screen.level(main_pageNum == i and hi or lo)
     screen.rect(112 + (i - 1) * 4, 6, 2, 2)
     screen.fill()
   end
   for i = 1, 4 do
-    screen.level(main_pageNum == i + 4 and 15 or 4)
+    screen.level(main_pageNum == i + 4 and hi or lo)
     screen.rect(112 + (i - 1) * 4, 10, 2, 2)
     screen.fill()
   end
@@ -187,7 +195,13 @@ function ui.main_redraw()
   screen.font_size(8)
   screen.level(4)
   screen.move(35, 54)
-  screen.text_center(main_page_names_l[main_pageNum])
+  if track[track_focus].mute == 1 and main_pageNum == 1 then
+    screen.level(15)
+    screen.text_center("[ muted ]")
+  else
+    screen.text_center(main_page_names_l[main_pageNum])
+  end
+  screen.level(4)
   screen.move(94, 54)
   screen.text_center(main_page_names_r[main_pageNum])
   screen.font_size(16)
@@ -866,7 +880,8 @@ function ui.tape_key(n, z)
   elseif view_presets then
     if n == 2 and z == 1 then
       params:read(pset_focus)
-      show_message("pset   loaded")
+      local msg = shift == 0 and "pset   loaded" or "params   loaded"
+      show_message(msg)
       view_presets = false
     elseif n == 3 and z == 1 then
       local num = string.format("%0.2i", pset_focus)
@@ -1058,7 +1073,7 @@ function ui.tape_redraw()
     -- actions
     screen.level(pulse_key_mid)
     screen.move(4, 60)
-    screen.text("pset  <")
+    screen.text(shift == 0 and "pset  <" or "params  <")
     screen.move(124, 60)
     screen.text_right(">  silent")
   -- track sends
