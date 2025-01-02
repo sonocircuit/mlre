@@ -14,8 +14,8 @@
 --
 
 -----------------------------------------------------------------------
--- TODO: redo pattern page
--- TODO: test silent load scenarios
+-- TODO: stress-test silent load tempo transitions
+-- TODO: code cleanup
 -----------------------------------------------------------------------
 
 norns.version.required = 231114
@@ -54,6 +54,8 @@ DEFAULT_BEATNUM = 4
 
 -- ui variables
 main_pageNum = 1
+pmac_pageNum = 1
+pmac_pageEnc = 0
 lfo_pageNum = 1
 env_pageNum = 1
 patterns_pageNum = 1
@@ -74,7 +76,6 @@ lfo_trksel = 1
 lfo_dstview = 0
 lfo_dstsel = 1
 
-stop_all_active = true
 macro_slot_mode = 1
 
 view_splice_info = false
@@ -97,6 +98,7 @@ arc_is = false
 enc2_wait = false
 arc_off = 0
 scrub_sens = 100
+pmac_sens = 20
 tau = math.pi * 2
 
 -- viz variables 
@@ -130,7 +132,7 @@ local rnd_stepcount = 16
 
 -- silent load variables
 local loadop = {}
-loadop.params = {"sync", "tempo", "transition", "scale", "quant_rate", "time_signature", "loops", "reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "route_t5", "route_t6"}
+loadop.params = {"sync", "tempo", "transition", "scale", "quant_rate", "time_signature", "loops", "reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "route_t5", "route_t6", "splice_active"}
 loadop.set_param = {"reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state"}
 loadop.param_default = {1, 4, 0, 0.5, 0.5, 0, 8, 1}
 loadop.set_tab = {"rev", "speed", "sel", "fade", "route_t5", "route_t6"}
@@ -144,14 +146,17 @@ local pattern_meter_val = {2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 9/4, 11/4}
 local quantize_events = {}
 local event_q_options = {"off", "1/32", "1/24", "3/64", "1/16", "1/12", "3/32", "1/8", "1/6", "3/16", "1/4", "1/3", "3/8", "1/2"}
 local event_q_values = {1/4, 1/32, 1/24, 3/64, 1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2}
-local q_rate = 1/4
+q_rate = 1/4
+
 local snap_launch = 1
 local splice_launch = 1
 splice_queued = false
 bar_val = 4
 quantizing = false
 
-
+-- snapshot/recall variables
+snapshot_mode = false
+punch_momentrary = false
 
 --------------------- EVENTS -----------------------
 
@@ -174,24 +179,6 @@ eLFO = 15
 eREC = 16
 
 -- event funtions
-function event_record(e)
-  for i = 1, 8 do
-    pattern[i]:watch(e)
-  end
-  recall_watch(e)
-end
-
-function event(e)
-  if quantizing and e.sync == nil then
-    table.insert(quantize_events, e)
-  else
-    if e.t ~= ePATTERN then
-      event_record(e)
-    end
-    event_exec(e)
-  end
-end
-
 function set_quantizer(idx)
   q_rate = event_q_values[idx] * 4
   if idx == 1 then
@@ -219,6 +206,27 @@ function quantizer()
   end
 end
 
+function event(e)
+  if quantizing and e.sync == nil then
+    table.insert(quantize_events, e)
+  else
+    if e.t ~= ePATTERN then event_record(e) end
+    event_exec(e)
+  end
+end
+
+function event_record(e)
+  for i = 1, 8 do
+    pattern[i]:watch(e)
+  end
+  if recall_rec > 0 then
+    if recall[recall_rec].active then
+      table.insert(recall[recall_rec].event, e)
+      recall[recall_rec].has_data = true
+    end
+  end
+end
+
 function loop_event(i, lstart, lend, sync)
   local e = {}
   e.t = eLOOP
@@ -228,14 +236,6 @@ function loop_event(i, lstart, lend, sync)
   e.loop_end = lend
   e.sync = sync
   event(e)
-end
-
-function recalc_time_factor()
-  for i = 1, 8 do
-    if pattern[i].tempo_map == true and pattern[i].bpm ~= nil then -- pattern tempo map default set to true.
-      pattern[i].time_factor = pattern[i].bpm / current_tempo
-    end
-  end
 end
 
 -- exec function
@@ -305,7 +305,8 @@ function event_exec(e)
   dirtygrid = true
 end
 
--- patterns and recall
+
+-- patterns
 patterns_only = false
 pattern_rec = false
 pattern = {}
@@ -318,31 +319,6 @@ for i = 1, 8 do
   pattern[i].flash = false
 end
 
-recall = {}
-recall_last = 0
-for i = 1, 8 do
-  recall[i] = {}
-  recall[i].recording = false
-  recall[i].has_data = false
-  recall[i].active = false
-  recall[i].event = {}
-end
-
-function recall_watch(e)
-  for i = 1, 8 do
-    if recall[i].recording == true then
-      table.insert(recall[i].event, e)
-      recall[i].has_data = true
-    end
-  end
-end
-
-function recall_exec(i)
-  for _, e in pairs(recall[i].event) do
-    event(e)
-  end
-end
-
 function start_pulse(i)
   pattern[i].flash = true
   dirtygrid = true
@@ -353,6 +329,244 @@ function start_pulse(i)
   end)
 end
 
+function recalc_time_factor()
+  for i = 1, 8 do
+    if pattern[i].tempo_map == true and pattern[i].bpm ~= nil then -- pattern tempo map default set to true.
+      pattern[i].time_factor = pattern[i].bpm / current_tempo
+    end
+  end
+end
+
+
+-- recall
+recall = {}
+recall_rec = 0
+for i = 1, 8 do
+  recall[i] = {}
+  recall[i].has_data = false
+  recall[i].active = false
+  recall[i].event = {}
+end
+
+function recall_exec(i)
+  for _, e in pairs(recall[i].event) do
+    event(e)
+  end
+end
+
+local rstate = {}
+for i = 1, 6 do
+  rstate[i] = {}
+  rstate[i].play = 0
+  rstate[i].rec = 0
+  rstate[i].mute = 0
+  rstate[i].route_t5 = 0
+  rstate[i].route_t6 = 0
+  rstate[i].loop = 0
+  rstate[i].loop_start = 1
+  rstate[i].loop_end = 16
+  rstate[i].splice_active = 1
+  rstate[i].speed = 0
+  rstate[i].rev = 0
+  rstate[i].transpose = 0
+  rstate[i].lfo_enabled = 0
+end
+
+function save_event_state()
+  for i = 1, 6 do
+    rstate[i].play = track[i].play
+    rstate[i].rec = track[i].rec
+    rstate[i].mute = track[i].mute
+    rstate[i].route_t5 = track[i].route_t5
+    rstate[i].route_t6 = track[i].route_t6
+    rstate[i].loop = track[i].loop
+    rstate[i].loop_start = track[i].loop_start
+    rstate[i].loop_end = track[i].loop_end
+    rstate[i].splice_active = track[i].splice_active
+    rstate[i].speed = track[i].speed
+    rstate[i].rev = track[i].rev
+    rstate[i].transpose = track[i].transpose
+    rstate[i].lfo_enabled = lfo[i].enabled
+  end
+end
+
+function reset_event_state(sync)
+  if punch_momentrary then
+    for i = 1, 6 do
+      if track[i].play ~= rstate[i].play then
+        toggle_playback(i)
+      end
+      if track[i].rec ~= rstate[i].rec then
+        local e = {t = eREC, i = i, rec = rstate[i].rec, sync = sync} event(e)
+      end
+      if track[i].mute ~= rstate[i].mute then
+        local e = {t = eMUTE, i = i, mute = rstate[i].mute, sync = sync} event(e)
+      end
+      if track[i].route_t5 ~= rstate[i].route_t5 then
+        local e = {t = eROUTE, i = i, ch = 5, route = rstate[i].route_t5, sync = sync} event(e)
+      end
+      if track[i].route_t6 ~= rstate[i].route_t6 then
+        local e = {t = eROUTE, i = i, ch = 6, route = rstate[i].route_t6, sync = sync} event(e)
+      end
+      if rstate[i].loop == 1 then
+        loop_event(i, rstate[i].loop_start, rstate[i].loop_end)
+      elseif track[i].loop == 1 then
+        local e = {t = eUNLOOP, i = i, sync = sync} event(e)
+        track[i].loop_start = rstate[i].loop_start
+        track[i].loop_end = rstate[i].loop_end
+      end
+      if track[i].splice_active ~= rstate[i].splice_active then
+        local e = {t = eSPLICE, i = i, active = rstate[i].splice_active, sync = sync} event(e)
+      end
+      if track[i].speed ~= rstate[i].speed then
+        local e = {t = eSPEED, i = i, speed = rstate[i].speed, sync = sync} event(e)
+      end
+      if track[i].rev ~= rstate[i].rev then
+        local e = {t = eREV, i = i, rev = rstate[i].rev, sync = sync} event(e)
+      end
+      if track[i].transpose ~= rstate[i].transpose then
+        local e = {t = eTRSP, i = i, val = rstate[i].transpose, sync = sync} event(e)
+      end
+      if lfo[i].enabled ~= rstate[i].lfo_enabled then
+        local action = rstate[i].lfo_enabled == 1 and "lfo_on" or "lfo_off"
+        local e = {t = eLFO, i = i, action = action, sync = sync} event(e)
+      end
+    end
+  end
+end
+
+
+pmac_perf_view = false
+pmac_edit_view = false
+pmac_focus = 1
+pmac_enc = 1
+pmac_encpage = 1
+pmac_params = {"cutoff", "filter_q", "vol", "pan", "detune", "rate_slew"}
+pmac_param_id = {{"cutoff", "vol", "detune", "lfo_depth"}, {"filter_q", "pan", "rate_slew", "lfo_rate"}}
+pmac_param_name = {{"cutoff", "vol", "detune", "lfo   depth"}, {"filter  q", "pan", "rate_slew", "lfo   rate"}}
+
+pmac = {}
+pmac.d = {}
+pmac.v = {}
+for n = 1, 4 do -- four p-macro encoders
+  pmac.d[n] = {} 
+  pmac.d[n].clk = nil
+  pmac.d[n].action = 0
+  for i = 1, 6 do
+    pmac.d[n][i] = {} -- delta multipliers per enc and track
+    pmac.d[n][i].cutoff = 0
+    pmac.d[n][i].filter_q = 0
+    pmac.d[n][i].pan = 0
+    pmac.d[n][i].vol = 0
+    pmac.d[n][i].detune = 0
+    pmac.d[n][i].rate_slew = 0
+    pmac.d[n][i].lfo_depth = 0
+    pmac.d[n][i].lfo_rate = 0
+  end
+end
+for i = 1, 6 do -- param variables per track
+  pmac.v[i] = {}
+  pmac.v[i].cutoff = 12000
+  pmac.v[i].filter_q = 2
+  pmac.v[i].vol = 1
+  pmac.v[i].pan = 0
+  pmac.v[i].detune = 0
+  pmac.v[i].rate_slew = 0
+  pmac.v[i].lfo_depth = 0
+  pmac.v[i].lfo_rate = 0
+end
+
+function pmac_save()
+  for i = 1, 6 do
+    pmac.v[i].cutoff = params:get(i.."cutoff")
+    pmac.v[i].filter_q = params:get(i.."filter_q")
+    pmac.v[i].vol = track[i].level
+    pmac.v[i].pan = track[i].pan
+    pmac.v[i].detune = track[i].detune
+    pmac.v[i].rate_slew = track[i].rate_slew
+    pmac.v[i].lfo_depth = params:get("lfo_depth_lfo_"..i)
+    if lfo[i].mode == "free" then
+      pmac.v[i].lfo_rate = params:get("lfo_free_lfo_"..i)
+    else
+      pmac.v[i].lfo_rate = params:get("lfo_clocked_lfo_"..i)
+    end
+  end
+end
+
+function pmac_recall()
+  for i = 1, 6 do
+    params:set(i.."cutoff", pmac.v[i].cutoff)
+    params:set(i.."filter_q", pmac.v[i].filter_q)
+    params:set(i.."vol", pmac.v[i].vol)
+    params:set(i.."pan", pmac.v[i].pan)
+    params:set(i.."detune", pmac.v[i].detune)
+    params:set(i.."rate_slew", pmac.v[i].rate_slew)
+    params:set("lfo_depth_lfo_"..i, pmac.v[i].lfo_depth)
+    if lfo[i].mode == "free" then
+      params:set("lfo_free_lfo_"..i, pmac.v[i].lfo_rate)
+    else
+      params:set("lfo_clocked_lfo_"..i, pmac.v[i].lfo_rate)
+    end
+  end
+end
+
+local p_inc = 0
+function pmac_exec(n, d)
+  -- delta track params
+  for _, v in ipairs(pmac_params) do
+    for i = 1, 6 do
+      if pmac.d[n][i][v] ~= 0 then
+        params:delta(i..v, d * pmac.d[n][i][v] * 0.01)
+      end
+    end
+  end
+  -- delta lfo params
+  for i = 1, 6 do
+    if pmac.d[n][i].lfo_depth > 0.01 or pmac.d[n][i].lfo_depth < -0.01 then
+      params:delta("lfo_depth_lfo_"..i, d * pmac.d[n][i].lfo_depth * 0.01)
+      grid_page(vLFO)
+    end
+    if pmac.d[n][i].lfo_rate ~= 0 then
+      if lfo[i].mode == "free" then
+        params:delta("lfo_free_lfo_"..i, d * pmac.d[n][i].lfo_rate * 0.01)
+      else
+        local delta = pmac.d[n][i].lfo_rate * 0.1 * d
+        p_inc = util.wrap(p_inc + delta, 0, 64)
+        if p_inc < 8 or p_inc > 56 then
+          local inc = delta > 0 and 1 or -1
+          params:delta("lfo_clocked_lfo_"..i, inc)
+          p_inc = 32
+        end
+      end
+    end
+  end
+  -- macro viz
+  pmac.d[n].action = d
+  dirtyscreen = true
+  if pmac.d[n].clk ~= nil then
+    clock.cancel(pmac.d[n].clk)
+  end
+  pmac.d[n].clk = clock.run(function()
+    clock.sleep(0.1)
+    pmac.d[n].action = 0
+    dirtyscreen = true
+  end)
+end
+
+function toggle_pmac_perf_view(z)
+  if view ~= vTAPE then
+    pmac_perf_view = z == 1 and true or false
+    if z == 1 then
+      pmac_save()
+    else
+      pmac_recall()
+      ui.reset_pmac_arc()
+    end
+  end
+end
+  
+
+-- randomize events
 function randomize(i)
   if params:get("rnd_transpose") == 2 then
     params:set(i.."transpose", math.random(1, 15))
@@ -382,6 +596,7 @@ function randomize(i)
   track[i].step_count = 0
 end
 
+
 --------------------- SNAPSHOTS -----------------------
 local snap_set_rec = false
 local snap_set_mute = false
@@ -393,8 +608,8 @@ local snap_set_splice = false
 local snap_play_state = false
 local snap_cut_pos = false
 local snap_reset_pos = false
+local snap_set_lfo = false
 
-snapshot_mode = false
 
 snap = {}
 for i = 1, 8 do -- 8 snapshot slots
@@ -415,6 +630,7 @@ for i = 1, 8 do -- 8 snapshot slots
   snap[i].active_splice = {}
   snap[i].route_t5 = {}
   snap[i].route_t6 = {}
+  snap[i].lfo_enabled = {}
   for j = 1, 6 do -- 6 tracks
     snap[i].rec[j] = 0
     snap[i].play[j] = 0
@@ -429,6 +645,7 @@ for i = 1, 8 do -- 8 snapshot slots
     snap[i].active_splice[j] = 1
     snap[i].route_t5[j] = 0
     snap[i].route_t6[j] = 0
+    snap[i].lfo_enabled[j] = 0
   end
 end
 
@@ -447,6 +664,7 @@ function save_snapshot(n)
     snap[n].active_splice[i] = track[i].splice_active
     snap[n].route_t5[i] = track[i].route_t5
     snap[n].route_t6[i] = track[i].route_t6
+    snap[n].lfo_enabled[i] = lfo[i].enabled
     clock.run(function()
       clock.sleep(0.05) -- give get_pos() some time
       snap[n].cut[i] = track[i].cut
@@ -480,7 +698,7 @@ end
 function recall_snapshot(n, i, sync)
   -- flip the unflipped
   if mod == 1 and not track[i].loaded then
-    load_track_tape(i)
+    load_track_tape(i) --TODO: only load what won't be set via snapshot. add bool as arg -> snapshot == true
   end
   -- load se snap
   if snap_set_rec then
@@ -532,6 +750,10 @@ function recall_snapshot(n, i, sync)
         local e = {t = eSTART, i = i, sync = sync} event(e)
       end
     end
+  end
+  if snap_set_lfo then
+    local action = snap[n].lfo_enabled[i] == 1 and "lfo_on" or "lfo_off"
+    local e = {t = eLFO, i = i, action = action , sync = sync} event(e)
   end
 end
 
@@ -605,7 +827,7 @@ for i = 1, 6 do
     tp[i].splice[s].s = tp[i].s + (DEFAULT_SPLICELEN + FADE_TIME) * (s - 1)
     tp[i].splice[s].e = tp[i].splice[s].s + DEFAULT_SPLICELEN
     tp[i].splice[s].l = tp[i].splice[s].e - tp[i].splice[s].s
-    tp[i].splice[s].name = "-"
+    tp[i].splice[s].name = ""
     tp[i].splice[s].info = "length: "..string.format("%.2f", DEFAULT_SPLICELEN).."s"
     tp[i].splice[s].init_start = tp[i].splice[s].s
     tp[i].splice[s].init_len = DEFAULT_SPLICELEN
@@ -631,7 +853,7 @@ function set_clip(i)
   local s = track[i].splice_active
   clip[i].s = tp[i].splice[s].s
   clip[i].l = tp[i].splice[s].l
-  clip[i].e = clip[i].s + clip[i].l
+  clip[i].e = tp[i].splice[s].e
   clip[i].bpm = tp[i].splice[s].bpm
   -- set softcut
   softcut.loop_start(i, clip[i].s)
@@ -657,7 +879,7 @@ function init_splices(i) -- reset splices to default
     tp[i].splice[s].init_len = DEFAULT_SPLICELEN
     tp[i].splice[s].beatnum = DEFAULT_BEATNUM
     tp[i].splice[s].bpm = 60 
-    tp[i].splice[s].name = "-"
+    tp[i].splice[s].name = ""
     set_info(i, s)
   end
   track[i].splice_active = 1
@@ -781,9 +1003,9 @@ function set_tape(i, buffer) -- assign tape buffer
   local prev_start = tp[i].s
   tp[i].s = TAPE_GAP * buffer + (buffer - 1) * MAX_TAPELENGTH
   tp[i].e = tp[i].s + MAX_TAPELENGTH
-  for j = 1, 8 do
-    tp[i].splice[j].s = tp[i].splice[j].s + (tp[i].s - prev_start)
-    tp[i].splice[j].e = tp[i].splice[j].s + tp[i].splice[j].l
+  for s = 1, 8 do
+    tp[i].splice[s].s = tp[i].splice[s].s + (tp[i].s - prev_start)
+    tp[i].splice[s].e = tp[i].splice[s].s + tp[i].splice[s].l
   end
   set_clip(i)
   render_splice()
@@ -872,9 +1094,9 @@ end
 
 function recalc_splices() -- called when tempo changes
   for i = 1, 6 do
-    if track[i].tempo_map > 0 then
-      for j = 1, 8 do
-        splice_resize(i, j) -- resize clip according to tempo settings
+    if track[i].tempo_map > 0 and (track[i].loaded or loadop.tempo_transition == 3) then
+      for n = 1, 8 do
+        splice_resize(i, n)
       end
       render_splice()
     end
@@ -1263,13 +1485,16 @@ function toggle_playback(i)
     if track[i].start_launch == 1 then
       local e = {t = eSTART, i = i} event(e)
     else
-      clock.run(function()
-        local beat_sync = track[i].start_launch == 2 and 1 or bar_val
-        local cut = track[i].rev == 0 and clip[i].s or clip[i].e
+      local beat_sync = track[i].start_launch == 2 and 1 or bar_val
+      local pos
+      if track[i].loop == 0 then
+        pos = track[i].rev == 0 and clip[i].s or clip[i].e
+      else
         local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
         local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
-        local loop = track[i].rev == 0 and s or e
-        local pos = track[i].loop == 0 and cut or loop
+        pos = track[i].rev == 0 and s or e
+      end
+      clock.run(function() 
         clock.sync(beat_sync)
         local e = {t = eSTART, i = i, pos = pos, sync = true} event(e)
       end)
@@ -1882,7 +2107,7 @@ end
 
 function tempo_transition(beats, dest_tempo)
   local delta_bpm = dest_tempo - current_tempo
-  local beat_sync = math.abs(delta_bpm) / beats
+  local beat_sync = beats / math.abs(delta_bpm)
   if delta_bpm > 0 then
     while current_tempo < dest_tempo do
       clock.sync(beat_sync)
@@ -1951,12 +2176,12 @@ function load_audio(path, i, s, l)
   tp[i].splice[s].beatnum = num_beats
   tp[i].splice[s].resize = track[i].tempo_map > 1 and num_beats or math.ceil(l)
   tp[i].splice[s].bpm = 60 / l * num_beats
-  tp[i].splice[s].name = path:match("[^/]*$")
+  tp[i].splice[s].name = str_format(path:match("[^/]*$"), 24)
   if s == track[i].splice_active then  
     set_clip(i)
   end
   set_info(i, s)
-  print("file: "..tp[i].splice[s].name.." "..string.format("%.2f", tp[i].splice[s].s).."s - "..string.format("%.2f", tp[i].splice[s].e).."s")
+  print("file: "..tp[i].splice[s].name.." "..string.format("%.2f", tp[i].splice[s].l))
   return tp[i].splice[s].e + FADE_TIME
 end
 
@@ -1990,6 +2215,7 @@ function load_batch(path, i, s, n)
           s = s + 1
         else
           print(files[f].." too long - can't populate further")
+          show_message("splice   "..s.."   too long")
           goto done
         end
       else
@@ -2003,6 +2229,14 @@ function load_batch(path, i, s, n)
   render_splice()
   dirtyscreen = true
   dirtygrid = true
+end
+
+function filerename_callback(txt)
+  if txt then
+    tp[track_focus].splice[track[track_focus].splice_focus].name = txt
+  end
+  screenredrawtimer:start()
+  dirtyscreen = true
 end
 
 function filesave_callback(txt)
@@ -2076,7 +2310,7 @@ function load_patterns()
     snap[i].speed = {table.unpack(loaded_sesh_data[i].snap_speed)}
     snap[i].rev = {table.unpack(loaded_sesh_data[i].snap_rev)}
     snap[i].transpose_val = {table.unpack(loaded_sesh_data[i].snap_transpose_val)}
-    -- remove conditionals eventually ()
+    -- remove conditionals eventually
     if loaded_sesh_data[i].snap_active_splice ~= nil then
       snap[i].active_splice = {table.unpack(loaded_sesh_data[i].snap_active_splice)}
     end
@@ -2086,6 +2320,13 @@ function load_patterns()
     if loaded_sesh_data[i].snap_route_t5 ~= nil then
       snap[i].route_t5 = {table.unpack(loaded_sesh_data[i].snap_route_t5)}
       snap[i].route_t6 = {table.unpack(loaded_sesh_data[i].snap_route_t6)}
+    end
+    if loaded_sesh_data[i].snap_lfo_enabled ~= nil then
+      snap[i].lfo_enabled = {table.unpack(loaded_sesh_data[i].snap_lfo_enabled)}
+    end
+    -- set pmac params
+    if loaded_sesh_data.pmac_d ~= nil then
+      pmac.d = deep_copy(loaded_sesh_data.pmac_d)
     end
   end
 end
@@ -2187,10 +2428,12 @@ function load_track_tape(i)
   if tp[i].buffer ~= loaded_sesh_data[i].track_buffer then
     params:set(i.."tape_buffer", loaded_sesh_data[i].track_buffer, true) -- silent (no need to re-calc splice markers as saved like og)
   end
+  if loadop.splice_active > 1 then
+    local num = loadop.splice_active == 2 and loaded_sesh_data[i].track_splice_active or 1
+    track[i].splice_active = num
+    track[i].splice_focus = num
+  end
   -- track data
-  track[i].splice_active = 1
-  track[i].splice_focus = 1
-
   for k, v in pairs(loadop.set_param) do
     if loadop[v] == 2 then -- load from pset data
       local t = "track_"..v
@@ -2250,6 +2493,10 @@ function init()
     if GRID_SIZE == 256 and rotate_grid then
       g:rotation(1) -- 1 is 90°
     end
+  end
+  -- detect arc
+  if a.device then
+    arc_is = true
   end
 
   -- set time variables
@@ -2313,15 +2560,20 @@ function init()
 
   
   -- macro params
-  params:add_group("macro_params", "macros", 12)
+  params:add_group("macro_params", "macros", 14)
   
   params:add_option("slot_assign", "macro slots", {"split", "patterns only", "recall only"}, 1)
   params:set_action("slot_assign", function(option) macro_slot_mode = option dirtygrid = true end)
   if GRID_SIZE == 256 then params:hide("slot_assign") end
   
-  params:add_option("recall_mode", "recall mode", {"manual recall", "snapshot"}, 2)
-  params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false build_menu() dirtygrid = true end)
-  
+  params:add_option("recall_mode", "recall mode", {"punch-in", "snapshot"}, 2)
+  params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false dirtygrid = true end)
+  params:hide("recall_mode")
+
+  params:add_option("punchin_mode", "punch-in mode", {"momentary", "latch"}, 1)
+  params:set_action("punchin_mode", function(x) punch_momentrary = x == 1 and true or false dirtygrid = true end)
+  params:hide("punchin_mode")
+
   params:add_separator("snapshot_options", "snapshot options")
 
   params:add_option("recall_playback_state", "playback", {"ignore", "state only", "state & pos", "state & reset"}, 1)
@@ -2356,8 +2608,11 @@ function init()
   params:add_option("recall_set_route", "track sends", {"ignore", "recall"}, 2)
   params:set_action("recall_set_route", function(x) snap_set_route = x == 2 and true or false end)
 
+  params:add_option("recall_lfo_state", "lfo state", {"ignore", "recall"}, 2)
+  params:set_action("recall_lfo_state", function(x) snap_set_lfo = x == 2 and true or false end)
+
   -- silent load config
-  params:add_group("loadop_config", "silent load", 25)
+  params:add_group("loadop_config", "silent load", 26)
 
   params:add_binary("loadop_save", ">> save options", "trigger")
   params:set_action("loadop_save", function() save_loadop_config() end)
@@ -2452,6 +2707,10 @@ function init()
   params:set_action("loadop_fade", function(x) loadop.fade = x end)
   params:set_save("loadop_fade", false)
 
+  params:add_option("loadop_splice_active", "active splice", {"ignore", "load", "reset"}, 1)
+  params:set_action("loadop_splice_active", function(x) loadop.splice_active = x end)
+  params:set_save("loadop_splice_active", false)
+
   params:add_separator("loadop_remote", "remote control")
 
   params:add_binary("loadop_silent_load", ">> silent load", "trigger")
@@ -2474,7 +2733,7 @@ function init()
   end)
 
   -- midi params
-  params:add_group("track_control_params", "track control", 64)
+  params:add_group("track_control_params", "track control", 63)
   
   params:add_separator("midi_transport_control", "midi output")
 
@@ -2493,9 +2752,6 @@ function init()
   -- stop all
   params:add_binary("stop_all", "stop all", "trigger", 0)
   params:set_action("stop_all", function() stopall() end)
-
-  params:add_option("stopall_key", "stop all key", {"off", "on"}, 2)
-  params:set_action("stopall_key", function(x) stop_all_active = x == 2 and true or false end)
 
   params:add_separator("control_focused_track", "focused track control")
   -- playback
@@ -2600,14 +2856,16 @@ function init()
   params:add_control("rnd_lcut", "lower freq", controlspec.new(20, 12000, 'exp', 1, 20, "Hz"))
 
   -- arc settings
-  params:add_group("arc_params", "arc settings", 5)
+  params:add_group("arc_params", "arc settings", 6)
   params:add_option("arc_orientation", "arc orientation", {"horizontal", "vertical"}, 1)
   params:set_action("arc_orientation", function(val) arc_off = (val - 1) * 16 end)
   params:add_option("arc_enc_1_start", "enc1 > start", {"off", "on"}, 2)
   params:add_option("arc_enc_1_dir", "enc1 > direction", {"off", "on"}, 1)
   params:add_option("arc_enc_1_mod", "enc1 > mod", {"off", "warble", "scrub"}, 3)
-  params:add_number("arc_srub_sens", "scrub sensitivity", 1, 10, 8)
+  params:add_number("arc_srub_sens", "scrub sensitivity", 1, 10, 6)
   params:set_action("arc_srub_sens", function(val) scrub_sens = -50 * val + 550 end)
+  params:add_number("arc_pmac_sens", "p-macro sensitivity", 1, 10, 2)
+  params:set_action("arc_pmac_sens", function(val) pmac_sens = 5 * val end)
 
   -- patterns params
   params:add_group("patterns", "patterns", 40)
@@ -2790,7 +3048,7 @@ function init()
     -- midi velocity
     params:add_number(i.."midi_vel", "midi velocity", 1, 127, 100)
     params:set_action(i.."midi_vel", function(num) trig[i].midi_vel = num end)
-    
+        
     -- init softcut
     softcut.enable(i, 1)
     softcut.buffer(i, 1)
@@ -2804,8 +3062,6 @@ function init()
     softcut.rec_level(i, 0)
 
     softcut.fade_time(i, FADE_TIME)
-    softcut.level_slew_time(i, 0.1)
-
     softcut.loop_start(i, clip[i].s)
     softcut.loop_end(i, clip[i].e)
     softcut.loop(i, 1)
@@ -2835,6 +3091,7 @@ function init()
     sesh_data.scale = current_scale
     sesh_data.quant_rate = params:get("quant_rate")
     sesh_data.time_signature = params:get("time_signature")
+    sesh_data.pmac_d = deep_copy(pmac.d)
     for i = 1, 8 do
       sesh_data[i] = {}
       -- pattern data
@@ -2868,6 +3125,7 @@ function init()
       sesh_data[i].snap_active_splice = {table.unpack(snap[i].active_splice)}
       sesh_data[i].snap_route_t5 = {table.unpack(snap[i].route_t5)}
       sesh_data[i].snap_route_t6 = {table.unpack(snap[i].route_t6)}
+      sesh_data[i].snap_lfo_enabled = {table.unpack(snap[i].lfo_enabled)}
     end
     for i = 1, 6 do
       -- tape data
@@ -2980,7 +3238,7 @@ function init()
             end)
           end
         end
-        -- load pattern, recall and snapshot data
+        -- load pattern, recall, snapshot and performance macro data
         load_patterns()
         dirtyscreen = true
         dirtygrid = true
@@ -3075,20 +3333,7 @@ function init()
   softcut.event_phase(phase_poll)
   softcut.poll_start_phase()
   softcut.event_position(get_pos)
-
-  -- detect if arc is connected
-  for v in pairs(arc.devices) do
-    if arc.devices[v].name ~= nil then
-      arc_is = true
-    end
-  end
-  
-  if pset_load then
-    params:default()
-  else
-    params:bang()
-  end
-
+ 
   -- load silent load config
   load_loadop_config()
 
@@ -3099,6 +3344,12 @@ function init()
   set_view(vMAIN)
   set_gridview(vCUT, "z")
   set_gridview(vREC, "o")
+
+  if pset_load then
+    params:default()
+  else
+    params:bang()
+  end
  
   print("mlre loaded and ready. enjoy!")
 
@@ -3116,7 +3367,6 @@ vPATTERNS = 6
 vTAPE = 7
 
 view = vMAIN
-view_prev = view
 
 grido_view = vREC
 gridz_view = vCUT
@@ -3132,12 +3382,6 @@ v.gridredraw_o = {}
 v.gridkey_z = {}
 v.gridredraw_z = {}
 
-viewinfo = {}
-viewinfo[vREC] = 0
-viewinfo[vLFO] = 0
-viewinfo[vENV] = 0
-viewinfo[vPATTERNS] = 0
-
 -- set page and screen view
 function set_gridview(x, pos)
   local pos = pos or "o"
@@ -3150,7 +3394,10 @@ function set_gridview(x, pos)
     _gridkey_z = v.gridkey_z[x]
     _gridredraw_z = v.gridredraw_z[x]
   end
+  if pmac_edit_view and x ~= vPATTERNS then pmac_edit_view = false end
+  if pmac_perf_view and x == vTAPE then pmac_perf_view = false end
   grd.clear_keylogic()
+  screen.ping()
   dirtyscreen = true
   dirtygrid = true
 end
@@ -3180,16 +3427,21 @@ end
 function key(n, z)
   if n == 1 then
     shift = z
-    dirtyscreen = true
+    toggle_pmac_perf_view(z)
   else
     if popup_view then
       ui.popup_key(n, z)
     elseif keyquant_edit then
       -- do nothing
+    elseif pmac_perf_view then
+      ui.pmac_perf_key(n, z)
+    elseif pmac_edit_view then
+      ui.pmac_edit_key(n, z)
     else
       _key(n, z)
     end
   end
+  dirtyscreen = true
 end
 
 function enc(n, d)
@@ -3197,6 +3449,10 @@ function enc(n, d)
     -- do nothing
   elseif keyquant_edit then
     ui.keyquant_enc(n, d)
+  elseif pmac_perf_view then
+    ui.pmac_perf_enc(n, d)
+  elseif pmac_edit_view then
+    ui.pmac_edit_enc(n, d)
   else
     _enc(n, d)
   end
@@ -3207,17 +3463,29 @@ function redraw()
     ui.popup_redraw()
   elseif keyquant_edit then
     ui.keyquant_redraw()
+  elseif pmac_perf_view then
+    ui.pmac_perf_redraw()
+  elseif pmac_edit_view then
+    ui.pmac_edit_redraw()
   else
     _redraw()
   end
 end
 
 function a.delta(n, d)
-  _arcdelta(n, d)
+  if pmac_perf_view then
+    ui.arc_pmac_delta(n, d)
+  else
+    _arcdelta(n, d)
+  end
 end
 
 function arcredraw()
-  _arcredraw()
+  if pmac_perf_view then
+    ui.arc_pmac_draw()
+  else
+    _arcredraw()
+  end
 end
 
 function g.key(x, y, z)
@@ -3524,11 +3792,11 @@ v.redraw[vPATTERNS] = function()
 end
 
 v.arcdelta[vPATTERNS] = function(n, d)
-  ui.arc_pattern_delta(n, d)
+  ui.arc_main_delta(n, d)
 end
 
 v.arcredraw[vPATTERNS] = function()
-  ui.arc_pattern_draw()
+  ui.arc_main_draw()
 end
 
 v.gridkey_o[vPATTERNS] = function(x, y, z)
@@ -3637,29 +3905,6 @@ function build_menu(i)
   else
     params:hide("arc_params")
   end
-  if snapshot_mode then
-    params:show("snapshot_options")
-    params:show("recall_playback_state")
-    params:show("recall_active_splice")
-    params:show("recall_loop_state")
-    params:show("recall_rec_state")
-    params:show("recall_mute_state")
-    params:show("recall_rev_state")
-    params:show("recall_speed_state")
-    params:show("recall_transpose_state")
-    params:show("recall_set_route")
-  else
-    params:hide("snapshot_options")
-    params:hide("recall_playback_state")
-    params:hide("recall_active_splice")
-    params:hide("recall_loop_state")
-    params:hide("recall_rec_state")
-    params:hide("recall_mute_state")
-    params:hide("recall_rev_state")
-    params:hide("recall_speed_state")
-    params:hide("recall_transpose_state")
-    params:hide("recall_set_route")
-  end
   _menu.rebuild_params()
   dirtyscreen = true
 end
@@ -3671,6 +3916,15 @@ end
 
 function round_form(param, quant, form)
   return(util.round(param, quant)..form)
+end
+
+function deep_copy(tbl)
+  local ret = {}
+  if type(tbl) ~= 'table' then return tbl end
+  for key, value in pairs(tbl) do
+    ret[key] = deep_copy(value)
+  end
+  return ret
 end
 
 function str_format(str, maxLength, separator)
