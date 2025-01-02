@@ -25,7 +25,7 @@ local patterns_page_names_l = {"meter", "launch"}
 local patterns_page_names_r = {"length", "play   mode"}
 
 -- tape page variables
-local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "format >", "format >>>"}
+local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "rename", "format >", "format >>>"}
 local tape_action = 2
 
 -- arc variables
@@ -38,6 +38,12 @@ local arc_render = 0
 local arc_lfo_focus = 1
 local arc_track_focus = 1
 local arc_splice_focus = 1
+local arc_pmac = {}
+for i = 1, 4 do
+  arc_pmac[i] = {}
+  arc_pmac[i].viz = 1
+  arc_pmac[i].inc = 1
+end
 
 local function display_message()
   if view_message ~= "" then
@@ -55,13 +61,13 @@ local function display_message()
   end
 end
 
+
 ---------------------- POPUP -------------------------
 function ui.popup_key(n, z)
   if n > 1 and z == 1 then
     if n == 3 then popup_func() end
     popup_func = nil
     popup_view = false
-    dirtyscreen = true
   end
 end
 
@@ -121,28 +127,165 @@ function ui.keyquant_redraw()
 end
 
 
+---------------------- PMAC PERF -------------------------
+function ui.pmac_perf_key(n, z)
+  if z == 1 then
+    if n == 2 then
+      params:set("slot_assign", macro_slot_mode == 2 and 3 or 2)
+      show_message(macro_slot_mode == 2 and "pattern   slots" or "recall   slots")
+    elseif n == 3 then
+      pmac_pageEnc = 1 - pmac_pageEnc
+    end
+  end
+end
+
+function ui.pmac_perf_enc(n, d)
+  if n == 1 and arc_is then
+    if d > 0 then
+      if arc_pageNum ~= 2 then
+        arc_pageNum = 2
+        show_message("arc  -  levels")
+      end
+    else
+      if arc_pageNum ~= 1 then
+        arc_pageNum = 1
+        show_message("arc  -  play head")
+      end
+    end
+  else
+    local enc = n - 1 + pmac_pageEnc * 2
+    pmac_exec(enc, d)
+  end
+  dirtyscreen = true
+end
+
+function ui.pmac_perf_redraw()
+  screen.clear()
+  screen.level(15)
+  screen.font_face(2)
+  screen.font_size(8)
+  screen.move(64, 12)
+  screen.text_center("P - MACROS")
+  screen.font_size(24)
+  for i = 1, 2 do
+    local action = pmac.d[i + pmac_pageEnc * 2].action
+    local xpos = i == 1 and 30 or 98
+    screen.level(action == 0 and 1 or 15)
+    if action > 0 then
+      screen.move(xpos + 4, 42)
+      screen.text_center(">>")
+    elseif action < 0 then
+      screen.move(xpos - 5, 42)
+      screen.text_center("<<")
+    else
+      screen.move(xpos, 42)
+      screen.text_center("< >")
+    end
+  end
+  screen.font_size(8)
+  screen.level(4)
+  screen.move(30, 60)
+  screen.text_center(pmac_pageEnc == 0 and "macro   1" or "macro   3")
+  screen.move(98, 60)
+  screen.text_center(pmac_pageEnc == 0 and "macro   2" or "macro   4")
+  -- display messages
+  display_message()
+  screen.update()
+end
+
+function ui.arc_pmac_delta(n, d)
+  local delta = d / pmac_sens
+  arc_pmac[n].inc = util.clamp(arc_pmac[n].inc + delta, -62, 64)
+  arc_pmac[n].viz = math.floor(arc_pmac[n].inc)
+  pmac_exec(n, delta)
+end
+
+function ui.arc_pmac_draw()
+  a:all(0)
+  for i = 1, 4 do
+    local pos = arc_pmac[i].viz
+    if pos > 0 then
+      for n = 1, pos do
+        a:led(i, n - arc_off, 6)
+      end
+    else
+      for n = 0, pos, -1 do
+        a:led(i, n - arc_off, 6)
+      end
+    end
+    a:led(i, pos - arc_off, 15)
+    a:led(i, 1 - arc_off, 8)
+  end
+  a:refresh()
+end
+
+function ui.reset_pmac_arc()
+  for i = 1, 4 do
+    arc_pmac[i].inc = 1
+    arc_pmac[i].viz = 1
+  end
+end
+
+
+---------------------- PMAC MENU -------------------------
+function ui.pmac_edit_key(n, z)
+  if z == 1 then
+    local inc = n == 2 and -1 or 1
+    pmac_pageNum = util.wrap(pmac_pageNum + inc, 1, 4)
+  end
+end
+
+function ui.pmac_edit_enc(n, d)
+  if n == 1 then
+    pmac_focus = util.clamp(pmac_focus + d, 1, 6)
+  else
+    local p = pmac_param_id[n - 1][pmac_pageNum]
+    local inc = d > 0 and 1 or -1
+    pmac.d[pmac_enc][pmac_focus][p] = util.clamp(pmac.d[pmac_enc][pmac_focus][p] + inc, -100, 100)
+  end
+  dirtyscreen = true
+end
+
+function ui.pmac_edit_redraw()
+  screen.clear()
+  screen.level(15)
+  screen.font_face(2)
+  screen.font_size(8)
+  screen.move(4, 12)
+  screen.text("P - MACRO  "..pmac_enc)
+  screen.move(64, 12)
+  screen.text_center((pmac_pageNum == 4 and "LFO  " or "T  ")..pmac_focus)
+  for i = 1, 2 do
+    screen.level(pmac_pageNum == i and 15 or 4)
+    screen.rect(120 + (i - 1) * 4, 6, 2, 2)
+    screen.fill()
+    screen.level(pmac_pageNum == i + 2 and 15 or 4)
+    screen.rect(120 + (i - 1) * 4, 10, 2, 2)
+    screen.fill()
+  end
+  screen.level(shift == 0 and 15 or 1)
+  screen.font_size(16)
+  screen.move(30, 39)
+  screen.text_center(pmac.d[pmac_enc][pmac_focus][pmac_param_id[1][pmac_pageNum]].."%")
+  screen.move(98, 39)
+  screen.text_center(pmac.d[pmac_enc][pmac_focus][pmac_param_id[2][pmac_pageNum]].."%")
+  screen.font_size(8)
+  screen.level(4)
+  screen.move(30, 60)
+  screen.text_center(pmac_param_name[1][pmac_pageNum])
+  screen.move(98, 60)
+  screen.text_center(pmac_param_name[2][pmac_pageNum])
+  screen.update()
+end
+
+
 ---------------------- MAIN VIEW -------------------------
 
 function ui.main_key(n, z)
   if n == 2 and z == 1 then
-    if shift == 0 then
-      main_pageNum = util.wrap(main_pageNum - 1, 1, 8)
-    elseif GRID_SIZE == 128 then
-      local mode = macro_slot_mode == 2 and 3 or 2
-      local msg = macro_slot_mode == 2 and "recall   slots" or "pattern   slots"
-      params:set("slot_assign", mode)
-      show_message(msg)
-    end
-    dirtyscreen = true
+    main_pageNum = util.wrap(main_pageNum - 1, 1, 8)
   elseif n == 3 and z == 1 then
-    if shift == 0 then
-      main_pageNum = util.wrap(main_pageNum + 1, 1, 8)
-    elseif arc_is then
-      arc_pageNum = util.wrap(arc_pageNum + 1, 1, 2)
-      local msg = arc_pageNum == 1 and "arc  -  play head" or "arc  -  levels"
-      show_message(msg)
-    end
-    dirtyscreen = true
+    main_pageNum = util.wrap(main_pageNum + 1, 1, 8)
   end
 end
 
@@ -152,22 +295,10 @@ function ui.main_enc(n, d)
     dirtygrid = true
     dirtyscreen = true
   elseif n == 2 then
-    if shift == 0 then
-      params:delta(track_focus..main_page_params_l[main_pageNum], d)
-    else
-      for i = 1, 6 do
-        params:delta(i..main_page_params_l[main_pageNum], d)
-      end
-    end
+    params:delta(track_focus..main_page_params_l[main_pageNum], d)
   elseif n == 3 then
     if not (main_page_params_r[main_pageNum] == "post_dry" and params:get(track_focus.."filter_type") == 5) then
-      if shift == 0 then
-        params:delta(track_focus..main_page_params_r[main_pageNum], d)
-      else
-        for i = 1, 6 do
-          params:delta(i..main_page_params_r[main_pageNum], d)
-        end
-      end
+      params:delta(track_focus..main_page_params_r[main_pageNum], d)
     end
   end
 end
@@ -179,15 +310,11 @@ function ui.main_redraw()
   screen.level(15)
   screen.move(4, 12)
   screen.text("TRACK "..track_focus)
-  local hi = shift == 0 and 15 or 4
-  local lo = shift == 1 and 15 or 4
   for i = 1, 4 do
-    screen.level(main_pageNum == i and hi or lo)
+    screen.level(main_pageNum == i and 15 or 4)
     screen.rect(112 + (i - 1) * 4, 6, 2, 2)
     screen.fill()
-  end
-  for i = 1, 4 do
-    screen.level(main_pageNum == i + 4 and hi or lo)
+    screen.level(main_pageNum == i + 4 and 15 or 4)
     screen.rect(112 + (i - 1) * 4, 10, 2, 2)
     screen.fill()
   end
@@ -263,7 +390,7 @@ function ui.arc_main_delta(n, d)
       if (d > 10 or d < -10) and params:get("arc_enc_1_mod") == 2 then
         if track[track_focus].play == 1 then
           clock.run(function()
-            local speedmod = 1 - d / 80
+            local speedmod = d / 80
             local n = math.pow(2, track[track_focus].speed + track[track_focus].transpose + track[track_focus].detune)
             if track[track_focus].rev == 1 then n = -n end
             if track[track_focus].tempo_map == 2 then
@@ -456,7 +583,7 @@ function ui.arc_main_draw()
     end
     a:led (2, arc_pan + 1 - arc_off, 15)
     -- draw cutoff
-    local arc_cut = math.floor(util.explin(20, 18000, 0, 1, params:get(track_focus.."cutoff")) * 48) + 41
+    local arc_cut = math.floor(util.explin(20, 12000, 0, 1, params:get(track_focus.."cutoff")) * 48) + 41
     a:led (3, 25 - arc_off, 5)
     a:led (3, -23 - arc_off, 5)
     for i = -22, 24 do
@@ -507,7 +634,6 @@ function ui.lfo_key(n, z)
     lfo_pageNum = util.wrap(lfo_pageNum + 1, 1, 3)
   end
   ui.update_lfo_param()
-  dirtyscreen = true
 end
 
 function ui.lfo_enc(n, d)
@@ -646,7 +772,6 @@ function ui.env_key(n, z)
   elseif n == 3 and z == 1 then
     env_pageNum = util.wrap(env_pageNum + 1, 1, 3)
   end
-  dirtyscreen = true
 end
 
 function ui.env_enc(n, d)
@@ -798,16 +923,17 @@ function ui.patterns_key(n, z)
   elseif n == 3 and z == 1 then
     patterns_pageNum = util.wrap(patterns_pageNum + 1, 1, 2)
   end
-  dirtyscreen = true
 end
 
 function ui.patterns_enc(n, d)
   if n == 1 then
     pattern_focus = util.clamp(pattern_focus + d, 1, 8)
-  elseif n == 2 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
-    params:delta(patterns_page_params_l[patterns_pageNum]..pattern_focus, d)
-  elseif n == 3 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
-    params:delta(patterns_page_params_r[patterns_pageNum]..pattern_focus, d)
+  else
+    if n == 2 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
+      params:delta(patterns_page_params_l[patterns_pageNum]..pattern_focus, d)
+    elseif n == 3 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
+      params:delta(patterns_page_params_r[patterns_pageNum]..pattern_focus, d)
+    end
   end
   dirtygrid = true
   dirtyscreen = true
@@ -851,16 +977,6 @@ function ui.patterns_redraw()
   screen.update()
 end
 
-function ui.arc_pattern_delta(n, d)
-  -- noting yet
-end
-
-function ui.arc_pattern_draw()
-  a:all(0)
-  -- light save mode
-  a:refresh()
-end
-
 
 ---------------------- TAPE VIEW ------------------------
 
@@ -875,7 +991,6 @@ function ui.tape_key(n, z)
         load_batch(path, i, s, n)
       end
       view_batchload_options = false
-      dirtyscreen = true
     end
   elseif view_presets then
     if n == 2 and z == 1 then
@@ -897,7 +1012,6 @@ function ui.tape_key(n, z)
       if n == 2 then
         if tape_actions[tape_action] == "populate" and z == 1 then
           view_batchload_options = true
-          dirtyscreen = true
           screenredrawtimer:stop()
           fileselect.enter(_path.audio, function(path) batchload_callback(path, i) end, "audio")
         elseif tape_actions[tape_action] == "load" and z == 1 then
@@ -907,13 +1021,16 @@ function ui.tape_key(n, z)
           popupscreen("clear   splice", clear_splice)
         elseif tape_actions[tape_action] == "save" and z == 0 then
           screenredrawtimer:stop()
-          textentry.enter(filesave_callback, "mlre_" .. (math.random(9000) + 1000))
+          textentry.enter(filesave_callback, tp[i].splice[s].name)
         elseif tape_actions[tape_action] == "copy" and z == 1 then
           copy_ref.track = i
           copy_ref.splice = s
           show_message("ready   to   paste")
         elseif tape_actions[tape_action] == "paste" and z == 1 then
           copy_splice_audio()
+        elseif tape_actions[tape_action] == "rename" and z == 0 then
+          screenredrawtimer:stop()
+          textentry.enter(filerename_callback, tp[i].splice[s].name)
         elseif tape_actions[tape_action] == "format >" and z == 1 then
           popupscreen("format   next   splice", format_splice)
         elseif tape_actions[tape_action] == "format >>>" and z == 1 then
@@ -1155,10 +1272,10 @@ function ui.tape_redraw()
     if view_splice_info then
       screen.level(8)
       screen.move(4, 30)
-      screen.text(">> "..str_format(tp[track_focus].splice[splice_focus].name, 24))
+      screen.text(">>  "..tp[track_focus].splice[splice_focus].name)
       screen.level(4)
       screen.move(64, 45)
-      screen.text_center("-- "..tp[track_focus].splice[splice_focus].info.." --")
+      screen.text_center("--  "..tp[track_focus].splice[splice_focus].info.."  --")
     else
       -- display buffer
       screen.level(6)
