@@ -15,8 +15,10 @@ for i = 1, 8 do
 end
 
 local snapshot_last = 0
+local event_reset_timeout = false
+local event_reset_clk = nil
 
-local function pattern_events(i)
+local function pattern_slots(i)
   if alt == 1 then
     pattern[i]:clear()
     pattern_rec = false
@@ -58,37 +60,77 @@ local function pattern_events(i)
   end
 end
 
-local function snapshot_events(i)
-  if alt == 1 then
-    snap[i].data = false
-    snap[i].active = false
-  else
-    if snap[i].data then
-      local snap_dest = held_focus > 0 and track_focus or "all"
-      load_snapshot(i, snap_dest)
-      snap[i].active = true
-      snapshot_last = i
+local function snapshot_actions(i, z)
+  snap[i].active = z == 1 and true or false
+  if z == 1 then
+    if alt == 1 then
+      snap[i].data = false
+      snap[i].active = false
     else
-      save_snapshot(i)
+      if snap[i].data then
+        local snap_dest = held_focus > 0 and track_focus or "all"
+        load_snapshot(i, snap_dest)
+        snap[i].active = true
+        snapshot_last = i
+      else
+        save_snapshot(i)
+      end
     end
   end
 end
 
-local function recall_events(i)
-  if alt == 1 then
-    recall[i].event = {}
-    recall[i].recording = false
-    recall[i].has_data = false
-    recall[i].active = false
-  elseif recall[i].recording == true then
-    recall[i].recording = false
-  elseif recall[i].has_data == false then
-    recall[i].recording = true
-  elseif recall[i].has_data == true then
-    recall_exec(i)
-    recall[i].active = true
-    recall_last = i
+local function recall_actions(i, z)
+  held[1] = held[1] + (z * 2 - 1)
+  recall[i].active = z == 1 and true or false
+  if z == 1 then
+    if held[1] == 1 then
+      save_event_state()
+    end
+    if alt == 1 then
+      recall[i].event = {}
+      recall[i].has_data = false
+      recall[i].active = false
+    elseif recall[i].has_data then
+      recall_exec(i)
+    else
+      recall_rec = i
+    end
+    -- min timeout
+    event_reset_timeout = false
+    if event_reset_clk ~= nil then
+      clock.cancel(event_reset_clk)
+    end
+    event_reset_clk = clock.run(function()
+      clock.sync(1/4)
+      if not recall[i].active then
+        reset_event_state(true)
+      end
+      event_reset_timeout = true
+    end)
+  else
+    if recall_rec == i then recall_rec = 0 end
+    if held[1] < 1 and event_reset_timeout then
+      reset_event_state(true)
+    end
   end
+end
+
+local function recall_slots(i, z)
+  if snapshot_mode then
+    snapshot_actions(i, z)
+  else
+    recall_actions(i, z)
+  end
+end
+
+local function toggle_snap_mode(z)
+  if z == 1 then
+    snapshot_mode = not snapshot_mode
+    save_event_state()
+  else
+    snapshot_mode = params:get("recall_mode") == 2 and true or false
+  end
+  held[1] = 0
 end
 
 function grd.clear_keylogic()-- reset key logic in case of stuck loops
@@ -149,55 +191,56 @@ function grd.nav(x, z, pos)
       mod = 1
     elseif x == 14 and alt == 1 then
       retrig()  -- set all playing tracks to pos 1
-    elseif x == 13 and alt == 0 and stop_all_active then
-      stopall() -- stops all tracks
-    elseif x == 13 and alt == 1 then
-      altrun()  -- stops all running tracks and runs all stopped tracks if track[i].sel == 1
+    elseif x == 13 then
+      if alt == 1 then
+        altrun()  -- stops all running tracks and runs all stopped tracks if track[i].sel == 1
+      elseif mod == 1 then
+        stopall()
+      else
+        toggle_snap_mode(z)
+      end      
     end
   elseif z == 0 then
-    if x == 2 then cutview_hold = false end
-    if x == 15 then keyquant_edit = false end
-    if x == 16 then alt = 0
-    elseif x == 14 and alt == 0 then mod = 0 -- lock mod if mod released before alt is released
+    if x == 2 then
+      cutview_hold = false
+    end
+    if x == 13 then
+      toggle_snap_mode(z)
+    end
+    if x == 15 then
+      keyquant_edit = false
+    end
+    if x == 16 then
+      alt = 0
+    elseif x == 14 and alt == 0 then
+      mod = 0 -- lock mod if mod released before alt is released
     end
     dirtyscreen = true
   end
   if GRID_SIZE == 128 then
     local i = x - 4
-    if x > 4 and x < (macro_slot_mode == 1 and 9 or 13) and macro_slot_mode ~= 3 then
-      if z == 1 then
-        pattern_events(i)
+    if view == vPATTERNS or macro_slot_mode == 2 then
+      if x > 4 and x < 13 and z == 1 then
+        pattern_slots(i)
       end
-    elseif x > (macro_slot_mode == 3 and 4 or 8) and x < 13 and macro_slot_mode ~= 2 then
-      if snapshot_mode then
-        snap[i].active = z == 1 and true or false
-        if z == 1 then
-          snapshot_events(i)
-        end
-      else
-        recall[i].active = z == 1 and true or false
-        if z == 1 then
-          recall_events(i)
-        end
+    elseif macro_slot_mode == 3 then
+      if x > 4 and x < 13 then
+        recall_slots(i, z)
+      end
+    elseif macro_slot_mode == 1 then
+      if x > 4 and x < 9 and z == 1 then
+        pattern_slots(i)
+      elseif x > 8 and x < 13 then
+        recall_slots(i, z)
       end
     end
   elseif GRID_SIZE == 256 then
     local i = (x - 4)
     if x > 4 and x < 13 then
       if pos == "o" and z == 1 then
-        pattern_events(i)
+        pattern_slots(i)
       elseif pos == "z" then
-        if snapshot_mode then
-          snap[i].active = z == 1 and true or false
-          if z == 1 then
-            snapshot_events(i)
-          end
-        else
-          recall[i].active = z == 1 and true or false
-          if z == 1 then
-            recall_events(i)
-          end
-        end
+        recall_slots(i, z)
       end
     end
   end
@@ -205,7 +248,6 @@ end
 
 function grd.drawnav(y)
   local view = y == 9 and gridz_view or grido_view
-  local one = y == 1 and true or false
   g:led(1, y, view == vREC and 10 or 4) -- vREC
   g:led(2, y, view == vCUT and 10 or 3) -- vCUT
   g:led(3, y, view == vTRSP and 10 or 2) -- vTRSP
@@ -213,9 +255,9 @@ function grd.drawnav(y)
   g:led(16, y, alt == 1 and 15 or 9) -- alt
   g:led(15, y, y ~= 9 and (quantizing and (pulse_bar and 15 or (pulse_beat and 6 or 2))) or 3) -- Q flash
   g:led(14, y, mod == 1 and 9 or 2) -- mod
-  if one then 
-    for i = 1, (macro_slot_mode == 1 and 4 or 8) do
-      if macro_slot_mode ~= 3 then
+  if GRID_SIZE == 128 then 
+    if view == vPATTERNS or macro_slot_mode == 2 then
+      for i = 1, 8 do
         if pattern[i].rec == 1 and pattern[i].count == 0 then
           g:led(i + 4, y, 15)
         elseif pattern[i].rec == 1 and pattern[i].count > 0 then
@@ -230,32 +272,40 @@ function grd.drawnav(y)
           g:led(i + 4, y, 3)
         end
       end
-    end
-    for i = (macro_slot_mode == 1 and 5 or 1), 8 do
-      if macro_slot_mode ~= 2 then
-        local b = 2
-        if snapshot_mode then
-          if snap[i].active then
-            b = 15
-          elseif snap[i].data then
-            b = 6
-            if snapshot_last == i then
-              b = 10
-            end
-          end
-        else
-          if recall[i].recording then
-            b = 15
-          elseif recall[i].active then
-            b = 10
-          elseif recall[i].has_data then
-            b = 6
-            if recall_last == i then
-              b = 10
-            end
-          end
+    elseif macro_slot_mode == 3 then
+      if snapshot_mode then
+        for i = 1, 8 do
+          g:led(i + 4, y, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
         end
-        g:led(i + 4, y, b)
+      else
+        for i = 1, 8 do
+          g:led(i + 4, y, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
+        end
+      end
+    elseif macro_slot_mode == 1 then
+      for i = 1, 4 do
+        if pattern[i].rec == 1 and pattern[i].count == 0 then
+          g:led(i + 4, y, 15)
+        elseif pattern[i].rec == 1 and pattern[i].count > 0 then
+          g:led(i + 4, y, pulse_key_fast)
+        elseif pattern[i].overdub == 1 then
+          g:led(i + 4, y, pulse_key_fast)
+        elseif pattern[i].play == 1 then
+          g:led(i + 4, y, pattern[i].flash and 15 or 13)
+        elseif pattern[i].count > 0 then
+          g:led(i + 4, y, 7)
+        else
+          g:led(i + 4, y, 3)
+        end
+      end
+      if snapshot_mode then
+        for i = 5, 8 do
+          g:led(i + 4, y, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
+        end
+      else
+        for i = 5, 8 do
+          g:led(i + 4, y, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
+        end
       end
     end
   else
@@ -275,29 +325,11 @@ function grd.drawnav(y)
           g:led(i + 4, y, 3)
         end
       elseif y == 9 then
-        local b = 2
         if snapshot_mode then
-          if snap[i].active then
-            b = 15
-          elseif snap[i].data then
-            b = 6
-            if snapshot_last == i then
-              b = 10
-            end
-          end
+          g:led(i + 4, y, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
         else
-          if recall[i].recording then
-            b = 15
-          elseif recall[i].active then
-            b = 10
-          elseif recall[i].has_data then
-            b = 6
-            if recall_last == i then
-              b = 10
-            end
-          end
+          g:led(i + 4, y, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
         end
-        g:led(i + 4, y, b)
       end
     end
   end
@@ -639,7 +671,7 @@ function grd.lfo_keys(x, y, z, offset)
             local e = {t = eLFO, i = lfo_focus, action = action , sync = true} event(e)
           end)
         else
-          local e = {t = eLFO, i = lfo_focus, action = action , sync = false} event(e)
+          local e = {t = eLFO, i = lfo_focus, action = action} event(e)
         end
       elseif x > 1 and x <= 16 then
         params:set("lfo_depth_lfo_"..lfo_focus, (x - 2) * util.round_up((100 / 14), 0.1))
@@ -697,9 +729,7 @@ function grd.env_keys(x, y, z, offset)
       if x == 1 then
         params:set(i.."adsr_active", env[i].active and 1 or 2)
       elseif x == 2 then
-        if env_focus ~= i then
-          env_focus = i
-        end
+        env_focus = i
         if env[i].active then
           local e = {} e.t = eGATEON e.i = i event(e)
         end
@@ -737,34 +767,70 @@ function grd.pattern_keys(x, y, z, offset)
   if z == 1 and view ~= vPATTERNS and autofocus then
     set_view(vPATTERNS)
   end
-  if z == 1 then
-    if x > 1 and x < 4 then
-      if y > 2 and y < 6 and GRID_SIZE == 128 then
-        params:set("slot_assign", y - 2)
-      elseif y == 6 then
-        local mode = snapshot_mode and 1 or 2
-        params:set("recall_mode", mode)
-      end
-    elseif x > 4 and x < 13 then
-      local i = x - 4
-      -- set track_focus
-      if y > 1 and y < 9 then
-        if pattern_focus ~= i then
-          pattern_focus = i
+  if x > 1 and x < 4 and y > 2 and y < 8 and z == 1 then
+    local msg = ""
+    if y == 3 and GRID_SIZE == 128 then
+      params:set("slot_assign", 1)
+      msg = "dual   slots  -  pattern / recall"
+    elseif y == 4 and GRID_SIZE == 128 then
+      params:set("slot_assign", 2)
+      msg = "pattern   slots"
+    elseif y == 5 and GRID_SIZE == 128 then
+      params:set("slot_assign", 3)
+      msg = "recall   slots"
+    elseif y == 6 then
+      params:set("recall_mode", snapshot_mode and 1 or 2)
+      msg = snapshot_mode and "snapshot" or "punch-in"
+    elseif y == 7 then
+      params:set("punchin_mode", punch_momentrary and 2 or 1)
+      msg = punch_momentrary and "punch-in  >  momentary" or "punch-in  >  latch"
+    end
+    show_message(msg)
+  elseif x > 4 and x < 13 then
+    local i = x - 4
+    if GRID_SIZE == 128 then
+      if y > 1 and y < 6 and z == 1 then
+        pattern_focus = i
+        if y == 3 then
+          pattern[i].synced = not pattern[i].synced
+        elseif y == 4 then
+          local val = util.wrap(pattern[i].count_in + 1, 1, 3)
+          params:set("patterns_countin"..i, val)
         end
+      elseif y == 6 then
+        snapshot_actions(i, z)
+      elseif y == 7 then
+        recall_actions(i, z)
       end
-      -- set params
-      if y == 3 then
-        pattern[i].synced = not pattern[i].synced
-      elseif y == 4 then
-        local val = util.wrap(pattern[i].count_in + 1, 1, 3)
-        params:set("patterns_countin"..i, val)
+    else
+      if y > 1 and y < 7 and z == 1 then
+        pattern_focus = i
+        if y == 3 then
+          pattern[i].synced = not pattern[i].synced
+        elseif y == 4 then
+          local val = util.wrap(pattern[i].count_in + 1, 1, 3)
+          params:set("patterns_countin"..i, val)
+        elseif y == 5 then
+          params:set("patterns_playback"..i, pattern[i].loop and 2 or 1)
+        end
+      elseif y == 8 then
+        recall_actions(i, z)
       end
-    elseif x > 13 and x < 16 then
-      if y > 2 and y < 7 then
-        local val = (y - 2) + (x - 14) * 4
-        params:set("quant_rate", val)
-        show_message("key    quantization:     "..params:string("quant_rate"))
+    end
+  elseif x > 13 and x < 16 and y > 2 and y < 8 and z == 1 then
+    if y < 6 then
+      pmac_focus = (x - 13) + (y - 3) * 2
+    elseif y > 5 and y < 8 then
+      local e = (x - 13) + (y - 6) * 2
+      if pmac_edit_view then
+        if e ~= pmac_enc then
+          pmac_enc = e
+        else
+          pmac_edit_view = false
+        end
+      else
+        pmac_enc = e
+        pmac_edit_view = true
       end
     end
   end
@@ -775,24 +841,40 @@ function grd.pattern_draw(offset)
   local off = offset or 0
   for i = 1, 2 do
     local x = i + 1
-    g:led(x, 3 + off, GRID_SIZE == 128 and (macro_slot_mode == 1 and 10 or 4) or 1)
-    g:led(x, 4 + off, GRID_SIZE == 128 and (macro_slot_mode == 2 and 10 or 4) or 1)
-    g:led(x, 5 + off, GRID_SIZE == 128 and (macro_slot_mode == 3 and 10 or 4) or 1)
-    g:led(x, 6 + off, snapshot_mode and 4 or 10)
+    g:led(x, 3 + off, GRID_SIZE == 128 and (macro_slot_mode == 1 and 10 or 2) or 1)
+    g:led(x, 4 + off, GRID_SIZE == 128 and (macro_slot_mode == 2 and 10 or 2) or 1)
+    g:led(x, 5 + off, GRID_SIZE == 128 and (macro_slot_mode == 3 and 10 or 2) or 1)
+    g:led(x, 6 + off, snapshot_mode and 6 or 12)
+    g:led(x, 7 + off, punch_momentrary and 4 or 8)
   end
-  for i = 1, 8 do
-    g:led(i + 4, 3 + off, pattern[i].synced and 10 or 4)
-    g:led(i + 4, 4 + off, (pattern[i].count_in - 1) * 4)
-    g:led(i + 4, 5 + off, pattern_focus == i and 6 or 0)
-    g:led(i + 4, 6 + off, pattern_focus == i and 6 or 0)
+  if GRID_SIZE == 128 then
+    for i = 1, 8 do
+      local l = pattern_focus == i and 2 or 0
+      g:led(i + 4, 2 + off, l)
+      g:led(i + 4, 3 + off, (pattern[i].synced and 13 or 4) + l)
+      g:led(i + 4, 4 + off, ((pattern[i].count_in) * 4 - 2) + l)
+      g:led(i + 4, 6 + off, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
+      g:led(i + 4, 7 + off, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
+    end
+  else
+    for i = 1, 8 do
+      local l = pattern_focus == i and 2 or 0
+      g:led(i + 4, 3 + off, (pattern[i].synced and 12 or 4) + l)
+      g:led(i + 4, 4 + off, ((pattern[i].count_in - 1) * 4) + l)
+      g:led(i + 4, 5 + off, (pattern[i].loop and 8 or 2) + l)
+      g:led(i + 4, 6 + off, l)
+      g:led(i + 4, 8 + off, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
+    end
   end
   for i = 1, 2 do
     local x = i + 13
-    for j = 1, 4 do
-      local y = j + 2 + off
-      local num = (y - 2 - off) + (x - 14) * 4
-      g:led(x, y, params:get("quant_rate") == num and 10 or 4)
+    for j = 1, 3 do
+      local y = j + 2
+      local num = i + (j - 1) * 2
+      g:led(x, y + off, pmac_edit_view and (pmac_focus == num and 12 or 4) or 2)
     end
+    g:led(x, 6 + off, pmac_edit_view and (pmac_enc == i and 10 or 2) or 4)
+    g:led(x, 7 + off, pmac_edit_view and (pmac_enc == i + 2 and 10 or 2) or 4)
   end
 end
 
