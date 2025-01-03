@@ -68,8 +68,13 @@ local function snapshot_actions(i, z)
       snap[i].active = false
     else
       if snap[i].data then
-        local snap_dest = held_focus > 0 and track_focus or "all"
-        load_snapshot(i, snap_dest)
+        if held_focus > 0 then
+          launch_snapshot(i, track_focus)
+        else
+          for track = 1, 6 do
+            launch_snapshot(i, track)
+          end
+        end
         snap[i].active = true
         snapshot_last = i
       else
@@ -771,7 +776,7 @@ function grd.pattern_keys(x, y, z, offset)
     local msg = ""
     if y == 3 and GRID_SIZE == 128 then
       params:set("slot_assign", 1)
-      msg = "dual   slots  -  pattern / recall"
+      msg = "split  -  pattern / recall"
     elseif y == 4 and GRID_SIZE == 128 then
       params:set("slot_assign", 2)
       msg = "pattern   slots"
