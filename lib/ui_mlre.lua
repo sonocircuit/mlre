@@ -4,6 +4,7 @@ local ui = {}
 
 local textentry = require 'textentry' 
 local fileselect = require 'fileselect'
+local filters = require 'filters'
 
 -- main page variables
 local main_page_params_l = {"vol", "rec", "cutoff", "filter_type", "detune","rate_slew", "play_mode", "reset_active"}
@@ -38,11 +39,12 @@ local arc_render = 0
 local arc_lfo_focus = 1
 local arc_track_focus = 1
 local arc_splice_focus = 1
+
 local arc_pmac = {}
 for i = 1, 4 do
   arc_pmac[i] = {}
   arc_pmac[i].viz = 1
-  arc_pmac[i].inc = 1
+  arc_pmac[i].smooth = filters.mean.new(20)
 end
 
 local function display_message()
@@ -194,10 +196,8 @@ function ui.pmac_perf_redraw()
 end
 
 function ui.arc_pmac_delta(n, d)
-  local delta = d / pmac_sens
-  arc_pmac[n].inc = util.clamp(arc_pmac[n].inc + delta, -62, 64)
-  arc_pmac[n].viz = math.floor(arc_pmac[n].inc)
-  pmac_exec(n, delta)
+  pmac_exec(n, (d / pmac_sens))
+  arc_pmac[n].viz = math.floor(util.clamp(arc_pmac[n].smooth:next(d * 2), -42, 44))
 end
 
 function ui.arc_pmac_draw()
@@ -219,10 +219,10 @@ function ui.arc_pmac_draw()
   a:refresh()
 end
 
-function ui.reset_pmac_arc()
-  for i = 1, 4 do
-    arc_pmac[i].inc = 1
-    arc_pmac[i].viz = 1
+function ui.pmac_arc_reset(i)
+  arc_pmac[i].viz = 1
+  for _ = 1, 20 do
+    arc_pmac[i].smooth:next(1)
   end
 end
 
