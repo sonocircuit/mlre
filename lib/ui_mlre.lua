@@ -1014,9 +1014,15 @@ function ui.tape_key(n, z)
           view_batchload_options = true
           screenredrawtimer:stop()
           fileselect.enter(_path.audio, function(path) batchload_callback(path, i) end, "audio")
+          if prev_path ~= nil then
+            fileselect.pushd(prev_path)
+          end
         elseif tape_actions[tape_action] == "load" and z == 1 then
           screenredrawtimer:stop()
           fileselect.enter(_path.audio, function(path) fileload_callback(path, i) end, "audio")
+          if prev_path ~= nil then
+            fileselect.pushd(prev_path)
+          end
         elseif tape_actions[tape_action] == "clear" and z == 1 then
           popupscreen("clear   splice", clear_splice)
         elseif tape_actions[tape_action] == "save" and z == 0 then
