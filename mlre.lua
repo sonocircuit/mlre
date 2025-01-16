@@ -42,6 +42,7 @@ autofocus = true -- zero only. if true norns screen automatically changes to las
 
 --------- other variables --------
 local mlre_path = _path.audio .. "mlre/"
+prev_path = nil
 
 -- constants
 GRID_SIZE = 0
