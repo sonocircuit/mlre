@@ -353,11 +353,9 @@ function ui.arc_main_delta(n, d)
       -- start playback
       if params:get("arc_enc_1_start") == 2 then
         if track[track_focus].play == 0 and (d > 2 or d < -2) then
-          local e = {} e.t = eSTART e.i = track_focus
-          event(e)
+          local e = {t = eSTART, i = track_focus} event(e)
           if params:get(track_focus.."play_mode") == 3 then
-            local e = {} e.t = eGATEON e.i = track_focus
-            event(e)
+            local e = {t = eGATEON, i = track_focus} event(e)
           end
         end
       end
@@ -369,9 +367,9 @@ function ui.arc_main_delta(n, d)
           clock.sleep(0.05)
           if prev_inc == inc then
             if params:get(track_focus.."adsr_active") == 2 then
-              local e = {} e.t = eGATEOFF e.i = track_focus event(e)
+              local e = {t = eGATEOFF, i = track_focus} event(e)
             else
-              local e = {} e.t = eSTOP e.i = track_focus event(e)
+              local e = {t = eSTOP, i = track_focus} event(e)
             end
           end
         end)
@@ -379,11 +377,9 @@ function ui.arc_main_delta(n, d)
       -- set direction
       if params:get("arc_enc_1_dir") == 2 then
         if d < -2 and track[track_focus].rev == 0 then
-          local e = {} e.t = eREV e.i = track_focus e.rev = 1
-          event(e)
+          local e = {t = eREV, i = track_focus, rev = 1} event(e)
         elseif d > 2 and track[track_focus].rev == 1 then
-          local e = {} e.t = eREV e.i = track_focus e.rev = 0
-          event(e)
+          local e = {t = eREV, i = track_focus, rev = 0} event(e)
         end
       end
       -- temp warble
@@ -424,7 +420,7 @@ function ui.arc_main_delta(n, d)
         enc2_wait = true
         loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end)
         if params:get(track_focus.."adsr_active") == 2 then
-          local e = {} e.t = eGATEON e.i = track_focus event(e)
+          local e = {t = eGATEON, i = track_focus} event(e)
         end
         clock.run(function()
           clock.sleep(0.4)
@@ -433,9 +429,9 @@ function ui.arc_main_delta(n, d)
         end)
       end
       if track[track_focus].loop == 1 and alt == 1 then
-        local e = {} e.t = eUNLOOP e.i = track_focus event(e)
+        local e = {t = eUNLOOP, i = track_focus} event(e)
         if params:get(track_focus.."adsr_active") == 2 then
-          local e = {} e.t = eGATEOFF e.i = track_focus event(e)
+          local e = {t = eGATEOFF, i = track_focus} event(e)
         end
       end
       if track[track_focus].loop == 1 and not enc2_wait then
