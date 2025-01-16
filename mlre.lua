@@ -2136,6 +2136,7 @@ function fileload_callback(path, i)
     else
       print("not a sound file")
     end
+    prev_path = path
   end
   screenredrawtimer:start()
   render_splice()
@@ -2147,6 +2148,7 @@ function batchload_callback(path, i)
   if path ~= "cancel" and path ~= "" then
     batchload_path = path
     batchload_track = i
+    prev_path = path
   else
     view_batchload_options = false
   end
