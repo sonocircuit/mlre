@@ -130,9 +130,28 @@ local rnd_stepcount = 16
 
 -- silent load variables
 local loadop = {}
-loadop.params = {"sync", "tempo", "transition", "scale", "quant_rate", "time_signature", "loops", "reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "route_t5", "route_t6", "splice_active"}
-loadop.set_param = {"reset_active", "reset_count", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state"}
-loadop.param_default = {1, 4, 0, 0.5, 0.5, 0, 8, 1}
+loadop.sync = 1
+loadop.tempo = 1
+loadop.transiton = 1
+loadop.scale = 1
+loadop.quant_rate = 1
+loadop.time_signature = 1
+loadop.loops = 1
+loadop.reset_active = 1
+loadop.reset_count = 1
+loadop.vol = 1
+loadop.pan = 1
+loadop.sends = 1
+loadop.detune = 1
+loadop.transpose = 1
+loadop.warble_state = 1
+loadop.rev = 1
+loadop.sel = 1
+loadop.fade = 1
+loadop.splice_active = 1
+loadop.params = {"sync", "tempo", "transition", "scale", "quant_rate", "time_signature", "loops", "reset_active", "reset_count", "vol", "pan", "sends", "detune", "transpose", "warble_state", "rev", "speed", "sel", "fade", "splice_active"}
+loadop.set_param = {"reset_active", "reset_count", "vol", "pan", "send_t5", "send_t6", "detune", "transpose", "warble_state"}
+loadop.param_default = {1, 1, 1, 0, 0.5, 0.5, 0, 8, 1}
 loadop.set_tab = {"rev", "speed", "sel", "fade", "route_t5", "route_t6"}
 loadop.active = false
 
@@ -222,14 +241,7 @@ function event_record(e)
 end
 
 function loop_event(i, lstart, lend, sync)
-  local e = {}
-  e.t = eLOOP
-  e.i = i
-  e.loop = 1
-  e.loop_start = lstart
-  e.loop_end = lend
-  e.sync = sync
-  event(e)
+  local e = {t = eLOOP, i = i, loop_start = lstart, loop_end = lend, sync = sync} event(e)
 end
 
 function event_exec(e)
@@ -558,7 +570,6 @@ function toggle_pmac_perf_view(z)
     end
   end
 end
-  
 
 -- randomize events
 function randomize(i)
@@ -572,8 +583,7 @@ function randomize(i)
     params:set(i.."pan", (math.random() * 20 - 10) / 10)
   end
   if params:get("rnd_dir") == 2 then
-    local e = {} e.t = eREV e.i = i e.rev = math.random(0, 1)
-    event(e)
+    local e = {t = eREV, i = i, rev = math.random(0, 1)} event(e)
   end
   if params:get("rnd_loop") == 2 then
     local lstart = math.random(1, 15)
@@ -581,8 +591,7 @@ function randomize(i)
     loop_event(i, lstart, lend)
   end
   if params:get("rnd_speed") == 2 then
-    local e = {} e.t = eSPEED e.i = i e.speed = math.random(-params:get("rnd_loct"), params:get("rnd_uoct"))
-    event(e)
+    local e = {t = eSPEED, i = i, speed = math.random(-params:get("rnd_loct"), params:get("rnd_uoct"))} event(e)
   end
   if params:get("rnd_cut") == 2 then
     params:set(i.. "cutoff", math.random(params:get("rnd_lcut"), params:get("rnd_ucut")) )
@@ -599,8 +608,8 @@ snapop.rev = false
 snapop.speed = false
 snapop.transpose = false
 snapop.loops = false
+snapop.sends = false
 snapop.splice = false
-snapop.route = false
 snapop.play_state = false
 snapop.cut_pos = false
 snapop.reset_pos = false
@@ -688,40 +697,39 @@ function snapshot_exec(n, i, sync)
   end
   -- load se snap
   if snapop.rec then
-    local e = {} e.t = eREC e.i = i e.rec = snap[n].rec[i] e.sync = sync event(e)
+    local e = {t = eREC, i = i, rec = snap[n].rec[i], sync = sync} event(e)
   end
   if snapop.mute then
-    local e = {} e.t = eMUTE e.i = i e.mute = snap[n].mute[i] e.sync = sync event(e)
+    local e = {t = eMUTE, i = i, mute = snap[n].mute[i], sync = sync} event(e)
   end
   if snapop.rev then
-    local e = {} e.t = eREV e.i = i e.rev = snap[n].rev[i] e.sync = sync event(e)
+    local e = {t = eREV, i = i, rev = snap[n].rev[i], sync = sync} event(e)
   end
   if snapop.speed then
-    local e = {} e.t = eSPEED e.i = i e.speed = snap[n].speed[i] e.sync = sync event(e)
+    local e = {t = eSPEED, i = i, speed = snap[n].speed[i], sync = sync} event(e)
   end
   if snapop.transpose then
-    local e = {} e.t = eTRSP e.i = i e.val = snap[n].transpose_val[i] e.sync = sync event(e)
+    local e = {t = eTRSP, i = i, val = snap[n].transpose_val[i], sync = sync} event(e)
   end
-  if snapop.route and snap[n].route_t5[i] ~= nil then
-    local e = {} e.t = eROUTE e.i = i e.ch = 5 e.route = snap[n].route_t5[i] event(e)
-    local e = {} e.t = eROUTE e.i = i e.ch = 6 e.route = snap[n].route_t6[i] event(e)
+  if snapop.sends and snap[n].route_t5[i] ~= nil then
+    local e = {t = eROUTE, i = i, ch = 5, route = snap[n].route_t5[i]} event(e)
+    local e = {t = eROUTE, i = i, ch = 6, route = snap[n].route_t6[i]} event(e)
   end
   if snapop.splice then
     if snap[n].active_splice[i] ~= track[i].splice_active then
-      local e = {} e.t = eSPLICE e.i = i e.active = snap[n].active_splice[i] e.sync = sync event(e)
-      track[i].splice_focus = snap[n].active_splice[i]
+      local e = {t = eSPLICE, i = i, active = snap[n].active_splice[i], sync = sync} event(e)
     end
   end
   if snapop.loops then
     if snap[n].loop[i] == 1 then
       loop_event(i, snap[n].loop_start[i], snap[n].loop_end[i], sync)
     elseif snap[n].loop[i] == 0 then
-      local e = {} e.t = eUNLOOP e.i = i e.sync = sync event(e)
+      local e = {t = eUNLOOP, i = i, sync = sync} event(e)
     end
   end
   if snapop.play_state then
     if snap[n].play[i] == 0 then
-      local e = {} e.t = eSTOP e.i = i e.sync = sync event(e)
+      local e = {t = eSTOP, i = i, sync = sync} event(e)
     else
       if snapop.cut_pos then
         local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = sync} event(e)
@@ -949,7 +957,7 @@ end
 
 function load_splice(i, s)
   if track[i].play == 0 then
-    local e = {} e.t = eSPLICE e.i = i e.active = s event(e)
+    local e = {t = eSPLICE, i = i, active = s} event(e)
   else
     if splice_launch == 4 then
       if track[i].splice_active == s then
@@ -965,10 +973,10 @@ function load_splice(i, s)
         splice_queued = true
         clock.run(function()
           clock.sync(beat_sync)
-          local e = {} e.t = eSPLICE e.i = i e.active = s e.sync = true event(e)
+          local e = {t = eSPLICE, i = i, active = s, sync = true} event(e)
         end)
       else
-        local e = {} e.t = eSPLICE e.i = i e.active = s event(e)
+        local e = {t = eSPLICE, i = i, active = s} event(e)
       end
     end
   end
@@ -2511,11 +2519,7 @@ function load_loadop_config()
   local data = tab.load(norns.state.lib.."load_options.data")
   if data ~= nil then
     for _, v in ipairs(loadop.params) do
-      if (v == "send_t5" or v == "send_t6" or v == "route_t5" or v == "route_t6") then
-        params:set("loadop_sends", data[v])
-      else
-        params:set("loadop_"..v, data[v])
-      end
+      params:set("loadop_"..v, data[v])
     end
   end
 end
@@ -2780,13 +2784,14 @@ function init()
   params:set_action("recall_transpose_state", function(x) snapop.transpose = x == 2 and true or false end)
 
   params:add_option("recall_set_route", "track sends", {"ignore", "recall"}, 2)
-  params:set_action("recall_set_route", function(x) snapop.route = x == 2 and true or false end)
+  params:set_action("recall_set_route", function(x) snapop.sends = x == 2 and true or false end)
 
   params:add_option("recall_lfo_state", "lfo state", {"ignore", "recall"}, 2)
   params:set_action("recall_lfo_state", function(x) snapop.lfo_state = x == 2 and true or false end)
 
+
   -- silent load config
-  params:add_group("loadop_config", "silent load", 26)
+  params:add_group("loadop_config", "silent load", 27)
 
   params:add_binary("loadop_save", ">> save options", "trigger")
   params:set_action("loadop_save", function() save_loadop_config() end)
@@ -2840,6 +2845,10 @@ function init()
   params:set_action("loadop_loops", function(x) loadop.loops = x end)
   params:set_save("loadop_loops", false)
 
+  params:add_option("loadop_vol", "vol", {"ignore", "load", "reset"}, 1)
+  params:set_action("loadop_vol", function(x) loadop.vol = x end)
+  params:set_save("loadop_vol", false)
+
   params:add_option("loadop_pan", "pan", {"ignore", "load", "reset"}, 1)
   params:set_action("loadop_pan", function(x) loadop.pan = x end)
   params:set_save("loadop_pan", false)
@@ -2862,6 +2871,7 @@ function init()
 
   params:add_option("loadop_sends", "sends", {"ignore", "load", "reset"}, 1)
   params:set_action("loadop_sends", function(x)
+    loadop.sends = x
     loadop.send_t5 = x
     loadop.send_t6 = x
     loadop.route_t5 = x
