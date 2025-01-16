@@ -29,6 +29,12 @@ local patterns_page_names_r = {"length", "play   mode"}
 local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "rename", "format >", "format >>>"}
 local tape_action = 2
 
+-- p-macro variables
+local pmac_pageNum = 1
+local pmac_pageEnc = 0
+local pmac_param_id = {{"cutoff", "vol", "detune", "lfo_depth"}, {"filter_q", "pan", "rate_slew", "lfo_rate"}}
+local pmac_param_name = {{"cutoff", "vol", "detune", "lfo   depth"}, {"filter  q", "pan", "rate_slew", "lfo   rate"}}
+
 -- arc variables
 local arc_inc1 = 0
 local arc_inc2 = 0
@@ -262,19 +268,15 @@ function ui.pmac_edit_redraw()
     screen.level(pmac_pageNum == i + 2 and 15 or 4)
     screen.rect(120 + (i - 1) * 4, 10, 2, 2)
     screen.fill()
+    screen.level(shift == 0 and 15 or 1)
+    screen.font_size(16)
+    screen.move(30 + 68 * (i - 1), 39)
+    screen.text_center(pmac.d[pmac_enc][pmac_focus][pmac_param_id[i][pmac_pageNum]].."%")
+    screen.font_size(8)
+    screen.level(4)
+    screen.move(30 + 68 * (i - 1), 60)
+    screen.text_center(pmac_param_name[i][pmac_pageNum])
   end
-  screen.level(shift == 0 and 15 or 1)
-  screen.font_size(16)
-  screen.move(30, 39)
-  screen.text_center(pmac.d[pmac_enc][pmac_focus][pmac_param_id[1][pmac_pageNum]].."%")
-  screen.move(98, 39)
-  screen.text_center(pmac.d[pmac_enc][pmac_focus][pmac_param_id[2][pmac_pageNum]].."%")
-  screen.font_size(8)
-  screen.level(4)
-  screen.move(30, 60)
-  screen.text_center(pmac_param_name[1][pmac_pageNum])
-  screen.move(98, 60)
-  screen.text_center(pmac_param_name[2][pmac_pageNum])
   screen.update()
 end
 
