@@ -14,10 +14,6 @@
 --
 
 
------------------------------------------------------------------------
-
------------------------------------------------------------------------
-
 norns.version.required = 231114
 
 m = midi.connect()
@@ -1098,7 +1094,7 @@ end
 
 function toggle_rec(i)
   track[i].rec = 1 - track[i].rec
-  local e = {} e.t = eREC e.i = i e.rec = track[i].rec event(e)
+  local e = {t = eREC, i = i, rec = track[i].rec} event(e)
   if track[i].rec == 1 then
     backup_rec(i, "save")
   end
@@ -1501,20 +1497,19 @@ function toggle_transport()
   end
 end
 
-function startall() -- start all tracks at the beginning
+function startall(sync) -- start all tracks at the beginning
   for i = 1, 6 do
     local pos = track[i].rev == 0 and 0 or 15
-    local e = {} e.t = eCUT e.i = i e.pos = pos event(e)
+    local e = {t = eCUT, i = i, pos = pos, sync = sync} event(e)
   end
   if params:get("midi_trnsp") == 2 and not transport_run then
     m:start()
   end
 end
 
-function stopall() -- stop all tracks and patterns / send midi stop if midi transport on
+function stopall(sync) -- stop all tracks and patterns / send midi stop if midi transport on
   for i = 1, 6 do
-    local e = {} e.t = eSTOP e.i = i
-    event(e)
+    local e = {t = eSTOP, i = i, sync = sync} event(e)
   end
   for i = 1, 8 do
     pattern[i]:stop()
@@ -1529,19 +1524,19 @@ function altrun() -- alt run function for selected tracks
   for i = 1, 6 do
     if track[i].sel == 1 then
       if track[i].play == 1 then
-        local e = {} e.t = eSTOP e.i = i event(e)
+        local e = {t = eSTOP, i = i} event(e)
       elseif track[i].play == 0 then
-        local e = {} e.t = eSTART e.i = i event(e)
+        local e = {t = eSTART, i = i} event(e)
       end
     end
   end
 end
 
-function retrig() -- retrig function for playing tracks
+function reset_playheads() -- reset all playback positions
   for i = 1, 6 do
     if track[i].play == 1 then
       local pos = track[i].rev == 0 and 0 or 15
-      local e = {} e.t = eCUT e.i = i e.pos = pos event(e)
+      local e = {t = eCUT, i = i, pos = pos} event(e)
     end
   end
 end
@@ -1573,7 +1568,7 @@ function arm_thresh_rec(i)
       end
       -- set autolength
       if alt == 1 then
-        local e = {} e.t = eSTOP e.i = i event(e)
+        stop_track(i)
         autolength = true
       else
         autolength = false
@@ -2037,13 +2032,13 @@ end
 
 function transport_start_callback()
   if params:get("midi_trnsp") == 3 then
-    startall()
+    startall(true)
   end
 end
 
 function transport_stop_callback()
   if params:get("midi_trnsp") == 3 then
-    stopall()
+    stopall(true)
   end
 end
 
@@ -2925,12 +2920,12 @@ function init()
   -- start all
   params:add_binary("start_all", "start all", "trigger", 0)
   params:set_action("start_all", function() startall() end)
-  -- restart all
-  params:add_binary("restart_all", "restart all", "trigger", 0)
-  params:set_action("restart_all", function() retrig() end)
   -- stop all
   params:add_binary("stop_all", "stop all", "trigger", 0)
   params:set_action("stop_all", function() stopall() end)
+  -- reset position
+  params:add_binary("reset_pos", "reset positions", "trigger", 0)
+  params:set_action("reset_pos", function() reset_playheads() end)
 
   params:add_separator("control_focused_track", "focused track control")
   -- playback
@@ -2938,34 +2933,24 @@ function init()
   params:set_action("track_focus_playback", function() toggle_playback(track_focus) end)
   -- mute
   params:add_binary("track_focus_mute", "mute", "trigger", 0)
-  params:set_action("track_focus_mute", function()
-    local i = track_focus
-    local n = 1 - track[i].mute
-    local e = {} e.t = eMUTE e.i = i e.mute = n event(e)
-  end)
+  params:set_action("track_focus_mute", function() local e = {t = eMUTE, i = track_focus, mute = (1 - track[track_focus].mute)} event(e) end)
   -- record enable
   params:add_binary("rec_focus_enable", "record", "trigger", 0)
   params:set_action("rec_focus_enable", function() toggle_rec(track_focus) end)
   -- reverse
   params:add_binary("tog_focus_rev", "direction", "trigger", 0)
-  params:set_action("tog_focus_rev", function()
-    local i = track_focus
-    local n = 1 - track[i].rev
-    local e = {} e.t = eREV e.i = i e.rev = n event(e)
-  end)
+  params:set_action("tog_focus_rev", function() local e = {t = eREV, i = track_focus, rev = (1 - track[track_focus].rev)} event(e) end)
   -- speed +
   params:add_binary("inc_focus_speed", "speed +", "trigger", 0)
   params:set_action("inc_focus_speed", function()
-    local i = track_focus
-    local n = util.clamp(track[i].speed + 1, -3, 3)
-    local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+    local n = util.clamp(track[track_focus].speed + 1, -3, 3)
+    local e = {t = eSPEED, i = track_focus, speed = n} event(e)
   end)
   -- speed -
   params:add_binary("dec_focus_speed", "speed -", "trigger", 0)
   params:set_action("dec_focus_speed", function()
-    local i = track_focus
-    local n = util.clamp(track[i].speed - 1, -3, 3)
-    local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+    local n = util.clamp(track[track_focus].speed - 1, -3, 3)
+    local e = {t = eSPEED, i = track_focus, speed = n} event(e)
   end)
   -- randomize
   params:add_binary("focus_track_rand", "randomize", "trigger", 0)
@@ -2979,30 +2964,24 @@ function init()
     params:set_action(i.."track_playback", function() toggle_playback(i) end)
     -- mute
     params:add_binary(i.."track_mute", "mute", "trigger", 0)
-    params:set_action(i.."track_mute", function()
-      local n = 1 - track[i].mute
-      local e = {} e.t = eMUTE e.i = i e.mute = n event(e)
-    end)
+    params:set_action(i.."track_mute", function() local e = {t = eMUTE, i = i, mute = (1 - track[i].mute)} event(e) end)
     -- record enable
     params:add_binary(i.."tog_rec", "record", "trigger", 0)
     params:set_action(i.."tog_rec", function() toggle_rec(i) end)
     -- reverse
     params:add_binary(i.."tog_rev", "reverse", "trigger", 0)
-    params:set_action(i.."tog_rev", function()
-      local n = 1 - track[i].rev
-      local e = {} e.t = eREV e.i = i e.rev = n event(e)
-    end)
+    params:set_action(i.."tog_rev", function() local e = {t = eREV, i = i, rev = (1 - track[i].rev)} event(e) end)
     -- speed +
     params:add_binary(i.."inc_speed", "speed +", "trigger", 0)
     params:set_action(i.."inc_speed", function()
       local n = util.clamp(track[i].speed + 1, -3, 3)
-      local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+      local e = {t = eSPEED, i = i, speed = n} event(e)
     end)
     -- speed -
     params:add_binary(i.."dec_speed", "speed -", "trigger", 0)
     params:set_action(i.."dec_speed", function()
       local n = util.clamp(track[i].speed - 1, -3, 3)
-      local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+      local e = {t = eSPEED, i = i, speed = n} event(e)
     end)
     -- randomize
     params:add_binary(i.."track_rand", "randomize", "trigger", 0)
