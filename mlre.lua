@@ -729,11 +729,7 @@ function snapshot_exec(n, i, sync)
       if snapop.cut_pos then
         local e = {t = eSTART, i = i, pos = snap[n].cut[i], sync = sync} event(e)
       elseif snapop.reset_pos then
-        local cut = track[i].rev == 0 and clip[i].s or clip[i].e
-        local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
-        local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
-        local loop = track[i].rev == 0 and s or e
-        local pos = track[i].loop == 0 and cut or loop
+        local pos = track[i].rev == 0 and clip[i].cs or clip[i].ce
         local e = {t = eSTART, i = i, pos = pos, sync = sync} event(e)
       elseif track[i].play == 0 then
         local e = {t = eSTART, i = i, sync = sync} event(e)
@@ -834,7 +830,14 @@ for i = 1, 6 do
   clip[i].s = tp[i].splice[1].s
   clip[i].e = tp[i].splice[1].e
   clip[i].l = tp[i].splice[1].l
-  clip[i].bpm = tp[i].splice[1].bpm 
+  clip[i].bpm = tp[i].splice[1].bpm
+  clip[i].cs = clip[i].s
+  clip[i].ce = clip[i].e
+  for x = 1, 16 do
+    clip[i][x] = {}
+    clip[i][x].s = clip[i].s + (clip[i].l / 16) * (x - 1)
+    clip[i][x].e = clip[i].s + (clip[i].l / 16) * x
+  end
 end
 
 function set_clip(i) 
@@ -844,6 +847,13 @@ function set_clip(i)
   clip[i].l = tp[i].splice[s].l
   clip[i].e = tp[i].splice[s].e
   clip[i].bpm = tp[i].splice[s].bpm
+  -- set start and cut points
+  clip[i].cs = clip[i].s
+  clip[i].ce = clip[i].e
+  for x = 1, 16 do
+    clip[i][x].s = clip[i].s + (clip[i].l / 16) * (x - 1)
+    clip[i][x].e = clip[i].s + (clip[i].l / 16) * x
+  end
   -- set softcut
   softcut.loop_start(i, clip[i].s)
   softcut.loop_end(i, clip[i].e)
@@ -1006,7 +1016,6 @@ function clear_tape() -- clear tape
   local start = tp[i].s - FADE_TIME
   local length = MAX_TAPELENGTH + FADE_TIME
   softcut.buffer_clear_region_channel(buffer, start, length)
-  track[i].loop = 0
   render_splice()
   show_message("track    "..i.."    tape    cleared")
   dirtygrid = true
@@ -1179,15 +1188,8 @@ function get_pos(i, pos) -- get and store softcut position (callback)
 end
 
 function reset_pos(i)
-  if track[i].loop == 0 then
-    local cut = track[i].rev == 0 and clip[i].s or clip[i].e
-    softcut.position(i, cut)
-  else
-    local lstart = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
-    local lend = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
-    local cut = track[i].rev == 0 and lstart or lend
-    softcut.position(i, cut)
-  end
+  local cut = track[i].rev == 0 and clip[i].cs or clip[i].ce
+  softcut.position(i, cut)
 end
 
 function set_track_reset(i)
@@ -1202,9 +1204,8 @@ function cut_track(i, pos)
   if track[i].loop == 1 then
     clear_loop(i)
   end
-  local cut = (pos / 16) * clip[i].l + clip[i].s
-  local q = track[i].rev == 1 and clip[i].l / 16 or 0
-  softcut.position(i, cut + q)
+  local cut = track[i].rev == 0 and clip[i][pos + 1].s or clip[i][pos + 1].e
+  softcut.position(i, cut)
   if track[i].play == 0 then
     track[i].play = 1
     track[i].beat_count = 0
@@ -1242,18 +1243,20 @@ function set_loop(i, lstart, lend)
   track[i].loop = 1
   track[i].loop_start = lstart
   track[i].loop_end = lend
-  local s = clip[i].s + (lstart - 1) / 16 * clip[i].l
-  local e = clip[i].s + (lend) / 16 * clip[i].l
-  softcut.loop_start(i, s)
-  softcut.loop_end(i, e)
+  clip[i].cs = clip[i][lstart].s
+  clip[i].ce = clip[i][lend].e
+  softcut.loop_start(i, clip[i].cs)
+  softcut.loop_end(i, clip[i].ce)
   enc2_wait = false
   dirtygrid = true
 end
 
 function clear_loop(i)
   track[i].loop = 0
-  softcut.loop_start(i, clip[i].s) 
-  softcut.loop_end(i, clip[i].e)
+  clip[i].cs = clip[i].s
+  clip[i].ce = clip[i].e
+  softcut.loop_start(i, clip[i].cs) 
+  softcut.loop_end(i, clip[i].ce)
 end
 
 function set_quarantine(i, isolate)
@@ -1475,14 +1478,7 @@ function toggle_playback(i)
       local e = {t = eSTART, i = i} event(e)
     else
       local beat_sync = track[i].start_launch == 2 and 1 or bar_val
-      local pos
-      if track[i].loop == 0 then
-        pos = track[i].rev == 0 and clip[i].s or clip[i].e
-      else
-        local s = clip[i].s + (track[i].loop_start - 1) / 16 * clip[i].l
-        local e = clip[i].s + (track[i].loop_end) / 16 * clip[i].l
-        pos = track[i].rev == 0 and s or e
-      end
+      local pos = track[i].rev == 0 and clip[i].cs or clip[i].ce
       clock.run(function() 
         clock.sync(beat_sync)
         local e = {t = eSTART, i = i, pos = pos, sync = true} event(e)
@@ -1596,10 +1592,8 @@ function rec_at_threshold(i)
   rec_dur = 0
   if track[i].play == 0 then
     set_quarantine(i, false)
-    local pos = track[i].rev == 0 and 0 or 15
-    local cut = (pos / 16) * clip[i].l + clip[i].s
-    local q = track[i].rev == 1 and clip[i].l / 16 or 0
-    softcut.position(i, cut + q)
+    local pos = track[i].rev == 0 and clip[i].cs or clip[i].ce
+    softcut.position(i, pos)
     track[i].play = 1
     track[i].beat_count = 0
     set_level(i)
@@ -2320,11 +2314,6 @@ function pset_write_callback(filename, name, number)
     sesh_data[i].tape_s = tp[i].s
     sesh_data[i].tape_e = tp[i].e
     sesh_data[i].tape_splice = {table.unpack(tp[i].splice)}
-    -- clip data
-    sesh_data[i].clip_s = clip[i].s
-    sesh_data[i].clip_e = clip[i].e
-    sesh_data[i].clip_l = clip[i].l
-    sesh_data[i].clip_bpm = clip[i].bpm
     -- track data
     sesh_data[i].track_buffer = tp[i].buffer
     sesh_data[i].track_sel = track[i].sel
