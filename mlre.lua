@@ -50,8 +50,6 @@ DEFAULT_BEATNUM = 4
 
 -- ui variables
 main_pageNum = 1
-pmac_pageNum = 1
-pmac_pageEnc = 0
 lfo_pageNum = 1
 env_pageNum = 1
 patterns_pageNum = 1
@@ -442,14 +440,11 @@ function reset_event_state(sync)
 end
 
 -- p-macros
-pmac_perf_view = false
+local pmac_params = {"cutoff", "filter_q", "vol", "pan", "detune", "rate_slew"}
+local pmac_perf_view = false
 pmac_edit_view = false
 pmac_focus = 1
 pmac_enc = 1
-pmac_encpage = 1
-pmac_params = {"cutoff", "filter_q", "vol", "pan", "detune", "rate_slew"}
-pmac_param_id = {{"cutoff", "vol", "detune", "lfo_depth"}, {"filter_q", "pan", "rate_slew", "lfo_rate"}}
-pmac_param_name = {{"cutoff", "vol", "detune", "lfo   depth"}, {"filter  q", "pan", "rate_slew", "lfo   rate"}}
 
 pmac = {}
 pmac.d = {}
