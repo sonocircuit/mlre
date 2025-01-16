@@ -361,17 +361,17 @@ function grd.cutfocus_keys(x, z)
       first[row] = x
       local cut = x - 1
       if track[i].play == 1 or track[i].start_launch == 1 then
-        local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
+        local e = {t = eCUT, i = i, pos = cut} event(e)
         if env[i].active then
-          local e = {} e.t = eGATEON e.i = i event(e)
+          local e = {t = eGATEON, i = i} event(e)
         end
       elseif track[i].play == 0 and track[i].start_launch > 1 then
         clock.run(function()
           local beat_sync = track[i].start_launch == 2 and 1 or bar_val
           clock.sync(beat_sync)
-          local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+          local e = {t = eCUT, i = i, pos = cut, sync = true} event(e)
           if env[i].active then
-            local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+            local e = {t = eGATEON, i = i, sync = true} event(e)
           end
         end)
       end
@@ -385,10 +385,10 @@ function grd.cutfocus_keys(x, z)
       loop_event(i, lstart, lend)
     else
       if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-        local e = {} e.t = eSTOP e.i = i event(e)
+        local e = {t = eSTOP, i = i} event(e)
       end
       if env[i].active and track[i].loop == 0 then
-        local e = {} e.t = eGATEOFF e.i = i event(e)
+        local e = {t = eGATEOFF, i = i} event(e)
       end
     end
     if held[row] < 1 then held[row] = 0 end
@@ -448,17 +448,11 @@ function grd.rec_keys(x, y, z, offset)
     elseif x == 16 and alt == 0 and mod == 1 and z == 1 then
       track[i].sel = 1 - track[i].sel
     elseif x == 16 and alt == 1 and mod == 0 and z == 1 then
-      local n = 1 - track[i].mute
-      local e = {} e.t = eMUTE e.i = i e.mute = n
-      event(e)
+      local e = {t = eMUTE, i = i, mute = (1 - track[i].mute)} event(e)
     elseif x > 8 and x < 16 and alt == 0 and z == 1 then
-      local n = x - 12
-      local e = {} e.t = eSPEED e.i = i e.speed = n
-      event(e)
+      local e = {t = eSPEED, i = i, speed = (x - 12)} event(e)
     elseif x == 8 and alt == 0 and z == 1 then
-      local n = 1 - track[i].rev
-      local e = {} e.t = eREV e.i = i e.rev = n
-      event(e)
+      local e = {t = eREV, i = i, rev = (1 - track[i].rev)} event(e)
     elseif x == 8 and alt == 1 and z == 1 then
       params:set(i.."warble_state", track[i].warble == 0 and 2 or 1)
       update_rate(i)
@@ -513,13 +507,19 @@ function grd.cut_keys(x, y, z, offset)
     if z == 1 then
       local i = track_focus
       if mod == 0 then
-        if x >= 1 and x <= 8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
-        if x >= 9 and x <= 16 then local e = {} e.t = eTRSP e.i = i e.val = x - 1 event(e) end
+        if x >= 1 and x <= 8 then
+          local e = {t = eTRSP, i = i, val = x} event(e)
+        end
+        if x >= 9 and x <= 16 then
+          local e = {t = eTRSP, i = i, val = (x - 1)} event(e)
+        end
       elseif mod == 1 then
         if x == 8 then
-          local n = util.clamp(track[i].speed - 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+          local n = util.clamp(track[i].speed - 1, -3, 3)
+          local e = {t = eSPEED, i = i, speed = n} event(e)
         elseif x == 9 then
-          local n = util.clamp(track[i].speed + 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+          local n = util.clamp(track[i].speed + 1, -3, 3)
+          local e = {t = eSPEED, i = i, speed = n} event(e)
         end
       end
     end
@@ -546,17 +546,17 @@ function grd.cut_keys(x, y, z, offset)
         first[y] = x
         local cut = x - 1
         if track[i].play == 1 or track[i].start_launch == 1 then
-          local e = {} e.t = eCUT e.i = i e.pos = cut event(e)
+          local e = {t = eCUT, i = i, pos = cut} event(e)
           if env[i].active then
-            local e = {} e.t = eGATEON e.i = i event(e)
+            local e = {t = eGATEON, i = i} event(e)
           end
         elseif track[i].play == 0 and track[i].start_launch > 1 then
           clock.run(function()
             local beat_sync = track[i].start_launch == 2 and 1 or bar_val
             clock.sync(beat_sync)
-            local e = {} e.t = eCUT e.i = i e.pos = cut e.sync = true event(e)
+            local e = {t = eCUT, i = i, pos = cut, sync = true} event(e)
             if env[i].active then
-              local e = {} e.t = eGATEON e.i = i e.sync = true event(e)
+              local e = {t = eGATEON, i = i, sync = true} event(e)
             end
           end)
         end
@@ -570,10 +570,10 @@ function grd.cut_keys(x, y, z, offset)
         loop_event(i, lstart, lend)
       else
         if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-          local e = {} e.t = eSTOP e.i = i event(e)
+          local e = {t = eSTOP, i = i} event(e)
         end
         if env[i].active and track[i].loop == 0 then
-          local e = {} e.t = eGATEOFF e.i = i event(e)
+          local e = {t = eGATEOFF, i = i} event(e)
         end
       end
       if held[y] < 1 then held[y] = 0 end
@@ -617,17 +617,23 @@ function grd.trsp_keys(x, y, z, offset)
         if not autofocus and view == vTAPE then render_splice() end
       end
       if alt == 0 and mod == 0 then
-        if x >= 1 and x <= 8 then local e = {} e.t = eTRSP e.i = i e.val = x event(e) end
-        if x >= 9 and x <= 16 then local e = {} e.t = eTRSP e.i = i e.val = x - 1 event(e) end
+        if x >= 1 and x <= 8 then
+          local e = {t = eTRSP, i = i, val = x} event(e)
+        end
+        if x >= 9 and x <= 16 then
+          local e = {t = eTRSP, i = i, val = (x - 1)} event(e)
+        end
       end
       if alt == 1 and x > 7 and x < 10 then
         toggle_playback(i)
       end
       if mod == 1 then
         if x == 8 then
-          local n = util.clamp(track[i].speed - 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+          local n = util.clamp(track[i].speed - 1, -3, 3)
+          local e = {t = eSPEED, i = i, speed = n} event(e)
         elseif x == 9 then
-          local n = util.clamp(track[i].speed + 1, -3, 3) local e = {} e.t = eSPEED e.i = i e.speed = n event(e)
+          local n = util.clamp(track[i].speed + 1, -3, 3)
+          local e = {t = eSPEED, i = i, speed = n} event(e)
         end
       end
     end
@@ -736,7 +742,7 @@ function grd.env_keys(x, y, z, offset)
       elseif x == 2 then
         env_focus = i
         if env[i].active then
-          local e = {} e.t = eGATEON e.i = i event(e)
+          local e = {t = eGATEON, i = i} event(e)
         end
       end
     end
@@ -744,7 +750,7 @@ function grd.env_keys(x, y, z, offset)
     if y > 1 and y < 8 then
       if x == 2 then
         if env[i].active then
-          local e = {} e.t = eGATEOFF e.i = i event(e)
+          local e = {t = eGATEOFF, i = i} event(e)
         end
       end
     end
@@ -960,14 +966,14 @@ function grd.tape_keys(x, y, z, offset)
         show_message("assign   different   buffer")
       else
         track[i].route_t5 = 1 - track[i].route_t5
-        local e = {} e.t = eROUTE e.i = i e.ch = 5 e.route = track[i].route_t5 event(e)
+        local e = {t = eROUTE, i = i, ch = 5, route = track[i].route_t5} event(e)
       end
     elseif x == 16 and y < 7 and z == 1 then
       if tp[i].buffer == tp[6].buffer then
         show_message("assign   different   buffer")
       else
         track[i].route_t6 = 1 - track[i].route_t6
-        local e = {} e.t = eROUTE e.i = i e.ch = 6 e.route = track[i].route_t6 event(e)
+        local e = {t = eROUTE, i = i, ch = 6, route = track[i].route_t6} event(e)
       end
     elseif x == 16 and y == 7 and z == 1 then
       view_presets = not view_presets
