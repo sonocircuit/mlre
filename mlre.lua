@@ -2347,6 +2347,7 @@ function pset_write_callback(filename, name, number)
     sesh_data[i].lfo_destination = lfo[i].destination
     sesh_data[i].lfo_offset = params:get("lfo_offset_lfo_"..i)
     -- silent load specific
+    sesh_data[i].track_vol = track[i].level
     sesh_data[i].track_pan = track[i].pan
     sesh_data[i].track_transpose = params:get(i.."transpose")
     sesh_data[i].track_detune = params:get(i.."detune")
