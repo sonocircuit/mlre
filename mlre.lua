@@ -1565,7 +1565,7 @@ function arm_thresh_rec(i)
       else
         track[i].dur = clip[i].l / math.pow(2, track[i].speed + track[i].transpose + track[i].detune)
       end
-      if track[i].loop == 1 and track[i].play == 1 then
+      if track[i].loop == 1 then
         local len = track[i].loop_end - track[i].loop_start + 1
         track[i].dur = (track[i].dur / 16) * len
       end
