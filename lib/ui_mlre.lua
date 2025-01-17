@@ -29,6 +29,12 @@ local patterns_page_names_r = {"length", "play   mode"}
 local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "rename", "format >", "format >>>"}
 local tape_action = 2
 
+-- p-macro variables
+local pmac_pageNum = 1
+local pmac_pageEnc = 0
+local pmac_param_id = {{"cutoff", "vol", "detune", "lfo_depth"}, {"filter_q", "pan", "rate_slew", "lfo_rate"}}
+local pmac_param_name = {{"cutoff", "vol", "detune", "lfo   depth"}, {"filter  q", "pan", "rate_slew", "lfo   rate"}}
+
 -- arc variables
 local arc_inc1 = 0
 local arc_inc2 = 0
@@ -262,19 +268,15 @@ function ui.pmac_edit_redraw()
     screen.level(pmac_pageNum == i + 2 and 15 or 4)
     screen.rect(120 + (i - 1) * 4, 10, 2, 2)
     screen.fill()
+    screen.level(shift == 0 and 15 or 1)
+    screen.font_size(16)
+    screen.move(30 + 68 * (i - 1), 39)
+    screen.text_center(pmac.d[pmac_enc][pmac_focus][pmac_param_id[i][pmac_pageNum]].."%")
+    screen.font_size(8)
+    screen.level(4)
+    screen.move(30 + 68 * (i - 1), 60)
+    screen.text_center(pmac_param_name[i][pmac_pageNum])
   end
-  screen.level(shift == 0 and 15 or 1)
-  screen.font_size(16)
-  screen.move(30, 39)
-  screen.text_center(pmac.d[pmac_enc][pmac_focus][pmac_param_id[1][pmac_pageNum]].."%")
-  screen.move(98, 39)
-  screen.text_center(pmac.d[pmac_enc][pmac_focus][pmac_param_id[2][pmac_pageNum]].."%")
-  screen.font_size(8)
-  screen.level(4)
-  screen.move(30, 60)
-  screen.text_center(pmac_param_name[1][pmac_pageNum])
-  screen.move(98, 60)
-  screen.text_center(pmac_param_name[2][pmac_pageNum])
   screen.update()
 end
 
@@ -353,11 +355,9 @@ function ui.arc_main_delta(n, d)
       -- start playback
       if params:get("arc_enc_1_start") == 2 then
         if track[track_focus].play == 0 and (d > 2 or d < -2) then
-          local e = {} e.t = eSTART e.i = track_focus
-          event(e)
+          local e = {t = eSTART, i = track_focus} event(e)
           if params:get(track_focus.."play_mode") == 3 then
-            local e = {} e.t = eGATEON e.i = track_focus
-            event(e)
+            local e = {t = eGATEON, i = track_focus} event(e)
           end
         end
       end
@@ -369,9 +369,9 @@ function ui.arc_main_delta(n, d)
           clock.sleep(0.05)
           if prev_inc == inc then
             if params:get(track_focus.."adsr_active") == 2 then
-              local e = {} e.t = eGATEOFF e.i = track_focus event(e)
+              local e = {t = eGATEOFF, i = track_focus} event(e)
             else
-              local e = {} e.t = eSTOP e.i = track_focus event(e)
+              local e = {t = eSTOP, i = track_focus} event(e)
             end
           end
         end)
@@ -379,11 +379,9 @@ function ui.arc_main_delta(n, d)
       -- set direction
       if params:get("arc_enc_1_dir") == 2 then
         if d < -2 and track[track_focus].rev == 0 then
-          local e = {} e.t = eREV e.i = track_focus e.rev = 1
-          event(e)
+          local e = {t = eREV, i = track_focus, rev = 1} event(e)
         elseif d > 2 and track[track_focus].rev == 1 then
-          local e = {} e.t = eREV e.i = track_focus e.rev = 0
-          event(e)
+          local e = {t = eREV, i = track_focus, rev = 0} event(e)
         end
       end
       -- temp warble
@@ -424,7 +422,7 @@ function ui.arc_main_delta(n, d)
         enc2_wait = true
         loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end)
         if params:get(track_focus.."adsr_active") == 2 then
-          local e = {} e.t = eGATEON e.i = track_focus event(e)
+          local e = {t = eGATEON, i = track_focus} event(e)
         end
         clock.run(function()
           clock.sleep(0.4)
@@ -433,9 +431,9 @@ function ui.arc_main_delta(n, d)
         end)
       end
       if track[track_focus].loop == 1 and alt == 1 then
-        local e = {} e.t = eUNLOOP e.i = track_focus event(e)
+        local e = {t = eUNLOOP, i = track_focus} event(e)
         if params:get(track_focus.."adsr_active") == 2 then
-          local e = {} e.t = eGATEOFF e.i = track_focus event(e)
+          local e = {t = eGATEOFF, i = track_focus} event(e)
         end
       end
       if track[track_focus].loop == 1 and not enc2_wait then
@@ -1014,9 +1012,15 @@ function ui.tape_key(n, z)
           view_batchload_options = true
           screenredrawtimer:stop()
           fileselect.enter(_path.audio, function(path) batchload_callback(path, i) end, "audio")
+          if prev_path ~= nil then
+            fileselect.pushd(prev_path)
+          end
         elseif tape_actions[tape_action] == "load" and z == 1 then
           screenredrawtimer:stop()
           fileselect.enter(_path.audio, function(path) fileload_callback(path, i) end, "audio")
+          if prev_path ~= nil then
+            fileselect.pushd(prev_path)
+          end
         elseif tape_actions[tape_action] == "clear" and z == 1 then
           popupscreen("clear   splice", clear_splice)
         elseif tape_actions[tape_action] == "save" and z == 0 then
