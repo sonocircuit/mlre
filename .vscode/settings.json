@@ -1,0 +1,10 @@
+{
+    "Lua.diagnostics.globals": [
+        "get_length_audio",
+        "show_message",
+        "load_batch",
+        "load_audio",
+        "util",
+        "tp"
+    ]
+}
