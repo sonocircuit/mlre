@@ -18,45 +18,48 @@ local snapshot_last = 0
 local event_reset_timeout = false
 local event_reset_clk = nil
 
-local function pattern_slots(i)
-  if alt == 1 then
-    pattern[i]:clear()
-    pattern_rec = false
-  elseif pattern[i].overdub == 1 then
-    if mod == 1 then
-      pattern[i]:set_overdub(-1) -- overdub flag undo
-    else
-      pattern[i]:set_overdub(0) -- overdub off
-    end
-    pattern_rec = false
-  elseif pattern[i].rec == 1 then
-    if mod == 1 then
-      pattern[i]:set_overdub(1) -- overdub on
-    else
-      local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
-      local e = {t = ePATTERN, i = i, action = "start"} event(e)
+local function pattern_actions(i, z)
+  if z == 1 then
+    if alt == 1 then
+      pattern[i]:clear()
       pattern_rec = false
-    end
-  elseif pattern[i].count == 0 then
-    pattern[i]:rec_start()
-    pattern_rec = true
-  elseif pattern[i].play == 1 then
-    if mod == 1 then
-      pattern[i]:set_overdub(1) -- overdub on
+    elseif pattern[i].overdub == 1 then
+      if mod == 1 then
+        pattern[i]:set_overdub(-1) -- overdub flag undo
+      else
+        pattern[i]:set_overdub(0) -- overdub off
+      end
+      pattern_rec = false
+    elseif pattern[i].rec == 1 then
+      if mod == 1 then
+        pattern[i]:set_overdub(1) -- overdub on
+      else
+        local e = {t = ePATTERN, i = i, action = "rec_stop"} event(e)
+        local e = {t = ePATTERN, i = i, action = "start"} event(e)
+        pattern_rec = false
+      end
+    elseif pattern[i].count == 0 then
+      pattern[i]:rec_start()
       pattern_rec = true
+    elseif pattern[i].play == 1 then
+      if mod == 1 then
+        pattern[i]:set_overdub(1) -- overdub on
+        pattern_rec = true
+      else
+        local e = {t = ePATTERN, i = i, action = "stop"} event(e)
+      end
     else
-      local e = {t = ePATTERN, i = i, action = "stop"} event(e)
+      local beat_sync = pattern[i].count_in > 1 and (pattern[i].count_in == 2 and 1 or bar_val) or (quantizing and q_rate or nil)
+      if beat_sync ~= nil then
+        clock.run(function()
+          clock.sync(beat_sync)
+          local e = {t = ePATTERN, i = i, action = "start", sync = true} event(e)
+        end)
+      else
+        local e = {t = ePATTERN, i = i, action = "start"} event(e)
+      end
     end
-  else
-    local beat_sync = pattern[i].count_in > 1 and (pattern[i].count_in == 2 and 1 or bar_val) or (quantizing and q_rate or nil)
-    if beat_sync ~= nil then
-      clock.run(function()
-        clock.sync(beat_sync)
-        local e = {t = ePATTERN, i = i, action = "start", sync = true} event(e)
-      end)
-    else
-      local e = {t = ePATTERN, i = i, action = "start"} event(e)
-    end
+    if view == vMACRO then dirtyscreen = true end
   end
 end
 
@@ -82,6 +85,7 @@ local function snapshot_actions(i, z)
       end
     end
   end
+  if view == vMACRO then dirtyscreen = true end
 end
 
 local function recall_actions(i, z)
@@ -106,7 +110,7 @@ local function recall_actions(i, z)
       clock.cancel(event_reset_clk)
     end
     event_reset_clk = clock.run(function()
-      clock.sync(1/4)
+      clock.sync(1/2)
       if not recall[i].active then
         reset_event_state(true)
       end
@@ -118,226 +122,136 @@ local function recall_actions(i, z)
       reset_event_state(true)
     end
   end
+  if view == vMACRO then dirtyscreen = true end
 end
 
-local function recall_slots(i, z)
-  if snapshot_mode then
-    snapshot_actions(i, z)
-  else
-    recall_actions(i, z)
-  end
-end
-
-local function toggle_snap_mode(z)
-  if z == 1 then
-    snapshot_mode = not snapshot_mode
-    save_event_state()
-  else
-    snapshot_mode = params:get("recall_mode") == 2 and true or false
-  end
-  held[1] = 0
-end
-
-function grd.clear_keylogic()-- reset key logic in case of stuck loops
+function grd.clear_keylogic() -- reset key logic in case of stuck loops
   for i = 1, 8 do
     held[i] = 0
   end
 end
  
 function grd.nav(x, z, pos)
-  if z == 1 then
-    if x == 1 then
-      if alt == 1 then
-        local msg = "clear   splice"
-        popupscreen(msg, clear_splice)
-      else
-        set_gridview(vREC, pos)
-        set_view(vMAIN)
-      end
-    elseif x == 2 then
-      if alt == 1 then
-        local msg = "clear   tape"
-        popupscreen(msg, clear_tape)
-      else
+  if x == 1 and z == 1 then
+    if alt == 1 then
+      local msg = "clear   splice"
+      popupscreen(msg, clear_splice)
+    else
+      set_gridview(vREC, pos)
+      set_view(vMAIN)
+    end
+  elseif x == 2 then
+    if z == 1 and alt == 1 then
+      local msg = "clear   tape"
+      popupscreen(msg, clear_tape)
+    elseif alt == 0 then
+      if z == 1 then
         set_gridview(vCUT, pos)
         set_view(vMAIN)
-        cutview_hold = true
       end
-    elseif x == 3 then
-      if alt == 1 then
-        local msg = "clear   buffers"
-        popupscreen(msg, clear_buffers)
+      cutview_hold = z == 1 and true or false
+    end
+  elseif x == 3 and z == 1 then
+    if alt == 1 then
+      local msg = "clear   buffers"
+      popupscreen(msg, clear_buffers)
+    else
+      set_gridview(vTRSP, pos)
+      set_view(vMAIN)
+    end
+  elseif x == 4 and z == 1 and alt == 0 then
+    local view = pos == "o" and grido_view or gridz_view
+    if view == vLFO then
+      set_gridview(vENV, pos)
+      set_view(vENV)
+    else
+      set_gridview(vLFO, pos)
+      set_view(vLFO)
+    end
+  elseif x > 4 and x < 13 then
+    local i = x - 4
+    local s = kmac[pos][kmac.key]
+    if kmac.slot[s][i] == mPTN then
+      pattern_actions(i, z)
+    elseif kmac.slot[s][i] == mSNP then
+      snapshot_actions(i, z)
+    elseif kmac.slot[s][i] == mPIN then
+      recall_actions(i, z)
+    end
+  elseif x == 13 then
+    if alt == 1 and z == 1 then
+      altrun()
+    elseif mod == 1 and z == 1 then
+      stopall()
+    else
+      if kmac.toggle then
+        if z == 1 then
+          kmac.key = kmac.key == 1 and 2 or 1
+        end
       else
-        set_gridview(vTRSP, pos)
-        set_view(vMAIN)
+        kmac.key = z == 1 and 2 or 1
       end
-    elseif x == 4 and alt == 0 then
-      local view = pos == "o" and grido_view or gridz_view
-      if view == vLFO then
-        set_gridview(vENV, pos)
-        set_view(vENV)
-      else
-        set_gridview(vLFO, pos)
-        set_view(vLFO)
-      end
-    elseif x == 15 and alt == 0 and mod == 0 and pos == "o" then
-      keyquant_edit = true
+      if view == vMACRO then dirtyscreen = true end
+    end    
+  elseif x == 14 then
+    if alt == 0 then
+      mod = z
+    elseif alt == 1 and z == 1 then
+      reset_playheads()
+    end
+  elseif x == 15 then
+    if alt == 0 and mod == 0 and pos == "o" then
+      keyquant_edit = z == 1 and true or false
       dirtyscreen = true
-    elseif x == 16 then alt = 1
-      dirtyscreen = true
-    elseif x == 15 and alt == 1 then
+    elseif alt == 1 and z == 1 then
       set_gridview(vTAPE, pos)
       set_view(vTAPE)
       render_splice()
-    elseif x == 15 and mod == 1 then
-      set_gridview(vPATTERNS, pos)
-      set_view(vPATTERNS)
-    elseif x == 14 and alt == 0 then
-      mod = 1
-    elseif x == 14 and alt == 1 then
-      reset_playheads()  -- set all playing tracks to pos 1
-    elseif x == 13 then
-      if alt == 1 then
-        altrun()  -- stops all running tracks and runs all stopped tracks if track[i].sel == 1
-      elseif mod == 1 then
-        stopall()
-      else
-        toggle_snap_mode(z)
-      end      
+    elseif mod == 1 and z == 1 then
+      set_gridview(vMACRO, pos)
+      set_view(vMACRO)
     end
-  elseif z == 0 then
-    if x == 2 then
-      cutview_hold = false
-    end
-    if x == 13 then
-      toggle_snap_mode(z)
-    end
-    if x == 15 then
-      keyquant_edit = false
-    end
-    if x == 16 then
-      alt = 0
-    elseif x == 14 and alt == 0 then
-      mod = 0 -- lock mod if mod released before alt is released
-    end
-    dirtyscreen = true
-  end
-  if GRID_SIZE == 128 then
-    local i = x - 4
-    if view == vPATTERNS or macro_slot_mode == 2 then
-      if x > 4 and x < 13 and z == 1 then
-        pattern_slots(i)
-      end
-    elseif macro_slot_mode == 3 then
-      if x > 4 and x < 13 then
-        recall_slots(i, z)
-      end
-    elseif macro_slot_mode == 1 then
-      if x > 4 and x < 9 and z == 1 then
-        pattern_slots(i)
-      elseif x > 8 and x < 13 then
-        recall_slots(i, z)
-      end
-    end
-  elseif GRID_SIZE == 256 then
-    local i = (x - 4)
-    if x > 4 and x < 13 then
-      if pos == "o" and z == 1 then
-        pattern_slots(i)
-      elseif pos == "z" then
-        recall_slots(i, z)
-      end
-    end
+  elseif x == 16 then
+    alt = z
   end
 end
 
 function grd.drawnav(y)
   local view = y == 9 and gridz_view or grido_view
+  -- nav keys
   g:led(1, y, view == vREC and 10 or 4) -- vREC
   g:led(2, y, view == vCUT and 10 or 3) -- vCUT
   g:led(3, y, view == vTRSP and 10 or 2) -- vTRSP
   g:led(4, y, view == vLFO and 10 or (view == vENV and pulse_key_slow or 0)) -- vLFO
-  g:led(16, y, alt == 1 and 15 or 9) -- alt
-  g:led(15, y, y ~= 9 and (quantizing and (pulse_bar and 15 or (pulse_beat and 6 or 2))) or 3) -- Q flash
-  g:led(14, y, mod == 1 and 9 or 2) -- mod
-  if GRID_SIZE == 128 then 
-    if view == vPATTERNS or macro_slot_mode == 2 then
-      for i = 1, 8 do
-        if pattern[i].rec == 1 and pattern[i].count == 0 then
-          g:led(i + 4, y, 15)
-        elseif pattern[i].rec == 1 and pattern[i].count > 0 then
-          g:led(i + 4, y, pulse_key_fast)
-        elseif pattern[i].overdub == 1 then
-          g:led(i + 4, y, pulse_key_fast)
-        elseif pattern[i].play == 1 then
-          g:led(i + 4, y, pattern[i].flash and 15 or 13)
-        elseif pattern[i].count > 0 then
-          g:led(i + 4, y, 7)
-        else
-          g:led(i + 4, y, 3)
-        end
-      end
-    elseif macro_slot_mode == 3 then
-      if snapshot_mode then
-        for i = 1, 8 do
-          g:led(i + 4, y, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
-        end
+  -- key macro keys
+  for i = 1, 8 do
+    local pos = y == 9 and "z" or "o"
+    local s = kmac[pos][kmac.key]
+    if kmac.slot[s][i] == mPTN then
+      if pattern[i].rec == 1 and pattern[i].count == 0 then
+        g:led(i + 4, y, 15)
+      elseif pattern[i].rec == 1 and pattern[i].count > 0 then
+        g:led(i + 4, y, pulse_key_fast)
+      elseif pattern[i].overdub == 1 then
+        g:led(i + 4, y, pulse_key_fast)
+      elseif pattern[i].play == 1 then
+        g:led(i + 4, y, pattern[i].flash and 15 or 13)
+      elseif pattern[i].count > 0 then
+        g:led(i + 4, y, 8)
       else
-        for i = 1, 8 do
-          g:led(i + 4, y, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
-        end
+        g:led(i + 4, y, 4)
       end
-    elseif macro_slot_mode == 1 then
-      for i = 1, 4 do
-        if pattern[i].rec == 1 and pattern[i].count == 0 then
-          g:led(i + 4, y, 15)
-        elseif pattern[i].rec == 1 and pattern[i].count > 0 then
-          g:led(i + 4, y, pulse_key_fast)
-        elseif pattern[i].overdub == 1 then
-          g:led(i + 4, y, pulse_key_fast)
-        elseif pattern[i].play == 1 then
-          g:led(i + 4, y, pattern[i].flash and 15 or 13)
-        elseif pattern[i].count > 0 then
-          g:led(i + 4, y, 7)
-        else
-          g:led(i + 4, y, 3)
-        end
-      end
-      if snapshot_mode then
-        for i = 5, 8 do
-          g:led(i + 4, y, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
-        end
-      else
-        for i = 5, 8 do
-          g:led(i + 4, y, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
-        end
-      end
-    end
-  else
-    for i = 1, 8 do
-      if y == 8 then
-        if pattern[i].rec == 1 and pattern[i].count == 0 then
-          g:led(i + 4, y, 15)
-        elseif pattern[i].rec == 1 and pattern[i].count > 0 then
-          g:led(i + 4, y, pulse_key_fast)
-        elseif pattern[i].overdub == 1 then
-          g:led(i + 4, y, pulse_key_fast)
-        elseif pattern[i].play == 1 then
-          g:led(i + 4, y, pattern[i].flash and 15 or 13)
-        elseif pattern[i].count > 0 then
-          g:led(i + 4, y, 7)
-        else
-          g:led(i + 4, y, 3)
-        end
-      elseif y == 9 then
-        if snapshot_mode then
-          g:led(i + 4, y, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
-        else
-          g:led(i + 4, y, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
-        end
-      end
+    elseif kmac.slot[s][i] == mSNP then
+      g:led(i + 4, y, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
+    elseif kmac.slot[s][i] == mPIN then
+      g:led(i + 4, y, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 4 or 1)))
     end
   end
+  -- nav and function keys
+  g:led(13, y, kmac.key == 2 and 2 or 0) -- k-mac
+  g:led(14, y, mod == 1 and 9 or 2) -- mod
+  g:led(15, y, y ~= 9 and (quantizing and (pulse_bar and 15 or (pulse_beat and 6 or 2))) or 3) -- Q flash
+  g:led(16, y, alt == 1 and 15 or 9) -- alt
 end
 
 function grd.cutfocus_keys(x, z)
@@ -773,59 +687,68 @@ function grd.env_draw(offset)
   end
 end
 
-function grd.pattern_keys(x, y, z, offset)
+function grd.macro_keys(x, y, z, offset)
   local y = offset and y - offset or y
-  if z == 1 and view ~= vPATTERNS and autofocus then
-    set_view(vPATTERNS)
+  if z == 1 and view ~= vMACRO and autofocus then
+    set_view(vMACRO)
   end
-  if x > 1 and x < 4 and y > 2 and y < 8 and z == 1 then
-    local msg = ""
-    if y == 3 and GRID_SIZE == 128 then
-      params:set("slot_assign", 1)
-      msg = "split  -  pattern / recall"
-    elseif y == 4 and GRID_SIZE == 128 then
-      params:set("slot_assign", 2)
-      msg = "pattern   slots"
-    elseif y == 5 and GRID_SIZE == 128 then
-      params:set("slot_assign", 3)
-      msg = "recall   slots"
-    elseif y == 6 then
-      params:set("recall_mode", snapshot_mode and 1 or 2)
-      msg = snapshot_mode and "snapshot" or "punch-in"
-    elseif y == 7 then
-      params:set("punchin_mode", punch_momentrary and 2 or 1)
-      msg = punch_momentrary and "punch-in  >  momentary" or "punch-in  >  latch"
+  if x > 1 and x < 4 then
+    local i = x - 1
+    if y > 2 and y < 5 then -- select macro page to assign kit
+      local pos = y == 3 and "o" or "z"
+      if z == 1 and y == 3 or (y == 4 and GRID_SIZE == 256) then
+        kmac[pos].focus = i
+      else
+        kmac[pos].focus = 0
+      end
+    elseif y == 5 and z == 1 then
+      kmac.pattern_edit = i == 2 and true or false
+    elseif y > 5 and y < 8 then -- kits
+      local s = i + (y - 6) * 2
+      if (kmac.o.focus > 0 or kmac.z.focus > 0) and z == 1 then -- if macro key page selected 
+        local pos = {"o", "z"}
+        for n = 1, 2 do
+          if kmac[pos[n]].focus > 0 then
+            kmac[pos[n]][kmac[pos[n]].focus] = s -- press key to assign kit
+          end
+        end
+      else
+        if z == 1 then
+          if kmac.slot_focus ~= s then
+            kmac.slot_focus = s -- focus kit to enter kit edit mode
+          else
+            kmac.slot_focus = 0
+          end
+        end
+      end
     end
-    show_message(msg)
   elseif x > 4 and x < 13 then
     local i = x - 4
-    if GRID_SIZE == 128 then
-      if y > 1 and y < 6 and z == 1 then
-        pattern_focus = i
-        if y == 3 then
-          pattern[i].synced = not pattern[i].synced
-        elseif y == 4 then
-          local val = util.wrap(pattern[i].count_in + 1, 1, 3)
-          params:set("patterns_countin"..i, val)
+    if y > 1 and y < 8 then
+      if kmac.slot_focus > 0 then -- if kit edit mode
+        if y > 3 and y < 7 then
+          kmac.slot[kmac.slot_focus][i] = y - 3 -- assign to PTN, SNP, PIN
         end
-      elseif y == 6 then
-        snapshot_actions(i, z)
-      elseif y == 7 then
-        recall_actions(i, z)
-      end
-    else
-      if y > 1 and y < 7 and z == 1 then
-        pattern_focus = i
-        if y == 3 then
-          pattern[i].synced = not pattern[i].synced
-        elseif y == 4 then
-          local val = util.wrap(pattern[i].count_in + 1, 1, 3)
-          params:set("patterns_countin"..i, val)
+      elseif kmac.pattern_edit then
+        if z == 1 then
+          pattern_focus = i
+          if y == 4 then
+            pattern_actions(i, z)
+          elseif y == 5 then
+            pattern[i].synced = not pattern[i].synced
+          elseif y == 6 then
+            local val = util.wrap(pattern[i].count_in + 1, 1, 3)
+            params:set("patterns_countin"..i, val)
+          end
+        end
+      else
+        if y == 4 then
+          pattern_actions(i, z)
         elseif y == 5 then
-          params:set("patterns_playback"..i, pattern[i].loop and 2 or 1)
+          snapshot_actions(i, z)
+        elseif y == 6 then
+          recall_actions(i, z)
         end
-      elseif y == 8 then
-        recall_actions(i, z)
       end
     end
   elseif x > 13 and x < 16 and y > 2 and y < 8 and z == 1 then
@@ -848,33 +771,59 @@ function grd.pattern_keys(x, y, z, offset)
   dirtyscreen = true
 end
 
-function grd.pattern_draw(offset)
+function grd.macro_draw(offset)
   local off = offset or 0
   for i = 1, 2 do
     local x = i + 1
-    g:led(x, 3 + off, GRID_SIZE == 128 and (macro_slot_mode == 1 and 10 or 2) or 1)
-    g:led(x, 4 + off, GRID_SIZE == 128 and (macro_slot_mode == 2 and 10 or 2) or 1)
-    g:led(x, 5 + off, GRID_SIZE == 128 and (macro_slot_mode == 3 and 10 or 2) or 1)
-    g:led(x, 6 + off, snapshot_mode and 6 or 12)
-    g:led(x, 7 + off, punch_momentrary and 4 or 8)
+    g:led(x, 3 + off, kmac.o.focus == i and 10 or 2)
+    g:led(x, 4 + off, kmac.z.focus == i and 10 or (GRID_SIZE == 256 and 2 or 1))
+    if kmac.o.focus > 0 or kmac.z.focus > 0 then
+      local focus = kmac.o.focus > 0 and kmac.o[kmac.o.focus] or (kmac.z.focus > 0 and kmac.z[kmac.z.focus])
+      g:led(x, 6 + off, focus == i and 10 or 4)
+      g:led(x, 7 + off, focus == i + 2 and 10 or 4)
+    else
+      g:led(x, 6 + off, kmac.slot_focus > 0 and (kmac.slot_focus == i and 10 or 2) or 4)
+      g:led(x, 7 + off, kmac.slot_focus > 0 and (kmac.slot_focus == i + 2 and 10 or 2) or 4)
+    end
   end
-  if GRID_SIZE == 128 then
+  g:led(2, 5 + off, kmac.pattern_edit and 1 or 6)
+  g:led(3, 5 + off, kmac.pattern_edit and 6 or 1)
+
+  if kmac.slot_focus > 0 then
     for i = 1, 8 do
-      local l = pattern_focus == i and 2 or 0
-      g:led(i + 4, 2 + off, l)
-      g:led(i + 4, 3 + off, (pattern[i].synced and 13 or 4) + l)
-      g:led(i + 4, 4 + off, ((pattern[i].count_in) * 4 - 2) + l)
-      g:led(i + 4, 6 + off, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
-      g:led(i + 4, 7 + off, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
+      g:led(i + 4, 4 + off, kmac.slot[kmac.slot_focus][i] == mPTN and 12 or 6)
+      g:led(i + 4, 5 + off, kmac.slot[kmac.slot_focus][i] == mSNP and 12 or 4)
+      g:led(i + 4, 6 + off, kmac.slot[kmac.slot_focus][i] == mPIN and 12 or 2)
     end
   else
     for i = 1, 8 do
-      local l = pattern_focus == i and 2 or 0
-      g:led(i + 4, 3 + off, (pattern[i].synced and 12 or 4) + l)
-      g:led(i + 4, 4 + off, ((pattern[i].count_in - 1) * 4) + l)
-      g:led(i + 4, 5 + off, (pattern[i].loop and 8 or 2) + l)
-      g:led(i + 4, 6 + off, l)
-      g:led(i + 4, 8 + off, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 6 or 2)))
+      if pattern[i].rec == 1 and pattern[i].count == 0 then
+        g:led(i + 4, 4 + off, 15)
+      elseif pattern[i].rec == 1 and pattern[i].count > 0 then
+        g:led(i + 4, 4 + off, pulse_key_fast)
+      elseif pattern[i].overdub == 1 then
+        g:led(i + 4, 4 + off, pulse_key_fast)
+      elseif pattern[i].play == 1 then
+        g:led(i + 4, 4 + off, pattern[i].flash and 15 or 13)
+      elseif pattern[i].count > 0 then
+        g:led(i + 4, 4 + off, 8)
+      else
+        g:led(i + 4, 4 + off, 4)
+      end
+    end
+    if kmac.pattern_edit then
+      for i = 1, 8 do
+        local l = pattern_focus == i and 2 or 0
+        g:led(i + 4, 3 + off, l)
+        g:led(i + 4, 5 + off, (pattern[i].synced and 10 or 3) + l)
+        g:led(i + 4, 6 + off, ((pattern[i].count_in) * 4 - 2) + l)
+        g:led(i + 4, 7 + off, l)
+      end
+    else
+      for i = 1, 8 do
+        g:led(i + 4, 5 + off, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
+        g:led(i + 4, 6 + off, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 4 or 1)))
+      end
     end
   end
   for i = 1, 2 do
