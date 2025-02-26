@@ -3,16 +3,19 @@
 --
 -- an adaption of
 -- mlr v2.2.4 @tehn
--- llllllll.co/t/21145
+-- llllllll.co/t/mlr-norns
 --
 -- for docs go to:
 -- >> github.com
 --    /sonocircuit/mlre
 --
 -- or smb into:
--- >> code/mlre/docs
+-- >> code/mlre/doc
 --
 
+------------------------------------------------------------
+-- TODO: add new macro to pset save
+------------------------------------------------------------
 
 norns.version.required = 231114
 
@@ -69,10 +72,6 @@ keyquant_edit = false
 lfo_trksel = 1
 lfo_dstview = 0
 lfo_dstsel = 1
-
-macro_slot_mode = 1
-snapshot_mode = false
-punch_momentrary = false
 
 view_splice_info = false
 view_track_send = false
@@ -309,8 +308,52 @@ function event_exec(e)
 end
 
 
--- patterns
-patterns_only = false
+--------------------- MACROS -----------------------
+-- macro slots
+mPTN = 1 -- pattern slot
+mSNP = 2 -- snapshot slot
+mPIN = 3 -- punch-in slot
+
+kmac = {}
+kmac.key = 1
+kmac.toggle = false
+kmac.slot_focus = 0
+kmac.kit_assign = false
+kmac.pattern_edit = true
+
+kmac.o = {}
+kmac.z = {}
+kmac.o.focus = 0 -- macro key page: 1 main, 2 secondary, 0 none
+kmac.z.focus = 0
+for i = 1, 2 do
+  kmac.o[i] = i -- kit (1-4) assigned to macro key pages
+  kmac.z[i] = i
+end
+
+kmac.slot = {}
+for s = 1, 4 do
+  kmac.slot[s] = {}
+  for i = 1, 8 do
+    kmac.slot[s][i] = mPTN -- kit: macro key (1-8) assignments
+  end
+end
+
+function macro_slot_defaults()
+  for i = 1, 8 do
+    kmac.slot[3][i] = mPTN -- patterns only
+    kmac.slot[4][i] = mSNP -- snapshot only
+  end
+  for i = 1, 4 do
+    -- split pattern/snap
+    kmac.slot[1][i] = mPTN
+    kmac.slot[1][i + 4] = mSNP
+    -- split pattern/punch-in
+    kmac.slot[2][i] = mPTN
+    kmac.slot[2][i + 4] = mPIN
+  end
+end
+
+-- pattern macros
 pattern_rec = false
 pattern = {}
 for i = 1, 8 do
@@ -342,7 +385,7 @@ function recalc_time_factor()
 end
 
 
--- recall
+-- punch-in macros
 recall = {}
 recall_rec = 0
 for i = 1, 8 do
@@ -395,207 +438,50 @@ function save_event_state()
 end
 
 function reset_event_state(sync)
-  if punch_momentrary then
-    for i = 1, 6 do
-      if track[i].play ~= rstate[i].play then
-        toggle_playback(i)
-      end
-      if track[i].rec ~= rstate[i].rec then
-        local e = {t = eREC, i = i, rec = rstate[i].rec, sync = sync} event(e)
-      end
-      if track[i].mute ~= rstate[i].mute then
-        local e = {t = eMUTE, i = i, mute = rstate[i].mute, sync = sync} event(e)
-      end
-      if track[i].route_t5 ~= rstate[i].route_t5 then
-        local e = {t = eROUTE, i = i, ch = 5, route = rstate[i].route_t5, sync = sync} event(e)
-      end
-      if track[i].route_t6 ~= rstate[i].route_t6 then
-        local e = {t = eROUTE, i = i, ch = 6, route = rstate[i].route_t6, sync = sync} event(e)
-      end
-      if rstate[i].loop == 1 then
-        loop_event(i, rstate[i].loop_start, rstate[i].loop_end)
-      elseif track[i].loop == 1 then
-        local e = {t = eUNLOOP, i = i, sync = sync} event(e)
-        track[i].loop_start = rstate[i].loop_start
-        track[i].loop_end = rstate[i].loop_end
-      end
-      if track[i].splice_active ~= rstate[i].splice_active then
-        local e = {t = eSPLICE, i = i, active = rstate[i].splice_active, sync = sync} event(e)
-      end
-      if track[i].speed ~= rstate[i].speed then
-        local e = {t = eSPEED, i = i, speed = rstate[i].speed, sync = sync} event(e)
-      end
-      if track[i].rev ~= rstate[i].rev then
-        local e = {t = eREV, i = i, rev = rstate[i].rev, sync = sync} event(e)
-      end
-      if track[i].transpose ~= rstate[i].transpose then
-        local e = {t = eTRSP, i = i, val = rstate[i].transpose, sync = sync} event(e)
-      end
-      if lfo[i].enabled ~= rstate[i].lfo_enabled then
-        local action = rstate[i].lfo_enabled == 1 and "lfo_on" or "lfo_off"
-        local e = {t = eLFO, i = i, action = action, sync = sync} event(e)
-      end
-    end
-  end
-end
-
--- p-macros
-local pmac_params = {"cutoff", "filter_q", "vol", "pan", "detune", "rate_slew"}
-local pmac_perf_view = false
-pmac_edit_view = false
-pmac_focus = 1
-pmac_enc = 1
-
-pmac = {}
-pmac.d = {}
-pmac.v = {}
-for n = 1, 4 do -- four p-macro encoders
-  pmac.d[n] = {} 
-  pmac.d[n].clk = nil
-  pmac.d[n].action = 0
   for i = 1, 6 do
-    pmac.d[n][i] = {} -- delta multipliers per enc and track
-    pmac.d[n][i].cutoff = 0
-    pmac.d[n][i].filter_q = 0
-    pmac.d[n][i].pan = 0
-    pmac.d[n][i].vol = 0
-    pmac.d[n][i].detune = 0
-    pmac.d[n][i].rate_slew = 0
-    pmac.d[n][i].lfo_depth = 0
-    pmac.d[n][i].lfo_rate = 0
-  end
-end
-for i = 1, 6 do -- store prev param variables per track 
-  pmac.v[i] = {}
-  pmac.v[i].cutoff = 12000
-  pmac.v[i].filter_q = 2
-  pmac.v[i].vol = 1
-  pmac.v[i].pan = 0
-  pmac.v[i].detune = 0
-  pmac.v[i].rate_slew = 0
-  pmac.v[i].lfo_depth = 0
-  pmac.v[i].lfo_rate = 0
-end
-
-function pmac_save()
-  for i = 1, 6 do
-    pmac.v[i].cutoff = params:get(i.."cutoff")
-    pmac.v[i].filter_q = params:get(i.."filter_q")
-    pmac.v[i].vol = track[i].level
-    pmac.v[i].pan = track[i].pan
-    pmac.v[i].detune = track[i].detune
-    pmac.v[i].rate_slew = track[i].rate_slew
-    pmac.v[i].lfo_depth = params:get("lfo_depth_lfo_"..i)
-    if lfo[i].mode == "free" then
-      pmac.v[i].lfo_rate = params:get("lfo_free_lfo_"..i)
-    else
-      pmac.v[i].lfo_rate = params:get("lfo_clocked_lfo_"..i)
+    if track[i].play ~= rstate[i].play then
+      toggle_playback(i)
+    end
+    if track[i].rec ~= rstate[i].rec then
+      local e = {t = eREC, i = i, rec = rstate[i].rec, sync = sync} event(e)
+    end
+    if track[i].mute ~= rstate[i].mute then
+      local e = {t = eMUTE, i = i, mute = rstate[i].mute, sync = sync} event(e)
+    end
+    if track[i].route_t5 ~= rstate[i].route_t5 then
+      local e = {t = eROUTE, i = i, ch = 5, route = rstate[i].route_t5, sync = sync} event(e)
+    end
+    if track[i].route_t6 ~= rstate[i].route_t6 then
+      local e = {t = eROUTE, i = i, ch = 6, route = rstate[i].route_t6, sync = sync} event(e)
+    end
+    if rstate[i].loop == 1 then
+      loop_event(i, rstate[i].loop_start, rstate[i].loop_end)
+    elseif track[i].loop == 1 then
+      local e = {t = eUNLOOP, i = i, sync = sync} event(e)
+      track[i].loop_start = rstate[i].loop_start
+      track[i].loop_end = rstate[i].loop_end
+    end
+    if track[i].splice_active ~= rstate[i].splice_active then
+      local e = {t = eSPLICE, i = i, active = rstate[i].splice_active, sync = sync} event(e)
+    end
+    if track[i].speed ~= rstate[i].speed then
+      local e = {t = eSPEED, i = i, speed = rstate[i].speed, sync = sync} event(e)
+    end
+    if track[i].rev ~= rstate[i].rev then
+      local e = {t = eREV, i = i, rev = rstate[i].rev, sync = sync} event(e)
+    end
+    if track[i].transpose ~= rstate[i].transpose then
+      local e = {t = eTRSP, i = i, val = rstate[i].transpose, sync = sync} event(e)
+    end
+    if lfo[i].enabled ~= rstate[i].lfo_enabled then
+      local action = rstate[i].lfo_enabled == 1 and "lfo_on" or "lfo_off"
+      local e = {t = eLFO, i = i, action = action, sync = sync} event(e)
     end
   end
 end
 
-function pmac_recall()
-  for i = 1, 6 do
-    params:set(i.."cutoff", pmac.v[i].cutoff)
-    params:set(i.."filter_q", pmac.v[i].filter_q)
-    params:set(i.."vol", pmac.v[i].vol)
-    params:set(i.."pan", pmac.v[i].pan)
-    params:set(i.."detune", pmac.v[i].detune)
-    params:set(i.."rate_slew", pmac.v[i].rate_slew)
-    params:set("lfo_depth_lfo_"..i, pmac.v[i].lfo_depth)
-    if lfo[i].mode == "free" then
-      params:set("lfo_free_lfo_"..i, pmac.v[i].lfo_rate)
-    else
-      params:set("lfo_clocked_lfo_"..i, pmac.v[i].lfo_rate)
-    end
-  end
-end
 
-local p_inc = 0
-function pmac_exec(n, d)
-  -- delta track params
-  for _, v in ipairs(pmac_params) do
-    for i = 1, 6 do
-      if pmac.d[n][i][v] ~= 0 then
-        params:delta(i..v, d * pmac.d[n][i][v] * 0.01)
-      end
-    end
-  end
-  -- delta lfo params
-  for i = 1, 6 do
-    if pmac.d[n][i].lfo_depth > 0.01 or pmac.d[n][i].lfo_depth < -0.01 then
-      params:delta("lfo_depth_lfo_"..i, d * pmac.d[n][i].lfo_depth * 0.01)
-      grid_page(vLFO)
-    end
-    if pmac.d[n][i].lfo_rate ~= 0 then
-      if lfo[i].mode == "free" then
-        params:delta("lfo_free_lfo_"..i, d * pmac.d[n][i].lfo_rate * 0.01)
-      else
-        local delta = pmac.d[n][i].lfo_rate * 0.1 * d
-        p_inc = util.wrap(p_inc + delta, 0, 64)
-        if p_inc < 8 or p_inc > 56 then
-          local inc = delta > 0 and 1 or -1
-          params:delta("lfo_clocked_lfo_"..i, inc)
-          p_inc = 32
-        end
-      end
-    end
-  end
-  -- macro viz
-  pmac.d[n].action = d
-  dirtyscreen = true
-  if pmac.d[n].clk ~= nil then
-    clock.cancel(pmac.d[n].clk)
-  end
-  pmac.d[n].clk = clock.run(function()
-    clock.sleep(0.1)
-    pmac.d[n].action = 0
-    ui.pmac_arc_reset(n)
-    dirtyscreen = true
-  end)
-end
-
-function toggle_pmac_perf_view(z)
-  if view ~= vTAPE then
-    pmac_perf_view = z == 1 and true or false
-    if z == 1 then
-      pmac_save()
-    else
-      pmac_recall()
-    end
-  end
-end
-
--- randomize events
-function randomize(i)
-  if params:get("rnd_transpose") == 2 then
-    params:set(i.."transpose", math.random(1, 15))
-  end
-  if params:get("rnd_vol") == 2 then
-    params:set(i.."vol", math.random(20, 100) / 100)
-  end
-  if params:get("rnd_pan") == 2 then
-    params:set(i.."pan", (math.random() * 20 - 10) / 10)
-  end
-  if params:get("rnd_dir") == 2 then
-    local e = {t = eREV, i = i, rev = math.random(0, 1)} event(e)
-  end
-  if params:get("rnd_loop") == 2 then
-    local lstart = math.random(1, 15)
-    local lend = autorand_at_cycle and math.random(lstart + 1, 16) or math.random(lstart, 16)
-    loop_event(i, lstart, lend)
-  end
-  if params:get("rnd_speed") == 2 then
-    local e = {t = eSPEED, i = i, speed = math.random(-params:get("rnd_loct"), params:get("rnd_uoct"))} event(e)
-  end
-  if params:get("rnd_cut") == 2 then
-    params:set(i.. "cutoff", math.random(params:get("rnd_lcut"), params:get("rnd_ucut")) )
-  end
-  track[i].step_count = 0
-end
-
-
---------------------- SNAPSHOTS -----------------------
+-- snapshot macros
 local snapop = {}
 snapop.rec = false
 snapop.mute = false
@@ -609,7 +495,6 @@ snapop.play_state = false
 snapop.cut_pos = false
 snapop.reset_pos = false
 snapop.lfo_state = false
-
 
 snap = {}
 for i = 1, 8 do -- 8 snapshot slots
@@ -739,6 +624,133 @@ function snapshot_exec(n, i, sync)
   if snapop.lfo_state then
     local action = snap[n].lfo_enabled[i] == 1 and "lfo_on" or "lfo_off"
     local e = {t = eLFO, i = i, action = action , sync = sync} event(e)
+  end
+end
+
+-- p-macros
+local pmac_params = {"cutoff", "filter_q", "vol", "pan", "detune", "rate_slew"}
+local pmac_perf_view = false
+pmac_edit_view = false
+pmac_focus = 1
+pmac_enc = 1
+
+pmac = {}
+pmac.d = {}
+pmac.v = {}
+for n = 1, 4 do -- four p-macro encoders
+  pmac.d[n] = {} 
+  pmac.d[n].clk = nil
+  pmac.d[n].action = 0
+  for i = 1, 6 do
+    pmac.d[n][i] = {} -- delta multipliers per enc and track
+    pmac.d[n][i].cutoff = 0
+    pmac.d[n][i].filter_q = 0
+    pmac.d[n][i].pan = 0
+    pmac.d[n][i].vol = 0
+    pmac.d[n][i].detune = 0
+    pmac.d[n][i].rate_slew = 0
+    pmac.d[n][i].lfo_depth = 0
+    pmac.d[n][i].lfo_rate = 0
+  end
+end
+for i = 1, 6 do -- store prev param variables per track 
+  pmac.v[i] = {}
+  pmac.v[i].cutoff = 12000
+  pmac.v[i].filter_q = 2
+  pmac.v[i].vol = 1
+  pmac.v[i].pan = 0
+  pmac.v[i].detune = 0
+  pmac.v[i].rate_slew = 0
+  pmac.v[i].lfo_depth = 0
+  pmac.v[i].lfo_rate = 0
+end
+
+function pmac_save()
+  for i = 1, 6 do
+    pmac.v[i].cutoff = params:get(i.."cutoff")
+    pmac.v[i].filter_q = params:get(i.."filter_q")
+    pmac.v[i].vol = track[i].level
+    pmac.v[i].pan = track[i].pan
+    pmac.v[i].detune = track[i].detune
+    pmac.v[i].rate_slew = track[i].rate_slew
+    pmac.v[i].lfo_depth = params:get("lfo_depth_lfo_"..i)
+    if lfo[i].mode == "free" then
+      pmac.v[i].lfo_rate = params:get("lfo_free_lfo_"..i)
+    else
+      pmac.v[i].lfo_rate = params:get("lfo_clocked_lfo_"..i)
+    end
+  end
+end
+
+function pmac_recall()
+  for i = 1, 6 do
+    params:set(i.."cutoff", pmac.v[i].cutoff)
+    params:set(i.."filter_q", pmac.v[i].filter_q)
+    params:set(i.."vol", pmac.v[i].vol)
+    params:set(i.."pan", pmac.v[i].pan)
+    params:set(i.."detune", pmac.v[i].detune)
+    params:set(i.."rate_slew", pmac.v[i].rate_slew)
+    params:set("lfo_depth_lfo_"..i, pmac.v[i].lfo_depth)
+    if lfo[i].mode == "free" then
+      params:set("lfo_free_lfo_"..i, pmac.v[i].lfo_rate)
+    else
+      params:set("lfo_clocked_lfo_"..i, pmac.v[i].lfo_rate)
+    end
+  end
+end
+
+local p_inc = 0
+function pmac_exec(n, d)
+  -- delta track params
+  for _, v in ipairs(pmac_params) do
+    for i = 1, 6 do
+      if pmac.d[n][i][v] ~= 0 then
+        params:delta(i..v, d * pmac.d[n][i][v] * 0.01)
+      end
+    end
+  end
+  -- delta lfo params
+  for i = 1, 6 do
+    if pmac.d[n][i].lfo_depth > 0.01 or pmac.d[n][i].lfo_depth < -0.01 then
+      params:delta("lfo_depth_lfo_"..i, d * pmac.d[n][i].lfo_depth * 0.01)
+      grid_page(vLFO)
+    end
+    if pmac.d[n][i].lfo_rate ~= 0 then
+      if lfo[i].mode == "free" then
+        params:delta("lfo_free_lfo_"..i, d * pmac.d[n][i].lfo_rate * 0.01)
+      else
+        local delta = pmac.d[n][i].lfo_rate * 0.1 * d
+        p_inc = util.wrap(p_inc + delta, 0, 64)
+        if p_inc < 8 or p_inc > 56 then
+          local inc = delta > 0 and 1 or -1
+          params:delta("lfo_clocked_lfo_"..i, inc)
+          p_inc = 32
+        end
+      end
+    end
+  end
+  -- macro viz
+  pmac.d[n].action = d
+  dirtyscreen = true
+  if pmac.d[n].clk ~= nil then
+    clock.cancel(pmac.d[n].clk)
+  end
+  pmac.d[n].clk = clock.run(function()
+    clock.sleep(0.1)
+    pmac.d[n].action = 0
+    ui.pmac_arc_reset(n)
+    dirtyscreen = true
+  end)
+end
+
+function toggle_pmac_perf_view(z)
+  if view ~= vTAPE then
+    pmac_perf_view = z == 1 and true or false
+    if z == 1 then
+      pmac_save()
+    else
+      pmac_recall()
+    end
   end
 end
 
@@ -1042,7 +1054,7 @@ function format_splice(i, s) -- copy format to next splice
       tp[i].splice[s + 1].init_len = tp[i].splice[s].l
       tp[i].splice[s + 1].beatnum = tp[i].splice[s].beatnum
       tp[i].splice[s + 1].bpm = tp[i].splice[s].bpm
-      tp[i].splice[s + 1].resize = track[i].tempo_map > 1 and num_beats or math.ceil(length)
+      tp[i].splice[s + 1].resize = tp[i].splice[s].resize
       set_info(i, s + 1)
     else
       show_message("splice  "..(s + 1).."   too   long")
@@ -1959,6 +1971,36 @@ function make_warble(i) -- warbletimer function
 end
 
 
+--------------------- RAND -----------------------
+
+function randomize(i)
+  if params:get("rnd_transpose") == 2 then
+    params:set(i.."transpose", math.random(1, 15))
+  end
+  if params:get("rnd_vol") == 2 then
+    params:set(i.."vol", math.random(20, 100) / 100)
+  end
+  if params:get("rnd_pan") == 2 then
+    params:set(i.."pan", (math.random() * 20 - 10) / 10)
+  end
+  if params:get("rnd_dir") == 2 then
+    local e = {t = eREV, i = i, rev = math.random(0, 1)} event(e)
+  end
+  if params:get("rnd_loop") == 2 then
+    local lstart = math.random(1, 15)
+    local lend = autorand_at_cycle and math.random(lstart + 1, 16) or math.random(lstart, 16)
+    loop_event(i, lstart, lend)
+  end
+  if params:get("rnd_speed") == 2 then
+    local e = {t = eSPEED, i = i, speed = math.random(-params:get("rnd_loct"), params:get("rnd_uoct"))} event(e)
+  end
+  if params:get("rnd_cut") == 2 then
+    params:set(i.. "cutoff", math.random(params:get("rnd_lcut"), params:get("rnd_ucut")) )
+  end
+  track[i].step_count = 0
+end
+
+
 --------------------- MIDI / CROW TRIGS -----------------------
 
 trig = {}
@@ -2274,6 +2316,7 @@ function pset_write_callback(filename, name, number)
   sesh_data.quant_rate = params:get("quant_rate")
   sesh_data.time_signature = params:get("time_signature")
   sesh_data.pmac_d = deep_copy(pmac.d)
+  --sesh_data.kmac = deep_copy(kmac)
   for i = 1, 8 do
     sesh_data[i] = {}
     -- pattern data
@@ -2471,23 +2514,18 @@ function load_patterns()
     snap[i].speed = {table.unpack(loaded_sesh_data[i].snap_speed)}
     snap[i].rev = {table.unpack(loaded_sesh_data[i].snap_rev)}
     snap[i].transpose_val = {table.unpack(loaded_sesh_data[i].snap_transpose_val)}
-    -- remove conditionals eventually
-    if loaded_sesh_data[i].snap_active_splice ~= nil then
+    -- remove conditional eventually
+    if loaded_sesh_data.newerformat ~= nil then
       snap[i].active_splice = {table.unpack(loaded_sesh_data[i].snap_active_splice)}
-    end
-    if loaded_sesh_data[i].snap_rec ~= nil then
       snap[i].rec = {table.unpack(loaded_sesh_data[i].snap_rec)}
-    end
-    if loaded_sesh_data[i].snap_route_t5 ~= nil then
       snap[i].route_t5 = {table.unpack(loaded_sesh_data[i].snap_route_t5)}
       snap[i].route_t6 = {table.unpack(loaded_sesh_data[i].snap_route_t6)}
-    end
-    if loaded_sesh_data[i].snap_lfo_enabled ~= nil then
       snap[i].lfo_enabled = {table.unpack(loaded_sesh_data[i].snap_lfo_enabled)}
-    end
-    -- set pmac params
-    if loaded_sesh_data.pmac_d ~= nil then
+      -- set pmac params
       pmac.d = deep_copy(loaded_sesh_data.pmac_d)
+      if loaded_sesh_data.kmac ~= nil then
+        --kmac = deep_copy(loaded_sesh_data.kmac)
+      end
     end
   end
 end
@@ -2614,7 +2652,7 @@ function load_track_tape(i, with_snapshot)
   end
 
   if not (snap and snapop.loops) then
-    if loadop.loops == 3 or loaded_sesh_data[i].track_loop == 0 then -- reset
+    if loadop.loops == 3 then -- reset
       clear_loop(i)
     elseif loadop.loops == 2 then -- load
       track[i].loop = loaded_sesh_data[i].track_loop
@@ -2723,23 +2761,14 @@ function init()
   params:set_action("rec_backup", function(mode) rec_autobackup = mode == 2 and true or false end)
 
   -- macro params
-  params:add_group("macro_params", "macros", 14)
-  
-  params:add_option("slot_assign", "macro slots", {"split", "patterns only", "recall only"}, 1)
-  params:set_action("slot_assign", function(option) macro_slot_mode = option dirtygrid = true end)
-  if GRID_SIZE == 256 then params:hide("slot_assign") end
-  
-  params:add_option("recall_mode", "recall mode", {"punch-in", "snapshot"}, 2)
-  params:set_action("recall_mode", function(x) snapshot_mode = x == 2 and true or false dirtygrid = true end)
-  params:hide("recall_mode")
+  params:add_group("macro_params", "macros", 12)
 
-  params:add_option("punchin_mode", "punch-in mode", {"momentary", "latch"}, 1)
-  params:set_action("punchin_mode", function(x) punch_momentrary = x == 1 and true or false dirtygrid = true end)
-  params:hide("punchin_mode")
-
+  params:add_option("macro_kmac_page", "k-mac page", {"momentary", "toggle"}, 1)
+  params:set_action("macro_kmac_page", function(x) kmac.toggle = x == 2 and true or false end)
+  
   params:add_separator("snapshot_options", "snapshot options")
 
-  params:add_option("recall_playback_state", "playback", {"ignore", "state only", "state & pos", "state & reset"}, 1)
+  params:add_option("recall_playback_state", "playback", {"ignore", "state only", "state & pos", "state & reset"}, 4)
   params:set_action("recall_playback_state", function(x)
     snapop.play_state = x > 1 and true or false
     snapop.cut_pos = x == 3 and true or false
@@ -3322,6 +3351,7 @@ function init()
   set_view(vMAIN)
   set_gridview(vCUT, "z")
   set_gridview(vREC, "o")
+  macro_slot_defaults()
   load_loadop_config()
 
   if pset_load then
@@ -3332,7 +3362,7 @@ function init()
  
   print("mlre loaded and ready. enjoy!")
 
-end -- end of init
+end
 
 
 --------------------- USER INTERFACE -----------------------
@@ -3342,7 +3372,7 @@ vCUT = 2
 vTRSP = 3
 vLFO = 4
 vENV = 5
-vPATTERNS = 6
+vMACRO = 6
 vTAPE = 7
 
 view = vMAIN
@@ -3372,7 +3402,7 @@ function set_gridview(x, pos)
     _gridkey_z = v.gridkey_z[x]
     _gridredraw_z = v.gridredraw_z[x]
   end
-  if pmac_edit_view and x ~= vPATTERNS then pmac_edit_view = false end
+  if pmac_edit_view and x ~= vMACRO then pmac_edit_view = false end
   if pmac_perf_view and x == vTAPE then pmac_perf_view = false end
   grd.clear_keylogic()
   screen.ping()
@@ -3429,7 +3459,7 @@ function key(n, z)
     if popup_view then
       ui.popup_key(n, z)
     elseif keyquant_edit then
-      -- do nothing
+      ui.keyquant_key(n, z)
     elseif pmac_perf_view then
       ui.pmac_perf_key(n, z)
     elseif pmac_edit_view then
@@ -3538,7 +3568,7 @@ function page_redraw(view, page)
     dirtyscreen = true
   elseif view == vENV and env_pageNum == page then
     dirtyscreen = true
-  elseif view == vPATTERNS and patterns_pageNum == page then
+  elseif view == vMACRO and patterns_pageNum == page then
     dirtyscreen = true
   elseif view == vTAPE then
     dirtyscreen = true
@@ -3632,6 +3662,7 @@ v.gridredraw_z[vREC] = function()
   grd.rec_draw(8)
 end
 
+
 ---------------------CUT-----------------------
 
 v.gridkey_o[vCUT] = function(x, y, z)
@@ -3658,6 +3689,7 @@ v.gridredraw_z[vCUT] = function()
   grd.cut_draw(8)
 end
 
+
 --------------------TRANSPOSE--------------------
 
 v.gridkey_o[vTRSP] = function(x, y, z)
@@ -3683,6 +3715,7 @@ end
 v.gridredraw_z[vTRSP] = function()
   grd.trsp_draw(8)
 end
+
 
 ---------------------- LFO -------------------------
 
@@ -3729,6 +3762,7 @@ end
 v.gridredraw_z[vLFO] = function()
   grd.lfo_draw(8)
 end
+
 
 ---------------------ENVELOPES-----------------------
 
@@ -3779,48 +3813,48 @@ end
 
 ---------------------PATTERNS-----------------------
 
-v.key[vPATTERNS] = function(n, z)
-  ui.patterns_key(n, z)
+v.key[vMACRO] = function(n, z)
+  ui.macro_key(n, z)
 end
 
-v.enc[vPATTERNS] = function(n, d)
-  ui.patterns_enc(n, d)
+v.enc[vMACRO] = function(n, d)
+  ui.macro_enc(n, d)
 end
 
-v.redraw[vPATTERNS] = function()
-  ui.patterns_redraw()
+v.redraw[vMACRO] = function()
+  ui.macro_redraw()
 end
 
-v.arcdelta[vPATTERNS] = function(n, d)
+v.arcdelta[vMACRO] = function(n, d)
   ui.arc_main_delta(n, d)
 end
 
-v.arcredraw[vPATTERNS] = function()
+v.arcredraw[vMACRO] = function()
   ui.arc_main_draw()
 end
 
-v.gridkey_o[vPATTERNS] = function(x, y, z)
+v.gridkey_o[vMACRO] = function(x, y, z)
   if GRID_SIZE == 128 then
-    grd.pattern_keys(x, y, z)
+    grd.macro_keys(x, y, z)
   elseif GRID_SIZE == 256 then
-    grd.pattern_keys(x, y, z, -1)
+    grd.macro_keys(x, y, z, -1)
   end
 end
 
-v.gridredraw_o[vPATTERNS] = function()
+v.gridredraw_o[vMACRO] = function()
   if GRID_SIZE == 128 then
-    grd.pattern_draw()
+    grd.macro_draw()
   elseif GRID_SIZE == 256 then
-    grd.pattern_draw(-1)
+    grd.macro_draw(-1)
   end
 end
 
-v.gridkey_z[vPATTERNS] = function(x, y, z)
-  grd.pattern_keys(x, y, z, 8)
+v.gridkey_z[vMACRO] = function(x, y, z)
+  grd.macro_keys(x, y, z, 8)
 end
 
-v.gridredraw_z[vPATTERNS] = function()
-  grd.pattern_draw(8)
+v.gridredraw_z[vMACRO] = function()
+  grd.macro_draw(8)
 end
 
 
@@ -3869,6 +3903,7 @@ end
 v.gridredraw_z[vTAPE] = function()
   grd.tape_draw(8)
 end
+
 
 --------------------- UTILITIES -----------------------
 
@@ -3994,6 +4029,7 @@ function show_banner()
   end
   g:refresh()
 end
+
 
 --------------------- TIME TO TIDY UP A BIT -----------------------
 
