@@ -6,6 +6,11 @@ local textentry = require 'textentry'
 local fileselect = require 'fileselect'
 local filters = require 'filters'
 
+-- keyquant page variables
+local keyq_pageNum = 1
+local keyq_page_params = {{"time_signature", "quant_rate"}, {"snap_launch", "splice_launch"}}
+local keyq_page_names = {{"time   signature", "key  quantization"}, {"snapshot   launch", "splice   launch"}}
+
 -- main page variables
 local main_page_params_l = {"vol", "rec", "cutoff", "filter_type", "detune","rate_slew", "play_mode", "reset_active"}
 local main_page_params_r = {"pan", "dub", "filter_q", "post_dry", "transpose", "level_slew", "start_launch", "reset_count"}
@@ -56,6 +61,7 @@ end
 local function display_message()
   if view_message ~= "" then
     screen.clear()
+    screen.font_face(2)
     screen.font_size(8)
     screen.level(10)
     screen.move(1, 24)
@@ -81,6 +87,7 @@ end
 
 function ui.popup_redraw()
   screen.clear()
+  screen.font_face(2)
   screen.font_size(8)
   screen.level(10)
   screen.move(1, 24)
@@ -105,35 +112,46 @@ end
 
 ---------------------- KEYQUANT MENU -------------------------
 
+function ui.keyquant_key(n, z)
+  if n > 1 and z == 1 then
+    keyq_pageNum = util.wrap(keyq_pageNum + 1, 1, 2)
+  end
+  dirtyscreen = true
+end
+
 function ui.keyquant_enc(n, d)
-  if n == 2 then
-    params:delta("time_signature", d)
-  elseif n == 3 then
-    params:delta("quant_rate", d)
+  if n > 1 then
+    params:delta(keyq_page_params[keyq_pageNum][n - 1], d)
   end
   dirtyscreen = true
 end
 
 function ui.keyquant_redraw()
   screen.clear()
+  screen.font_face(2)
   screen.font_size(8)
   screen.level(15)
   screen.move(64, 12)
-  screen.text_center("TIMING")
+  screen.text_center("QUANTIZATION")
+  for i = 1, 2 do
+    screen.level(keyq_pageNum == i and 15 or 4)
+    screen.rect(120 + (i - 1) * 4, 6, 2, 6)
+    screen.fill()
+  end
   screen.font_size(16)
+  screen.level(15)
   screen.move(30, 39)
-  screen.text_center(params:string("time_signature"))
+  screen.text_center(params:string(keyq_page_params[keyq_pageNum][1]))
   screen.move(98, 39)
-  screen.text_center(params:string("quant_rate"))
+  screen.text_center(params:string(keyq_page_params[keyq_pageNum][2]))
   screen.font_size(8)
   screen.level(4)
   screen.move(30, 60)
-  screen.text_center("time  signature")
+  screen.text_center(keyq_page_names[keyq_pageNum][1])
   screen.move(98, 60)
-  screen.text_center("key  quantization")
+  screen.text_center(keyq_page_names[keyq_pageNum][2])
   screen.update()
 end
-
 
 ---------------------- PMAC PERF -------------------------
 function ui.pmac_perf_key(n, z)
@@ -169,9 +187,9 @@ end
 
 function ui.pmac_perf_redraw()
   screen.clear()
-  screen.level(15)
   screen.font_face(2)
   screen.font_size(8)
+  screen.level(15)
   screen.move(64, 12)
   screen.text_center("P - MACROS")
   screen.font_size(24)
@@ -254,9 +272,9 @@ end
 
 function ui.pmac_edit_redraw()
   screen.clear()
-  screen.level(15)
   screen.font_face(2)
   screen.font_size(8)
+  screen.level(15)
   screen.move(4, 12)
   screen.text("P - MACRO  "..pmac_enc)
   screen.move(64, 12)
@@ -651,9 +669,9 @@ end
 
 function ui.lfo_redraw()
   screen.clear()
-  screen.level(15)
   screen.font_face(2)
   screen.font_size(8)
+  screen.level(15)
   screen.move(4, 12)
   screen.text("LFO "..lfo_focus)
 
@@ -801,9 +819,9 @@ end
 
 function ui.env_redraw()
   screen.clear()
-  screen.level(15)
   screen.font_face(2)
   screen.font_size(8)
+  screen.level(15)
   screen.move(4, 12)
   screen.text("ENVELOPE "..env_focus)
   for i = 1, 3 do
@@ -915,60 +933,148 @@ end
 
 ---------------------- PATTERN VIEW ---------------------
 
-function ui.patterns_key(n, z)
-  if n == 2 and z == 1 then
-    patterns_pageNum = util.wrap(patterns_pageNum - 1, 1, 2)
-  elseif n == 3 and z == 1 then
-    patterns_pageNum = util.wrap(patterns_pageNum + 1, 1, 2)
+function ui.macro_key(n, z)
+  if kmac.pattern_edit then
+    if n == 2 and z == 1 then
+      patterns_pageNum = util.wrap(patterns_pageNum - 1, 1, 2)
+    elseif n == 3 and z == 1 then
+      patterns_pageNum = util.wrap(patterns_pageNum + 1, 1, 2)
+    end    
   end
 end
 
-function ui.patterns_enc(n, d)
-  if n == 1 then
-    pattern_focus = util.clamp(pattern_focus + d, 1, 8)
-  else
-    if n == 2 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
-      params:delta(patterns_page_params_l[patterns_pageNum]..pattern_focus, d)
-    elseif n == 3 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
-      params:delta(patterns_page_params_r[patterns_pageNum]..pattern_focus, d)
+function ui.macro_enc(n, d)
+  if kmac.pattern_edit then
+    if n == 1 then
+      pattern_focus = util.clamp(pattern_focus + d, 1, 8)
+    else
+      if n == 2 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
+        params:delta(patterns_page_params_l[patterns_pageNum]..pattern_focus, d)
+      elseif n == 3 and (pattern[pattern_focus].synced or patterns_pageNum == 2) then
+        params:delta(patterns_page_params_r[patterns_pageNum]..pattern_focus, d)
+      end
     end
   end
   dirtygrid = true
   dirtyscreen = true
 end
 
-function ui.patterns_redraw()
+function ui.macro_redraw()
   screen.clear()
   screen.font_face(2)
   screen.font_size(8)
   screen.level(15)
   screen.move(4, 12)
-  screen.text("PATTERN "..pattern_focus)
-  for i = 1, 2 do
-    screen.level(patterns_pageNum == i and 15 or 4)
-    screen.rect(116 + (i - 1) * 6, 6, 4, 6)
-    screen.fill()
-  end
-  -- param list
-  screen.font_size(8)
-  screen.level(4)
-  screen.move(35, 54)
-  screen.text_center(patterns_page_names_l[patterns_pageNum])
-  screen.move(94, 54)
-  screen.text_center(patterns_page_names_r[patterns_pageNum])
-  screen.font_size(16)
-  screen.level(15)
-  screen.move(35, 40)
-  if pattern[pattern_focus].synced or patterns_pageNum == 2 then
-    screen.text_center(params:string(patterns_page_params_l[patterns_pageNum]..pattern_focus))
+  screen.text("K - MACRO")
+  if kmac.pattern_edit and kmac.slot_focus == 0 then
+    screen.level(15)
+    screen.move(64, 12)
+    screen.text_center("PATTERN  "..pattern_focus)
+    for i = 1, 2 do
+      screen.level(patterns_pageNum == i and 15 or 4)
+      screen.rect(120 + (i - 1) * 4, 6, 2, 6)
+      screen.fill()
+    end
+    -- param list
+    screen.font_size(8)
+    screen.level(4)
+    screen.move(35, 54)
+    screen.text_center(patterns_page_names_l[patterns_pageNum])
+    screen.move(94, 54)
+    screen.text_center(patterns_page_names_r[patterns_pageNum])
+    screen.font_size(16)
+    screen.level(15)
+    screen.move(35, 40)
+    if pattern[pattern_focus].synced or patterns_pageNum == 2 then
+      screen.text_center(params:string(patterns_page_params_l[patterns_pageNum]..pattern_focus))
+    else
+      screen.text_center("-")
+    end
+    screen.move(94, 40)
+    if pattern[pattern_focus].synced or patterns_pageNum == 2 then
+      screen.text_center(params:string(patterns_page_params_r[patterns_pageNum]..pattern_focus))
+    else
+      screen.text_center("manual")
+    end
   else
-    screen.text_center("-")
-  end
-  screen.move(94, 40)
-  if pattern[pattern_focus].synced or patterns_pageNum == 2 then
-    screen.text_center(params:string(patterns_page_params_r[patterns_pageNum]..pattern_focus))
-  else
-    screen.text_center("manual")
+    local x_pos = 15
+    local y_pos = 37
+    local macro = {"PT", "SN", "PI"}
+    local txta = {}
+    local txtb = {}
+    local num = ""
+    local cntr = ""
+    local side = ""
+    if kmac.o.focus > 0 then
+      txta = kmac.slot[kmac.o[kmac.o.focus]] -- display assigned kit of focused page
+      num = kmac.o.focus
+      cntr = "KIT  "..kmac.o[kmac.o.focus]
+    elseif kmac.z.focus > 0 then
+      txta = kmac.slot[kmac.z[kmac.z.focus]] -- display assigned kit of focused page
+      num = kmac.z.focus
+      cntr = "kit  "..kmac.z[kmac.z.focus]
+    elseif kmac.slot_focus > 0 then
+      txta = kmac.slot[kmac.slot_focus] -- display focused kit
+      cntr = "KIT  "..kmac.slot_focus
+      side = "EDIT"
+    else
+      txta = kmac.slot[kmac.o[kmac.key]] -- display active kit
+      txtb = kmac.slot[kmac.z[kmac.key]] -- display active kit
+      num = kmac.key
+    end
+    screen.move(38, 12)
+    screen.text(num)
+    screen.move(64, 12)
+    screen.text_center(cntr)
+    screen.move(124, 12)
+    screen.text_right(side)
+    screen.font_face(68)
+    if (GRID_SIZE == 128 or kmac.o.focus > 0 or kmac.z.focus > 0 or kmac.slot_focus > 0) then
+      for i = 1, 8 do
+        local data = ((txta[i] == mPTN and pattern[i].count > 0) or (txta[i] == mSNP and snap[i].data) or (txta[i] == mPIN and recall[i].has_data)) and true or false
+        screen.level(15)
+        screen.rect(x_pos + 14 * (i - 1) - 5, y_pos - 8, 12, 12)
+        screen.stroke()
+        if data then
+          screen.level(4)
+          screen.rect(x_pos + 14 * (i - 1) - 5, y_pos - 8, 11, 11)
+          screen.fill() 
+        end
+        screen.level(data and 0 or 15)
+        screen.move(x_pos + 14 * (i - 1), y_pos)
+        screen.text_center(macro[txta[i]])
+      end
+    else
+      for i = 1, 8 do
+        local y_posa = y_pos - 3
+        local y_posb = y_pos + 3
+        local dataa = ((txta[i] == mPTN and pattern[i].count > 0) or (txta[i] == mSNP and snap[i].data) or (txta[i] == mPIN and recall[i].has_data)) and true or false
+        screen.level(15)
+        screen.rect(x_pos + 14 * (i - 1) - 5, y_posa - 8, 12, 12)
+        screen.stroke()
+        if dataa then
+          screen.level(4)
+          screen.rect(x_pos + 14 * (i - 1) - 5, y_posa - 8, 11, 11)
+          screen.fill() 
+        end
+        screen.level(dataa and 0 or 15)
+        screen.move(x_pos + 14 * (i - 1), y_posa)
+        screen.text_center(macro[txta[i]])
+
+        local datab = ((txtb[i] == mPTN and pattern[i].count > 0) or (txtb[i] == mSNP and snap[i].data) or (txtb[i] == mPIN and recall[i].has_data)) and true or false
+        screen.level(15)
+        screen.rect(x_pos + 14 * (i - 1) - 5, y_posb - 8, 12, 12)
+        screen.stroke()
+        if datab then
+          screen.level(4)
+          screen.rect(x_pos + 14 * (i - 1) - 5, y_posb - 8, 11, 11)
+          screen.fill() 
+        end
+        screen.level(datab and 0 or 15)
+        screen.move(x_pos + 14 * (i - 1), y_posb)
+        screen.text_center(macro[txtb[i]])
+      end
+    end
   end
   -- display messages
   display_message()
