@@ -92,7 +92,7 @@ local function recall_actions(i, z)
   held[1] = held[1] + (z * 2 - 1)
   recall[i].active = z == 1 and true or false
   if z == 1 then
-    if held[1] == 1 then
+    if held[1] == 1 and event_reset_clk == nil then
       save_event_state()
     end
     if alt == 1 then
@@ -110,11 +110,12 @@ local function recall_actions(i, z)
       clock.cancel(event_reset_clk)
     end
     event_reset_clk = clock.run(function()
-      clock.sync(1/2)
+      clock.sync(1/4)
       if not recall[i].active then
         reset_event_state(true)
       end
       event_reset_timeout = true
+      event_reset_clk = nil
     end)
   else
     if recall_rec == i then recall_rec = 0 end
@@ -170,7 +171,7 @@ function grd.nav(x, z, pos)
     end
   elseif x > 4 and x < 13 then
     local i = x - 4
-    local s = kmac[pos][kmac.key]
+    local s = kmac[pos][kmac[pos].key]
     if kmac.slot[s][i] == mPTN then
       pattern_actions(i, z)
     elseif kmac.slot[s][i] == mSNP then
@@ -180,16 +181,25 @@ function grd.nav(x, z, pos)
     end
   elseif x == 13 then
     if alt == 1 and z == 1 then
-      altrun()
+      local mode = kmac.toggle and 1 or 2
+      local msg = {"momentary", "toggle"}
+      params:set("macro_kmac_page", mode)
+      show_message(msg[mode])
     elseif mod == 1 and z == 1 then
       stopall()
     else
       if kmac.toggle then
         if z == 1 then
-          kmac.key = kmac.key == 1 and 2 or 1
+          kmac[pos].key = kmac[pos].key == 1 and 2 or 1
         end
       else
-        kmac.key = z == 1 and 2 or 1
+        kmac[pos].key = z == 1 and 2 or 1
+      end
+      for i = 1, 8 do
+        if recall[i].active then
+          recall[i].active = false
+          held[1] = 0
+        end
       end
       if view == vMACRO then dirtyscreen = true end
     end    
@@ -218,6 +228,7 @@ end
 
 function grd.drawnav(y)
   local view = y == 9 and gridz_view or grido_view
+  local pos = y == 9 and "z" or "o"
   -- nav keys
   g:led(1, y, view == vREC and 10 or 4) -- vREC
   g:led(2, y, view == vCUT and 10 or 3) -- vCUT
@@ -225,8 +236,7 @@ function grd.drawnav(y)
   g:led(4, y, view == vLFO and 10 or (view == vENV and pulse_key_slow or 0)) -- vLFO
   -- key macro keys
   for i = 1, 8 do
-    local pos = y == 9 and "z" or "o"
-    local s = kmac[pos][kmac.key]
+    local s = kmac[pos][kmac[pos].key]
     if kmac.slot[s][i] == mPTN then
       if pattern[i].rec == 1 and pattern[i].count == 0 then
         g:led(i + 4, y, 15)
@@ -248,7 +258,7 @@ function grd.drawnav(y)
     end
   end
   -- nav and function keys
-  g:led(13, y, kmac.key == 2 and 2 or 0) -- k-mac
+  g:led(13, y, kmac[pos].key == 2 and 2 or 0) -- k-mac
   g:led(14, y, mod == 1 and 9 or 2) -- mod
   g:led(15, y, y ~= 9 and (quantizing and (pulse_bar and 15 or (pulse_beat and 6 or 2))) or 3) -- Q flash
   g:led(16, y, alt == 1 and 15 or 9) -- alt
@@ -273,9 +283,8 @@ function grd.cutfocus_keys(x, z)
       loop_event(i, x, x)
     elseif held[row] == 1 then -- cut at pos
       first[row] = x
-      local cut = x - 1
       if track[i].play == 1 or track[i].start_launch == 1 then
-        local e = {t = eCUT, i = i, pos = cut} event(e)
+        local e = {t = eCUT, i = i, pos = x} event(e)
         if env[i].active then
           local e = {t = eGATEON, i = i} event(e)
         end
@@ -283,7 +292,7 @@ function grd.cutfocus_keys(x, z)
         clock.run(function()
           local beat_sync = track[i].start_launch == 2 and 1 or bar_val
           clock.sync(beat_sync)
-          local e = {t = eCUT, i = i, pos = cut, sync = true} event(e)
+          local e = {t = eCUT, i = i, pos = x, sync = true} event(e)
           if env[i].active then
             local e = {t = eGATEON, i = i, sync = true} event(e)
           end
@@ -337,7 +346,7 @@ function grd.rec_keys(x, y, z, offset)
           if not autofocus and view == vTAPE then render_splice() end
         end
         if alt == 1 and mod == 0 then
-          params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
+          params:set(i.."tempo_map_mode", util.wrap(track[i].tempo_map + 2, 1, 3))
         elseif alt == 0 and mod == 1 then
           params:set(i.."buffer_sel", tp[i].side == 1 and 2 or 1)
         end
@@ -458,9 +467,8 @@ function grd.cut_keys(x, y, z, offset)
         loop_event(i, x, x)
       elseif y < 8 and held[y] == 1 then
         first[y] = x
-        local cut = x - 1
         if track[i].play == 1 or track[i].start_launch == 1 then
-          local e = {t = eCUT, i = i, pos = cut} event(e)
+          local e = {t = eCUT, i = i, pos = x} event(e)
           if env[i].active then
             local e = {t = eGATEON, i = i} event(e)
           end
@@ -468,7 +476,7 @@ function grd.cut_keys(x, y, z, offset)
           clock.run(function()
             local beat_sync = track[i].start_launch == 2 and 1 or bar_val
             clock.sync(beat_sync)
-            local e = {t = eCUT, i = i, pos = cut, sync = true} event(e)
+            local e = {t = eCUT, i = i, pos = x, sync = true} event(e)
             if env[i].active then
               local e = {t = eGATEON, i = i, sync = true} event(e)
             end
@@ -695,11 +703,14 @@ function grd.macro_keys(x, y, z, offset)
   if x > 1 and x < 4 then
     local i = x - 1
     if y > 2 and y < 5 then -- select macro page to assign kit
-      local pos = y == 3 and "o" or "z"
-      if z == 1 and y == 3 or (y == 4 and GRID_SIZE == 256) then
-        kmac[pos].focus = i
-      else
-        kmac[pos].focus = 0
+      if GRID_SIZE == 256 then
+        if y == 3 then
+          kmac.z.focus = z == 1 and i or 0
+        elseif y == 4 then
+          kmac.o.focus = z == 1 and i or 0
+        end
+      elseif y == 3 then
+        kmac.o.focus = z == 1 and i or 0
       end
     elseif y == 5 and z == 1 then
       kmac.pattern_edit = i == 2 and true or false
@@ -775,8 +786,13 @@ function grd.macro_draw(offset)
   local off = offset or 0
   for i = 1, 2 do
     local x = i + 1
-    g:led(x, 3 + off, kmac.o.focus == i and 10 or 2)
-    g:led(x, 4 + off, kmac.z.focus == i and 10 or (GRID_SIZE == 256 and 2 or 1))
+    if GRID_SIZE == 256 then
+      g:led(x, 3 + off, kmac.z.focus == i and 10 or 2)
+      g:led(x, 4 + off, kmac.o.focus == i and 10 or 2)
+    else
+      g:led(x, 3 + off, kmac.o.focus == i and 10 or 2)
+      g:led(x, 4 + off, 1)
+    end
     if kmac.o.focus > 0 or kmac.z.focus > 0 then
       local focus = kmac.o.focus > 0 and kmac.o[kmac.o.focus] or (kmac.z.focus > 0 and kmac.z[kmac.z.focus])
       g:led(x, 6 + off, focus == i and 10 or 4)
@@ -870,7 +886,7 @@ function grd.tape_keys(x, y, z, offset)
       render_splice()
     elseif x == 10 and z == 1 then
       if alt == 1 and mod == 0 then
-        params:set(i.."tempo_map_mode", util.wrap(params:get(i.."tempo_map_mode") + 1, 1, 3))
+        params:set(i.."tempo_map_mode", util.wrap(track[i].tempo_map + 2, 1, 3))
       elseif mod == 1 and alt == 0 then
         params:set(i.."buffer_sel", tp[i].side == 1 and 2 or 1)
         if track_focus == i then
