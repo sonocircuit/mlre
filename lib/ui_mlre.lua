@@ -155,13 +155,8 @@ end
 
 ---------------------- PMAC PERF -------------------------
 function ui.pmac_perf_key(n, z)
-  if z == 1 then
-    if n == 2 then
-      params:set("slot_assign", macro_slot_mode == 2 and 3 or 2)
-      show_message(macro_slot_mode == 2 and "pattern   slots" or "recall   slots")
-    elseif n == 3 then
-      pmac_pageEnc = 1 - pmac_pageEnc
-    end
+  if z == 1 and n > 1 then
+    pmac_pageEnc = n - 2
   end
 end
 
@@ -317,9 +312,7 @@ function ui.main_enc(n, d)
   elseif n == 2 then
     params:delta(track_focus..main_page_params_l[main_pageNum], d)
   elseif n == 3 then
-    if not (main_page_params_r[main_pageNum] == "post_dry" and params:get(track_focus.."filter_type") == 5) then
-      params:delta(track_focus..main_page_params_r[main_pageNum], d)
-    end
+    params:delta(track_focus..main_page_params_r[main_pageNum], d)
   end
 end
 
@@ -356,11 +349,7 @@ function ui.main_redraw()
   screen.move(35, 40)
   screen.text_center(params:string(track_focus..main_page_params_l[main_pageNum]))
   screen.move(94, 40)
-  if params:get(track_focus.."filter_type") == 5 and main_pageNum == 4 then
-    screen.text_center("-")
-  else
-    screen.text_center(params:string(track_focus..main_page_params_r[main_pageNum]))
-  end
+  screen.text_center(params:string(track_focus..main_page_params_r[main_pageNum]))
   -- display messages
   display_message()
   screen.update()
@@ -386,7 +375,7 @@ function ui.arc_main_delta(n, d)
           local prev_inc = inc
           clock.sleep(0.05)
           if prev_inc == inc then
-            if params:get(track_focus.."adsr_active") == 2 then
+            if env[track_focus].active then
               local e = {t = eGATEOFF, i = track_focus} event(e)
             else
               local e = {t = eSTOP, i = track_focus} event(e)
@@ -439,7 +428,7 @@ function ui.arc_main_delta(n, d)
       if track[track_focus].loop == 0 and (d > 2 or d < -2) and alt == 0 then
         enc2_wait = true
         loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end)
-        if params:get(track_focus.."adsr_active") == 2 then
+        if env[track_focus].active then
           local e = {t = eGATEON, i = track_focus} event(e)
         end
         clock.run(function()
@@ -450,7 +439,7 @@ function ui.arc_main_delta(n, d)
       end
       if track[track_focus].loop == 1 and alt == 1 then
         local e = {t = eUNLOOP, i = track_focus} event(e)
-        if params:get(track_focus.."adsr_active") == 2 then
+        if env[track_focus].active then
           local e = {t = eGATEOFF, i = track_focus} event(e)
         end
       end
@@ -524,7 +513,7 @@ function ui.arc_main_delta(n, d)
         arc_track_focus = util.clamp(arc_track_focus + d / 100, 1, 6)
         track_focus = math.floor(arc_track_focus)
       else
-        params:delta(track_focus.."filter_q", d / 12)
+        params:delta(track_focus.."filter_q", -d / 12)
       end
     end
   end
@@ -576,7 +565,7 @@ function ui.arc_main_draw()
     end
   elseif arc_pageNum == 2 then
     -- draw volume
-    local arc_vol = math.floor(params:get(track_focus.."vol") * 64)
+    local arc_vol = math.floor(track[track_focus].level * 64)
     for i = 1, 64 do
       if i < arc_vol then
         a:led(1, i - arc_off, 3)
@@ -584,10 +573,10 @@ function ui.arc_main_draw()
       a:led(1, arc_vol - arc_off, 15)
     end
     -- draw pan
-    local arc_pan = math.floor(params:get(track_focus.."pan") * 24)
-    a:led (2, 1 - arc_off, 7)
-    a:led (2, 25 - arc_off, 5)
-    a:led (2, -23 - arc_off, 5)
+    local arc_pan = math.floor(track[track_focus].pan * 24)
+    a:led(2, 1 - arc_off, 7)
+    a:led(2, 25 - arc_off, 5)
+    a:led(2, -23 - arc_off, 5)
     if arc_pan > 0 then
       for i = 2, arc_pan do
         a:led(2, i - arc_off, 4)
@@ -597,17 +586,36 @@ function ui.arc_main_draw()
         a:led(2, i - arc_off, 4)
       end
     end
-    a:led (2, arc_pan + 1 - arc_off, 15)
+    a:led(2, arc_pan + 1 - arc_off, 15)
     -- draw cutoff
-    local arc_cut = math.floor(util.explin(20, 12000, 0, 1, params:get(track_focus.."cutoff")) * 48) + 41
-    a:led (3, 25 - arc_off, 5)
-    a:led (3, -23 - arc_off, 5)
-    for i = -22, 24 do
-      if i < arc_cut - 64 then
-        a:led(3, i - arc_off, 3)
+    if track[track_focus].filter_mode == 6 then
+      -- 
+    elseif track[track_focus].filter_mode == 5 then
+      local arc_cut = math.floor(track[track_focus].cutoff * 24)
+      a:led(3, 1 - arc_off, 7)
+      a:led(3, 25 - arc_off, 5)
+      a:led(3, -23 - arc_off, 5)
+      if arc_cut > 0 then
+        for i = 2, arc_cut do
+          a:led(3, i - arc_off, 4)
+        end
+      elseif arc_cut < 0 then
+        for i = arc_cut + 2, 0 do
+          a:led(3, i - arc_off, 4)
+        end
       end
+      a:led(3, arc_cut + 1 - arc_off, 15)
+    else
+      local arc_cut = math.floor(util.explin(20, 12000, 0, 1, track[track_focus].cutoff_hz) * 48) + 41
+      a:led(3, 25 - arc_off, 5)
+      a:led(3, -23 - arc_off, 5)
+      for i = -22, 24 do
+        if i < arc_cut - 64 then
+          a:led(3, i - arc_off, 3)
+        end
+      end
+      a:led(3, arc_cut - arc_off, 15)
     end
-    a:led(3, arc_cut - arc_off, 15)
     if cutview_hold then
       -- draw track_focus
       for i = 1, 6 do
@@ -619,16 +627,16 @@ function ui.arc_main_draw()
       end
     else
       -- draw filter_q
-      arc_q = math.floor(util.explin(0.1, 4, 0, 1, params:get(track_focus.."filter_q")) * 32) + 17
-      for i = 17, 49 do
+      arc_q = 49 - math.floor(track[track_focus].filter_q * 32)
+      for i = 49, 17, -1 do
         if i > arc_q then
           a:led(4, i - arc_off, 3)
         end
       end
       a:led(4, 17 - arc_off, 7)
       a:led(4, 49 - arc_off, 7)
-      a:led(4, 42 - arc_off, 7)
-      a:led(4, 36 - arc_off, 7)
+      a:led(4, 43 - arc_off, 7)
+      a:led(4, 37 - arc_off, 7)
       a:led(4, arc_q - arc_off, 15)
     end
   end
@@ -888,7 +896,7 @@ end
 function ui.arc_env_draw()
   a:all(0)
   -- draw adsr attack
-  local attack = math.floor(util.linlin(0.1, 10, 0, 1, params:get(env_focus.."adsr_attack")) * 48) + 41
+  local attack = math.floor(util.linlin(0, 100, 0, 1, env[env_focus].attack) * 48) + 41
   a:led (1, 25 - arc_off, 5)
   a:led (1, -23 - arc_off, 5)
   for i = -22, 24 do
@@ -898,7 +906,7 @@ function ui.arc_env_draw()
   end
   a:led(1, attack - arc_off, 15)
   -- draw adsr decay
-  local decay = math.floor(util.linlin(0.1, 10, 0, 1, params:get(env_focus.."adsr_decay")) * 48) + 41
+  local decay = math.floor(util.linlin(0, 100, 0, 1, env[env_focus].decay) * 48) + 41
   a:led (2, 25 - arc_off, 5)
   a:led (2, -23 - arc_off, 5)
   for i = -22, 24 do
@@ -908,7 +916,7 @@ function ui.arc_env_draw()
   end
   a:led(2, decay - arc_off, 15)
   -- draw adsr sustain
-  local sustain = math.floor(params:get(env_focus.."adsr_sustain") * 48) + 41
+  local sustain = math.floor(env[env_focus].sustain * 48) + 41
   a:led (3, 25 - arc_off, 5)
   a:led (3, -23 - arc_off, 5)
   for i = -22, 24 do
@@ -918,7 +926,7 @@ function ui.arc_env_draw()
   end
   a:led(3, sustain - arc_off, 15)
   -- draw adsr release
-  local release = math.floor(util.linlin(0.1, 10, 0, 1, params:get(env_focus.."adsr_release")) * 48) + 41
+  local release = math.floor(util.linlin(0, 100, 0, 1, env[env_focus].release) * 48) + 41
   a:led (4, 25 - arc_off, 5)
   a:led (4, -23 - arc_off, 5)
   for i = -22, 24 do
@@ -931,7 +939,7 @@ function ui.arc_env_draw()
 end
 
 
----------------------- PATTERN VIEW ---------------------
+---------------------- MACRO VIEW ---------------------
 
 function ui.macro_key(n, z)
   if kmac.pattern_edit then
@@ -1000,27 +1008,26 @@ function ui.macro_redraw()
     local x_pos = 15
     local y_pos = 37
     local macro = {"PT", "SN", "PI"}
-    local txta = {}
-    local txtb = {}
+    local txto = {}
+    local txtz = {}
     local num = ""
     local cntr = ""
     local side = ""
     if kmac.o.focus > 0 then
-      txta = kmac.slot[kmac.o[kmac.o.focus]] -- display assigned kit of focused page
+      txto = kmac.slot[kmac.o[kmac.o.focus]] -- display assigned kit of focused page
       num = kmac.o.focus
-      cntr = "KIT  "..kmac.o[kmac.o.focus]
+      cntr = "set  "..kmac.o[kmac.o.focus]
     elseif kmac.z.focus > 0 then
-      txta = kmac.slot[kmac.z[kmac.z.focus]] -- display assigned kit of focused page
-      num = kmac.z.focus
-      cntr = "kit  "..kmac.z[kmac.z.focus]
+      txto = kmac.slot[kmac.z[kmac.z.focus]] -- display assigned kit of focused page
+      num = kmac.z.focus + 2
+      cntr = "set  "..kmac.z[kmac.z.focus]
     elseif kmac.slot_focus > 0 then
-      txta = kmac.slot[kmac.slot_focus] -- display focused kit
-      cntr = "KIT  "..kmac.slot_focus
+      txto = kmac.slot[kmac.slot_focus] -- display focused kit
+      cntr = "set  "..kmac.slot_focus
       side = "EDIT"
     else
-      txta = kmac.slot[kmac.o[kmac.key]] -- display active kit
-      txtb = kmac.slot[kmac.z[kmac.key]] -- display active kit
-      num = kmac.key
+      txto = kmac.slot[kmac.o[kmac.o.key]] -- display active kit
+      txtz = kmac.slot[kmac.z[kmac.z.key]] -- display active kit
     end
     screen.move(38, 12)
     screen.text(num)
@@ -1031,7 +1038,7 @@ function ui.macro_redraw()
     screen.font_face(68)
     if (GRID_SIZE == 128 or kmac.o.focus > 0 or kmac.z.focus > 0 or kmac.slot_focus > 0) then
       for i = 1, 8 do
-        local data = ((txta[i] == mPTN and pattern[i].count > 0) or (txta[i] == mSNP and snap[i].data) or (txta[i] == mPIN and recall[i].has_data)) and true or false
+        local data = ((txto[i] == mPTN and pattern[i].count > 0) or (txto[i] == mSNP and snap[i].data) or (txto[i] == mPIN and recall[i].has_data)) and true or false
         screen.level(15)
         screen.rect(x_pos + 14 * (i - 1) - 5, y_pos - 8, 12, 12)
         screen.stroke()
@@ -1042,37 +1049,37 @@ function ui.macro_redraw()
         end
         screen.level(data and 0 or 15)
         screen.move(x_pos + 14 * (i - 1), y_pos)
-        screen.text_center(macro[txta[i]])
+        screen.text_center(macro[txto[i]])
       end
     else
       for i = 1, 8 do
-        local y_posa = y_pos - 3
-        local y_posb = y_pos + 3
-        local dataa = ((txta[i] == mPTN and pattern[i].count > 0) or (txta[i] == mSNP and snap[i].data) or (txta[i] == mPIN and recall[i].has_data)) and true or false
+        local y_posa = y_pos - 7
+        local y_posb = y_pos + 8
+        local datao = ((txto[i] == mPTN and pattern[i].count > 0) or (txto[i] == mSNP and snap[i].data) or (txto[i] == mPIN and recall[i].has_data)) and true or false
         screen.level(15)
         screen.rect(x_pos + 14 * (i - 1) - 5, y_posa - 8, 12, 12)
         screen.stroke()
-        if dataa then
+        if datao then
           screen.level(4)
           screen.rect(x_pos + 14 * (i - 1) - 5, y_posa - 8, 11, 11)
           screen.fill() 
         end
-        screen.level(dataa and 0 or 15)
+        screen.level(datao and 0 or 15)
         screen.move(x_pos + 14 * (i - 1), y_posa)
-        screen.text_center(macro[txta[i]])
+        screen.text_center(macro[txto[i]])
 
-        local datab = ((txtb[i] == mPTN and pattern[i].count > 0) or (txtb[i] == mSNP and snap[i].data) or (txtb[i] == mPIN and recall[i].has_data)) and true or false
+        local dataz = ((txtz[i] == mPTN and pattern[i].count > 0) or (txtz[i] == mSNP and snap[i].data) or (txtz[i] == mPIN and recall[i].has_data)) and true or false
         screen.level(15)
         screen.rect(x_pos + 14 * (i - 1) - 5, y_posb - 8, 12, 12)
         screen.stroke()
-        if datab then
+        if dataz then
           screen.level(4)
           screen.rect(x_pos + 14 * (i - 1) - 5, y_posb - 8, 11, 11)
           screen.fill() 
         end
-        screen.level(datab and 0 or 15)
+        screen.level(dataz and 0 or 15)
         screen.move(x_pos + 14 * (i - 1), y_posb)
-        screen.text_center(macro[txtb[i]])
+        screen.text_center(macro[txtz[i]])
       end
     end
   end
