@@ -1571,7 +1571,7 @@ end
 
 function startall(sync) -- start all tracks at the beginning
   for i = 1, 6 do
-    local pos = track[i].rev == 0 and 0 or 15
+    local pos = track[i].rev == 0 and 1 or 16
     local e = {t = eCUT, i = i, pos = pos, sync = sync} event(e)
   end
   if params:get("midi_trnsp") == 2 and not transport_run then
@@ -1595,7 +1595,7 @@ end
 function reset_playheads() -- reset all playback positions
   for i = 1, 6 do
     if track[i].play == 1 then
-      local pos = track[i].rev == 0 and 0 or 15
+      local pos = track[i].rev == 0 and 1 or 16
       local e = {t = eCUT, i = i, pos = pos} event(e)
     end
   end
