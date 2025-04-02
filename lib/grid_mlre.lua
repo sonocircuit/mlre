@@ -14,9 +14,18 @@ for i = 1, 8 do
   second[i] = 0
 end
 
-local snapshot_last = 0
+-- snap n punch
+local snap_track = 0
+local snap_last = 0
 local event_reset_timeout = false
 local event_reset_clk = nil
+
+-- lfo
+local lfo_params = {"vol", "pan", "dub", "transpose", "detune", "rate_slew", "cutoff"}
+local lfo_trksel = 0
+local lfo_dstsel = 0
+local lfo_launch = 0
+
 
 local function pattern_actions(i, z)
   if z == 1 then
@@ -71,15 +80,14 @@ local function snapshot_actions(i, z)
       snap[i].active = false
     else
       if snap[i].data then
-        if held_focus > 0 then
+        if snap_track > 0 then
           launch_snapshot(i, track_focus)
         else
           for track = 1, 6 do
             launch_snapshot(i, track)
           end
         end
-        snap[i].active = true
-        snapshot_last = i
+        snap_last = i
       else
         save_snapshot(i)
       end
@@ -88,21 +96,24 @@ local function snapshot_actions(i, z)
   if view == vMACRO then dirtyscreen = true end
 end
 
-local function recall_actions(i, z)
+local function punch_actions(i, z)
+  if held[1] < 0 then held[1] = 0 end
   held[1] = held[1] + (z * 2 - 1)
-  recall[i].active = z == 1 and true or false
+  punch[i].active = z == 1 and true or false
   if z == 1 then
     if held[1] == 1 and event_reset_clk == nil then
       save_event_state()
     end
     if alt == 1 then
-      recall[i].event = {}
-      recall[i].has_data = false
-      recall[i].active = false
-    elseif recall[i].has_data then
-      recall_exec(i)
+      punch[i].event = {}
+      punch[i].has_data = false
+      punch[i].active = false
+    elseif punch[i].has_data then
+      for _, e in pairs(punch[i].event) do
+        event(e)
+      end
     else
-      recall_rec = i
+      punch.rec = i
     end
     -- min timeout
     event_reset_timeout = false
@@ -110,18 +121,18 @@ local function recall_actions(i, z)
       clock.cancel(event_reset_clk)
     end
     event_reset_clk = clock.run(function()
-      clock.sync(1/4)
-      if not recall[i].active then
+      clock.sync(q_rate)
+      if not punch[i].active then
         reset_event_state(true)
       end
       event_reset_timeout = true
       event_reset_clk = nil
     end)
   else
-    if recall_rec == i then recall_rec = 0 end
     if held[1] < 1 and event_reset_timeout then
       reset_event_state(true)
     end
+    if punch.rec == i then punch.rec = 0 end
   end
   if view == vMACRO then dirtyscreen = true end
 end
@@ -171,42 +182,44 @@ function grd.nav(x, z, pos)
     end
   elseif x > 4 and x < 13 then
     local i = x - 4
-    local s = kmac[pos][kmac[pos].key]
+    local s = pos == "o" and kmac[pos].sec or kmac[pos].sec + 2
     if kmac.slot[s][i] == mPTN then
       pattern_actions(i, z)
     elseif kmac.slot[s][i] == mSNP then
       snapshot_actions(i, z)
     elseif kmac.slot[s][i] == mPIN then
-      recall_actions(i, z)
+      punch_actions(i, z)
     end
   elseif x == 13 then
     if alt == 1 and z == 1 then
-      local mode = kmac.toggle and 1 or 2
-      local msg = {"momentary", "toggle"}
-      params:set("macro_kmac_page", mode)
-      show_message(msg[mode])
+      kmac[pos].tog = not kmac[pos].tog
+      local msg = kmac[pos].tog and "toggle" or "momentary"
+      show_message(msg)
     elseif mod == 1 and z == 1 then
       stopall()
     else
-      if kmac.toggle then
+      if kmac[pos].tog then
         if z == 1 then
-          kmac[pos].key = kmac[pos].key == 1 and 2 or 1
+          kmac[pos].sec = kmac[pos].sec == 1 and 2 or 1
         end
       else
-        kmac[pos].key = z == 1 and 2 or 1
+        kmac[pos].sec = z == 1 and 2 or 1
       end
-      for i = 1, 8 do
-        if recall[i].active then
-          recall[i].active = false
-          held[1] = 0
+      if z == 0 then
+        if held[1] > 0 then
+          reset_event_state()
         end
+        for i = 1, 8 do
+          punch[i].active = false
+        end
+        held[1] = 0
+        punch.rec = 0
       end
       if view == vMACRO then dirtyscreen = true end
     end    
   elseif x == 14 then
-    if alt == 0 then
-      mod = z
-    elseif alt == 1 and z == 1 then
+    mod = z
+    if alt == 1 and z == 1 then
       reset_playheads()
     end
   elseif x == 15 then
@@ -216,7 +229,7 @@ function grd.nav(x, z, pos)
     elseif alt == 1 and z == 1 then
       set_gridview(vTAPE, pos)
       set_view(vTAPE)
-      render_splice()
+      render_splice(track_focus)
     elseif mod == 1 and z == 1 then
       set_gridview(vMACRO, pos)
       set_view(vMACRO)
@@ -236,7 +249,7 @@ function grd.drawnav(y)
   g:led(4, y, view == vLFO and 10 or (view == vENV and pulse_key_slow or 0)) -- vLFO
   -- key macro keys
   for i = 1, 8 do
-    local s = kmac[pos][kmac[pos].key]
+    local s = pos == "o" and kmac[pos].sec or kmac[pos].sec + 2
     if kmac.slot[s][i] == mPTN then
       if pattern[i].rec == 1 and pattern[i].count == 0 then
         g:led(i + 4, y, 15)
@@ -252,13 +265,13 @@ function grd.drawnav(y)
         g:led(i + 4, y, 4)
       end
     elseif kmac.slot[s][i] == mSNP then
-      g:led(i + 4, y, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
+      g:led(i + 4, y, snap[i].active and 15 or ((snap_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
     elseif kmac.slot[s][i] == mPIN then
-      g:led(i + 4, y, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 4 or 1)))
+      g:led(i + 4, y, punch.rec == i and 15 or (punch[i].active and 10 or (punch[i].has_data and 4 or 1)))
     end
   end
   -- nav and function keys
-  g:led(13, y, kmac[pos].key == 2 and 2 or 0) -- k-mac
+  g:led(13, y, kmac[pos].sec == 2 and 2 or 0) -- k-mac
   g:led(14, y, mod == 1 and 9 or 2) -- mod
   g:led(15, y, y ~= 9 and (quantizing and (pulse_bar and 15 or (pulse_beat and 6 or 2))) or 3) -- Q flash
   g:led(16, y, alt == 1 and 15 or 9) -- alt
@@ -337,33 +350,39 @@ function grd.rec_keys(x, y, z, offset)
   if y > 1 and y < 8 then
     local i = y - 1
     if x > 2 and x < 7 then
-      held_focus = held_focus + (z * 2 - 1)
+      snap_track = z == 1 and i or 0
       if z == 1 then
         if track_focus ~= i then
           track_focus = i
           arc_track_focus = track_focus
           dirtyscreen = true
-          if not autofocus and view == vTAPE then render_splice() end
+          render_splice(i)
         end
         if alt == 1 and mod == 0 then
           params:set(i.."tempo_map_mode", util.wrap(track[i].tempo_map + 2, 1, 3))
         elseif alt == 0 and mod == 1 then
-          params:set(i.."buffer_sel", tp[i].side == 1 and 2 or 1)
+          params:set(i.."tape_side", tp[i].side == 1 and 2 or 1)
         end
         if x == 3 and not track[i].loaded then
           queue_track_tape(i)
         end
       end
-    elseif x == 1 and alt == 0 and z == 1 then
-      if mod == 0 then
-        toggle_rec(i)
-        chop(i)
-      else
-        backup_rec(i, "undo")
+    elseif x == 1 and z == 1 then
+      if alt == 0 then
+        if mod == 0 then
+          toggle_rec(i)
+          chop(i)
+        else
+          backup_rec(i, "undo")
+        end
+      elseif alt == 1 then
+        if mod == 0 then
+          track[i].fade = 1 - track[i].fade
+          set_rec(i)
+        else
+          set_rec_enable(i, not track[i].rec_enabled)
+        end
       end
-    elseif x == 1 and alt == 1 and z == 1 then
-      track[i].fade = 1 - track[i].fade
-      set_rec(i)
     elseif x == 2 and z == 1 then
       arm_thresh_rec(i)
     elseif x == 16 and alt == 0 and mod == 0 and z == 1 then
@@ -395,7 +414,7 @@ function grd.rec_draw(offset)
   g:led(5, track_focus + 1 + off, tp[track_focus].side == 2 and 7 or 3)
   for i = 1, 6 do
     local y = i + 1 + off
-    g:led(1, y, track[i].rec == 1 and 15 or (track[i].fade == 1 and 7 or 3)) -- rec key
+    g:led(1, y, track[i].rec_enabled and (track[i].rec == 1 and 15 or (track[i].fade == 1 and 7 or 3)) or 1)
     g:led(2, y, track[i].oneshot == 1 and pulse_key_fast or 0)
     g:led(3, y, track[i].loaded and (track_focus == i and 7 or 0) or pulse_key_mid)
     g:led(6, y, track[i].tempo_map == 1 and 7 or (track[i].tempo_map == 2 and 12 or (track_focus == i and 3 or 0)))
@@ -458,7 +477,7 @@ function grd.cut_keys(x, y, z, offset)
         track_focus = i
         arc_track_focus = track_focus
         dirtyscreen = true
-        if not autofocus and view == vTAPE then render_splice() end
+        render_splice(i)
       end
       if alt == 1 and y < 8 then
         toggle_playback(i)
@@ -536,7 +555,7 @@ function grd.trsp_keys(x, y, z, offset)
         track_focus = i
         arc_track_focus = track_focus
         dirtyscreen = true
-        if not autofocus and view == vTAPE then render_splice() end
+        render_splice(i)
       end
       if alt == 0 and mod == 0 then
         if x >= 1 and x <= 8 then
@@ -587,48 +606,43 @@ function grd.lfo_keys(x, y, z, offset)
   if z == 1 and view ~= vLFO and autofocus then
     set_view(vLFO)
   end
-  if z == 1 then
-    if y > 1 and y < 8 then
-      local i = y - 1
-      if lfo_focus ~= i then
-        lfo_focus = i
-        arc_lfo_focus = lfo_focus
-        update_param_lfo_rate()
-      end
-      if x == 1 then
-        local action = lfo[lfo_focus].enabled == 1 and "lfo_off" or "lfo_on"
-        if lfo_launch > 0 and action == "lfo_on" then
-          local beat_sync = lfo_launch == 2 and bar_val or 1
-          clock.run(function()
-            clock.sync(beat_sync)
-            local e = {t = eLFO, i = lfo_focus, action = action , sync = true} event(e)
-          end)
-        else
-          local e = {t = eLFO, i = lfo_focus, action = action} event(e)
-        end
-      elseif x > 1 and x <= 16 then
-        params:set("lfo_depth_lfo_"..lfo_focus, (x - 2) * util.round_up((100 / 14), 0.1))
-      end
+  if y > 1 and y < 8 and z == 1 then
+    local i = y - 1
+    if lfo_focus ~= i then
+      lfo_focus = i
+      arc_lfo_focus = lfo_focus
+      update_param_lfo_rate()
     end
-    if y == 8 then
-      if x == 1 then
-        lfo_launch = util.wrap(lfo_launch + 1, 0, 2)
+    if x == 1 then
+      local action = lfo[lfo_focus].enabled == 1 and "lfo_off" or "lfo_on"
+      if lfo_launch > 0 and action == "lfo_on" then
+        local beat_sync = lfo_launch == 2 and bar_val or 1
+        clock.run(function()
+          clock.sync(beat_sync)
+          local e = {t = eLFO, i = lfo_focus, action = action , sync = true} event(e)
+        end)
+      else
+        local e = {t = eLFO, i = lfo_focus, action = action} event(e)
       end
-      if x > 2 and x < 9 then
-        lfo_trksel = x - 2
-      end
-      if x == 9 then
-        set_lfo(lfo_focus, lfo_trksel, 'none')
-      end
-      if x > 9 then
-        lfo_dstview = 1
-        lfo_dstsel = x - 9
-        set_lfo(lfo_focus, lfo_trksel, lfo_params[lfo_dstsel])
-      end
+    elseif x > 1 and x <= 16 then
+      params:set("lfo_depth_lfo_"..lfo_focus, (x - 2) * util.round_up((100 / 14), 0.1))
     end
-  elseif z == 0 then
-    if x > 9 and y == 8 then
-      lfo_dstview = 0
+  end
+  if y == 8 then
+    if x == 1 and z == 1 then
+      lfo_launch = util.wrap(lfo_launch + 1, 0, 2)
+    end
+    if x > 2 and x < 9 then
+      lfo_trksel = z == 1 and (x - 2) or 0
+    end
+    if x == 9 and z == 1 then
+      set_lfo(lfo_focus, "none")
+    end
+    if x > 9 then
+      lfo_dstsel = z == 1 and (x - 9) or 0
+      if z == 1 and lfo_trksel > 0 then
+        set_lfo(lfo_focus, lfo_params[lfo_dstsel], lfo_trksel)
+      end
     end
   end
   dirtyscreen = true
@@ -646,7 +660,7 @@ function grd.lfo_draw(offset)
     g:led(i + 2, 8 + off, lfo_trksel == i and 12 or 2)
   end
   for i = 1, 7 do
-    g:led(i + 9, 8 + off, (lfo_dstsel == i and lfo_dstview == 1) and 12 or 2)
+    g:led(i + 9, 8 + off, lfo_dstsel == i and 12 or 2)
   end
   g:led(1, 8 + off, lfo_launch * 6)
 end
@@ -702,36 +716,12 @@ function grd.macro_keys(x, y, z, offset)
   end
   if x > 1 and x < 4 then
     local i = x - 1
-    if y > 2 and y < 5 then -- select macro page to assign kit
-      if GRID_SIZE == 256 then
-        if y == 3 then
-          kmac.z.focus = z == 1 and i or 0
-        elseif y == 4 then
-          kmac.o.focus = z == 1 and i or 0
-        end
-      elseif y == 3 then
-        kmac.o.focus = z == 1 and i or 0
-      end
+    if y > 2 and y < 5 then -- macro slot assignment grid one / top row
+      kmac.slot_focus = z == 1 and (y - 2) or 0
     elseif y == 5 and z == 1 then
-      kmac.pattern_edit = i == 2 and true or false
-    elseif y > 5 and y < 8 then -- kits
-      local s = i + (y - 6) * 2
-      if (kmac.o.focus > 0 or kmac.z.focus > 0) and z == 1 then -- if macro key page selected 
-        local pos = {"o", "z"}
-        for n = 1, 2 do
-          if kmac[pos[n]].focus > 0 then
-            kmac[pos[n]][kmac[pos[n]].focus] = s -- press key to assign kit
-          end
-        end
-      else
-        if z == 1 then
-          if kmac.slot_focus ~= s then
-            kmac.slot_focus = s -- focus kit to enter kit edit mode
-          else
-            kmac.slot_focus = 0
-          end
-        end
-      end
+      kmac.pattern_edit = not kmac.pattern_edit
+    elseif y > 5 and y < 8 and GRID_SIZE == 256 then -- macro slot assignment grid one / top row
+      kmac.slot_focus = z == 1 and (y - 3) or 0
     end
   elseif x > 4 and x < 13 then
     local i = x - 4
@@ -758,7 +748,7 @@ function grd.macro_keys(x, y, z, offset)
         elseif y == 5 then
           snapshot_actions(i, z)
         elseif y == 6 then
-          recall_actions(i, z)
+          punch_actions(i, z)
         end
       end
     end
@@ -784,27 +774,13 @@ end
 
 function grd.macro_draw(offset)
   local off = offset or 0
-  for i = 1, 2 do
-    local x = i + 1
-    if GRID_SIZE == 256 then
-      g:led(x, 3 + off, kmac.z.focus == i and 10 or 2)
-      g:led(x, 4 + off, kmac.o.focus == i and 10 or 2)
-    else
-      g:led(x, 3 + off, kmac.o.focus == i and 10 or 2)
-      g:led(x, 4 + off, 1)
-    end
-    if kmac.o.focus > 0 or kmac.z.focus > 0 then
-      local focus = kmac.o.focus > 0 and kmac.o[kmac.o.focus] or (kmac.z.focus > 0 and kmac.z[kmac.z.focus])
-      g:led(x, 6 + off, focus == i and 10 or 4)
-      g:led(x, 7 + off, focus == i + 2 and 10 or 4)
-    else
-      g:led(x, 6 + off, kmac.slot_focus > 0 and (kmac.slot_focus == i and 10 or 2) or 4)
-      g:led(x, 7 + off, kmac.slot_focus > 0 and (kmac.slot_focus == i + 2 and 10 or 2) or 4)
-    end
+  for x = 2, 3 do
+    g:led(x, 3 + off, kmac.slot_focus == 1 and 10 or 2)
+    g:led(x, 4 + off, kmac.slot_focus == 2 and 10 or 2)
+    g:led(x, 5 + off, kmac.pattern_edit and 6 or 1)
+    g:led(x, 6 + off, kmac.slot_focus == 3 and 10 or 2)
+    g:led(x, 7 + off, kmac.slot_focus == 4 and 10 or 2)
   end
-  g:led(2, 5 + off, kmac.pattern_edit and 1 or 6)
-  g:led(3, 5 + off, kmac.pattern_edit and 6 or 1)
-
   if kmac.slot_focus > 0 then
     for i = 1, 8 do
       g:led(i + 4, 4 + off, kmac.slot[kmac.slot_focus][i] == mPTN and 12 or 6)
@@ -837,8 +813,8 @@ function grd.macro_draw(offset)
       end
     else
       for i = 1, 8 do
-        g:led(i + 4, 5 + off, snap[i].active and 15 or ((snapshot_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
-        g:led(i + 4, 6 + off, recall_rec == i and 15 or (recall[i].active and 10 or (recall[i].has_data and 4 or 1)))
+        g:led(i + 4, 5 + off, snap[i].active and 15 or ((snap_last == i and snap[i].data) and 10 or (snap[i].data and 6 or 2)))
+        g:led(i + 4, 6 + off, punch.rec == i and 15 or (punch[i].active and 10 or (punch[i].has_data and 4 or 1)))
       end
     end
   end
@@ -870,35 +846,34 @@ function grd.tape_keys(x, y, z, offset)
         if alt == 1 and mod == 0 then
           load_splice(i, x)
         elseif alt == 0 and mod == 1 then
+          local s = track[i].splice_focus
           local src = tp[i].side == 1 and 1 or 2
           local dst = tp[i].side == 1 and 2 or 1
-          mirror_splice(i, src, dst)
+          mirror_splice(i, s, src, dst)
           show_message("splice   copied   to   "..(dst == 1 and "main" or "temp").."   buffer")
         end
       else
         queue_track_tape(i)
       end
-      render_splice()
+      render_splice(i)
     elseif x == 9 then
       track_focus = i
       arc_track_focus = i
       view_buffer = z == 1 and true or false
-      render_splice()
+      render_splice(i)
     elseif x == 10 and z == 1 then
       if alt == 1 and mod == 0 then
         params:set(i.."tempo_map_mode", util.wrap(track[i].tempo_map + 2, 1, 3))
       elseif mod == 1 and alt == 0 then
-        params:set(i.."buffer_sel", tp[i].side == 1 and 2 or 1)
-        if track_focus == i then
-          render_splice()
-        end
+        params:set(i.."tape_side", tp[i].side == 1 and 2 or 1)
+        render_splice(i)
       end
     elseif x == 11 then
       track_focus = i
       arc_track_focus = i
       view_splice_info = z == 1 and true or false
       if z == 0 then
-        render_splice()
+        render_splice(i)
       end
     elseif x == 12 and z == 1 then
       if tp[i].input == 1 then
@@ -924,7 +899,7 @@ function grd.tape_keys(x, y, z, offset)
       sends_focus = i
       view_track_send = z == 1 and true or false
       if z == 0 then
-        render_splice()
+        render_splice(i)
       end
     elseif x == 15 and y < 6 and z == 1 then
       if tp[i].buffer == tp[5].buffer then
@@ -943,7 +918,7 @@ function grd.tape_keys(x, y, z, offset)
     elseif x == 16 and y == 7 and z == 1 then
       view_presets = not view_presets
       if view_presets == false then
-        render_splice()
+        render_splice(i)
       end
     end
   elseif y == 8 then
