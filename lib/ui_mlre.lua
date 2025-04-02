@@ -33,6 +33,7 @@ local patterns_page_names_r = {"length", "play   mode"}
 -- tape page variables
 local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "rename", "format >", "format >>>"}
 local tape_action = 2
+local copy_src = {}
 
 -- p-macro variables
 local pmac_pageNum = 1
@@ -41,21 +42,27 @@ local pmac_param_id = {{"cutoff", "vol", "detune", "lfo_depth"}, {"filter_q", "p
 local pmac_param_name = {{"cutoff", "vol", "detune", "lfo   depth"}, {"filter  q", "pan", "rate_slew", "lfo   rate"}}
 
 -- arc variables
-local arc_inc1 = 0
-local arc_inc2 = 0
-local arc_inc3 = 0
-local arc_inc4 = 0
-local arc_inc5 = 0
-local arc_render = 0
+local arc_pageNum = 1
 local arc_lfo_focus = 1
 local arc_track_focus = 1
 local arc_splice_focus = 1
+local arc_wait = false
+local arc_off = 0
+local arc_scrub_sens = 100
+local arc_pmac_sens = 20
 
 local arc_pmac = {}
 for i = 1, 4 do
   arc_pmac[i] = {}
   arc_pmac[i].viz = 1
   arc_pmac[i].smooth = filters.mean.new(20)
+end
+
+local arc_inc = {}
+arc_inc.stop = 0
+arc_inc.render = 0
+for i = 1, 4 do
+  arc_inc[i] = 0
 end
 
 local function display_message()
@@ -73,6 +80,21 @@ local function display_message()
     screen.move(64, 35)
     screen.text_center(view_message)
   end
+end
+
+
+---------------------- PARAMS -------------------------
+function ui.arc_params()
+  params:add_group("arc_params", "arc settings", 6)
+  params:add_option("arc_orientation", "arc orientation", {"horizontal", "vertical"}, 1)
+  params:set_action("arc_orientation", function(val) arc_off = (val - 1) * 16 end)
+  params:add_option("arc_enc_1_start", "enc1 > start", {"off", "on"}, 2)
+  params:add_option("arc_enc_1_dir", "enc1 > direction", {"off", "on"}, 1)
+  params:add_option("arc_enc_1_mod", "enc1 > mod", {"off", "warble", "scrub"}, 3)
+  params:add_number("arc_srub_sens", "scrub sensitivity", 1, 10, 6)
+  params:set_action("arc_srub_sens", function(val) arc_scrub_sens = -50 * val + 550 end)
+  params:add_number("arc_arc_pmac_sens", "p-macro sensitivity", 1, 10, 2)
+  params:set_action("arc_arc_pmac_sens", function(val) arc_pmac_sens = 5 * val end)
 end
 
 
@@ -215,7 +237,7 @@ function ui.pmac_perf_redraw()
 end
 
 function ui.arc_pmac_delta(n, d)
-  pmac_exec(n, (d / pmac_sens))
+  pmac_exec(n, (d / arc_pmac_sens))
   arc_pmac[n].viz = math.floor(util.clamp(arc_pmac[n].smooth:next(d * 2), -42, 44))
 end
 
@@ -370,17 +392,21 @@ function ui.arc_main_delta(n, d)
       end
       -- stop playback when enc stops
       if params:get(track_focus.."play_mode") == 3 then
-        inc = (inc % 100) + 1
-        clock.run(function()
-          local prev_inc = inc
+        arc_inc.stop = (arc_inc.stop % 100) + 1
+        if detect_stop ~= nil then
+          clock.cancel(detect_stop)
+        end
+        detect_stop = clock.run(function()
+          local prev_inc = arc_inc.stop
           clock.sleep(0.05)
-          if prev_inc == inc then
+          if prev_inc == arc_inc.stop then
             if env[track_focus].active then
               local e = {t = eGATEOFF, i = track_focus} event(e)
             else
               local e = {t = eSTOP, i = track_focus} event(e)
             end
           end
+          detect_stop = nil
         end)
       end
       -- set direction
@@ -414,9 +440,9 @@ function ui.arc_main_delta(n, d)
       -- scrub
       if (d > 2 or d < -2) and params:get("arc_enc_1_mod") == 3 then
         if track[track_focus].play == 1 then
-          arc_inc1 = (arc_inc1 % 12) + 1
-          if arc_inc1 == 1 then
-            local shift = d / scrub_sens
+          arc_inc[n] = (arc_inc[n] % 12) + 1
+          if arc_inc[n] == 1 then
+            local shift = d / arc_scrub_sens
             local curr_pos = track[track_focus].pos_abs
             local new_pos = curr_pos + shift
             softcut.position(track_focus, new_pos)
@@ -426,15 +452,15 @@ function ui.arc_main_delta(n, d)
     -- enc 2: activate loop or move loop window
     elseif n == 2 then
       if track[track_focus].loop == 0 and (d > 2 or d < -2) and alt == 0 then
-        enc2_wait = true
-        loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end)
+        arc_wait = true
+        loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end, true)
         if env[track_focus].active then
           local e = {t = eGATEON, i = track_focus} event(e)
         end
         clock.run(function()
           clock.sleep(0.4)
-          enc2_wait = false
-          arc_inc2 = 0
+          arc_wait = false
+          arc_inc[n] = 0
         end)
       end
       if track[track_focus].loop == 1 and alt == 1 then
@@ -443,8 +469,8 @@ function ui.arc_main_delta(n, d)
           local e = {t = eGATEOFF, i = track_focus} event(e)
         end
       end
-      if track[track_focus].loop == 1 and not enc2_wait then
-        arc_inc2 = (arc_inc2 % 20) + 1
+      if track[track_focus].loop == 1 and not arc_wait then
+        arc_inc[n] = (arc_inc[n] % 20) + 1
         local new_loop_start = track[track_focus].loop_start + d / 200
         local new_loop_end = track[track_focus].loop_end + d / 200
         if math.abs(new_loop_start) - 1 <= track[track_focus].loop_end and math.abs(new_loop_end) <= 16 then
@@ -453,8 +479,8 @@ function ui.arc_main_delta(n, d)
         if math.abs(new_loop_end) + 1 >= track[track_focus].loop_start and math.abs(new_loop_start) >= 1 then
           track[track_focus].loop_end = util.clamp(new_loop_end, 0.1, 16)
         end
-        if arc_inc2 == 20 and track[track_focus].play == 1 and pattern_rec then
-          loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end)
+        if arc_inc[n] == 20 and track[track_focus].play == 1 and pattern_rec then
+          loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end, true)
         else
           local lstart = clip[track_focus].s + (track[track_focus].loop_start - 1) / 16 * clip[track_focus].l
           local lend = clip[track_focus].s + (track[track_focus].loop_end) / 16 * clip[track_focus].l
@@ -465,14 +491,14 @@ function ui.arc_main_delta(n, d)
       end
     -- enc 3: set loop start
     elseif n == 3 then
-      arc_inc3 = (arc_inc3 % 20) + 1
+      arc_inc[n] = (arc_inc[n] % 20) + 1
       local new_loop_start = track[track_focus].loop_start + d / 500
       if math.abs(new_loop_start) - 1 <= track[track_focus].loop_end then
         track[track_focus].loop_start = util.clamp(new_loop_start, 1, 16.9)
       end
       if track[track_focus].loop == 1 then
-        if arc_inc3 == 20 and track[track_focus].play == 1 and pattern_rec then
-          loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end)
+        if arc_inc[n] == 20 and track[track_focus].play == 1 and pattern_rec then
+          loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end, true)
         else
           local lstart = clip[track_focus].s + (track[track_focus].loop_start - 1) / 16 * clip[track_focus].l
           softcut.loop_start(track_focus, lstart)
@@ -485,14 +511,14 @@ function ui.arc_main_delta(n, d)
         arc_track_focus = util.clamp(arc_track_focus + d / 100, 1, 6)
         track_focus = math.floor(arc_track_focus)
       else
-        arc_inc4 = (arc_inc4 % 20) + 1
+        arc_inc[n] = (arc_inc[n] % 20) + 1
         local new_loop_end = track[track_focus].loop_end + d / 500
         if math.abs(new_loop_end) + 1 >= track[track_focus].loop_start then
           track[track_focus].loop_end = util.clamp(new_loop_end, 0.1, 16)
         end
         if track[track_focus].loop == 1 then
-          if arc_inc4 == 20 and track[track_focus].play == 1 and pattern_rec then
-            loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end)
+          if arc_inc[n] == 20 and track[track_focus].play == 1 and pattern_rec then
+            loop_event(track_focus, track[track_focus].loop_start, track[track_focus].loop_end, true)
           else
             local lend = clip[track_focus].s + (track[track_focus].loop_end) / 16 * clip[track_focus].l
             softcut.loop_end(track_focus, lend)
@@ -721,8 +747,8 @@ function ui.arc_lfo_delta(n, d)
     params:delta("lfo_offset_lfo_"..lfo_focus, d / 20)
   elseif n == 3 then
     if lfo[lfo_focus].mode == 'clocked' then
-      arc_inc5 = (arc_inc5 % 20) + 1
-      if arc_inc5 == 20 then
+      arc_inc[n] = (arc_inc[n] % 20) + 1
+      if arc_inc[n] == 20 then
         params:delta("lfo_clocked_lfo_"..lfo_focus, d / 50)
       end
     else
@@ -971,9 +997,6 @@ function ui.macro_redraw()
   screen.clear()
   screen.font_face(2)
   screen.font_size(8)
-  screen.level(15)
-  screen.move(4, 12)
-  screen.text("K - MACRO")
   if kmac.pattern_edit and kmac.slot_focus == 0 then
     screen.level(15)
     screen.move(64, 12)
@@ -1010,35 +1033,23 @@ function ui.macro_redraw()
     local macro = {"PT", "SN", "PI"}
     local txto = {}
     local txtz = {}
-    local num = ""
-    local cntr = ""
     local side = ""
-    if kmac.o.focus > 0 then
-      txto = kmac.slot[kmac.o[kmac.o.focus]] -- display assigned kit of focused page
-      num = kmac.o.focus
-      cntr = "set  "..kmac.o[kmac.o.focus]
-    elseif kmac.z.focus > 0 then
-      txto = kmac.slot[kmac.z[kmac.z.focus]] -- display assigned kit of focused page
-      num = kmac.z.focus + 2
-      cntr = "set  "..kmac.z[kmac.z.focus]
-    elseif kmac.slot_focus > 0 then
+    if kmac.slot_focus > 0 then
       txto = kmac.slot[kmac.slot_focus] -- display focused kit
-      cntr = "set  "..kmac.slot_focus
-      side = "EDIT"
+      side = kmac.slot_focus % 2 == 0 and "SEC" or "MAIN"
     else
-      txto = kmac.slot[kmac.o[kmac.o.key]] -- display active kit
-      txtz = kmac.slot[kmac.z[kmac.z.key]] -- display active kit
+      txto = kmac.slot[kmac.o.sec] -- display active kit
+      txtz = kmac.slot[kmac.z.sec + 2] -- display active kit
     end
-    screen.move(38, 12)
-    screen.text(num)
-    screen.move(64, 12)
-    screen.text_center(cntr)
+    screen.level(15)
+    screen.move(4, 12)
+    screen.text("MACRO SLOTS")
     screen.move(124, 12)
     screen.text_right(side)
     screen.font_face(68)
-    if (GRID_SIZE == 128 or kmac.o.focus > 0 or kmac.z.focus > 0 or kmac.slot_focus > 0) then
+    if (GRID_SIZE == 128 or kmac.slot_focus > 0) then
       for i = 1, 8 do
-        local data = ((txto[i] == mPTN and pattern[i].count > 0) or (txto[i] == mSNP and snap[i].data) or (txto[i] == mPIN and recall[i].has_data)) and true or false
+        local data = ((txto[i] == mPTN and pattern[i].count > 0) or (txto[i] == mSNP and snap[i].data) or (txto[i] == mPIN and punch[i].has_data)) and true or false
         screen.level(15)
         screen.rect(x_pos + 14 * (i - 1) - 5, y_pos - 8, 12, 12)
         screen.stroke()
@@ -1055,7 +1066,7 @@ function ui.macro_redraw()
       for i = 1, 8 do
         local y_posa = y_pos - 7
         local y_posb = y_pos + 8
-        local datao = ((txto[i] == mPTN and pattern[i].count > 0) or (txto[i] == mSNP and snap[i].data) or (txto[i] == mPIN and recall[i].has_data)) and true or false
+        local datao = ((txto[i] == mPTN and pattern[i].count > 0) or (txto[i] == mSNP and snap[i].data) or (txto[i] == mPIN and punch[i].has_data)) and true or false
         screen.level(15)
         screen.rect(x_pos + 14 * (i - 1) - 5, y_posa - 8, 12, 12)
         screen.stroke()
@@ -1068,7 +1079,7 @@ function ui.macro_redraw()
         screen.move(x_pos + 14 * (i - 1), y_posa)
         screen.text_center(macro[txto[i]])
 
-        local dataz = ((txtz[i] == mPTN and pattern[i].count > 0) or (txtz[i] == mSNP and snap[i].data) or (txtz[i] == mPIN and recall[i].has_data)) and true or false
+        local dataz = ((txtz[i] == mPTN and pattern[i].count > 0) or (txtz[i] == mSNP and snap[i].data) or (txtz[i] == mPIN and punch[i].has_data)) and true or false
         screen.level(15)
         screen.rect(x_pos + 14 * (i - 1) - 5, y_posb - 8, 12, 12)
         screen.stroke()
@@ -1106,8 +1117,9 @@ function ui.tape_key(n, z)
   elseif view_presets then
     if n == 2 and z == 1 then
       params:read(pset_focus)
-      local msg = shift == 0 and "pset   loaded" or "params   loaded"
-      show_message(msg)
+      if shift == 1 then
+        show_message("params   loaded")
+      end
       view_presets = false
     elseif n == 3 and z == 1 then
       local num = string.format("%0.2i", pset_focus)
@@ -1140,11 +1152,12 @@ function ui.tape_key(n, z)
           screenredrawtimer:stop()
           textentry.enter(filesave_callback, tp[i].splice[s].name)
         elseif tape_actions[tape_action] == "copy" and z == 1 then
-          copy_ref.track = i
-          copy_ref.splice = s
+          copy_src.i = i
+          copy_src.s = s
           show_message("ready   to   paste")
         elseif tape_actions[tape_action] == "paste" and z == 1 then
-          copy_splice_audio()
+          copy_splice_audio(i, s, copy_src)
+          copy_src = {}
         elseif tape_actions[tape_action] == "rename" and z == 0 then
           screenredrawtimer:stop()
           textentry.enter(filerename_callback, tp[i].splice[s].name)
@@ -1175,74 +1188,71 @@ end
 function edit_splices(n, d, src, sens)
   -- set local variables
   local i = track_focus
-  local focus = track[track_focus].splice_focus
-  local min_start = tp[track_focus].s
-  local max_start = tp[track_focus].e - tp[track_focus].splice[focus].l
-  local min_end = tp[track_focus].splice[focus].s + 0.1
-  local max_end = tp[track_focus].e
+  local s = track[i].splice_focus
+  local min_start = tp[i].s
+  local max_start = tp[i].e - tp[i].splice[s].l
+  local min_end = tp[i].splice[s].s + 0.1
+  local max_end = tp[i].e
   -- edit splice markers
   if n == (src == "enc" and 2 or 3) then
-    -- edit window
-    tp[i].splice[focus].s = util.clamp(tp[i].splice[focus].s + d / sens, min_start, max_start)
-    if tp[i].splice[focus].s > min_start then
-      tp[i].splice[focus].e = util.clamp(tp[i].splice[focus].e + d / sens, min_end, max_end)
+    -- edit startpoint
+    tp[i].splice[s].s = util.clamp(tp[i].splice[s].s + d / sens, min_start, max_start)
+    if tp[i].splice[s].s > min_start then
+      tp[i].splice[s].e = util.clamp(tp[i].splice[s].e + d / sens, min_end, max_end)
     end
-    local length = tp[i].splice[focus].e - tp[i].splice[focus].s
-    splice_resize(i, focus, length)
-    if src == "enc" then render_splice() end
   elseif n == (src == "enc" and 3 or 4) then
-    -- edit endpoint
-    tp[i].splice[focus].e = util.clamp(tp[i].splice[focus].e + d / sens, min_end, max_end)
-    local length = tp[i].splice[focus].e - tp[i].splice[focus].s
-    splice_resize(i, focus, length)
-    if src == "enc" then render_splice() end
+    -- edit length
+    tp[i].splice[s].e = util.clamp(tp[i].splice[s].e + d / sens, min_end, max_end)
+    tp[i].splice[s].l = tp[i].splice[s].e - tp[i].splice[s].s
+    tp[i].splice[s].bpm = 60 / tp[i].splice[s].l * tp[i].splice[s].beatnum
   end
-  if src == "arc" then
-    arc_render = util.wrap(arc_render + 1, 1, 10)
-    if arc_render == 10 then render_splice() end
+  -- update clip
+  if s == track[i].splice_active then
+    set_clip(i)
+  end
+  set_info(i, s)
+  -- render splice
+  if src == "enc" then
+    render_splice()
+  elseif src == "arc" then
+    arc_inc.render = util.wrap(arc_inc.render + 1, 1, 10)
+    if arc_inc.render == 10 then render_splice() end
   end
 end
 
 function ui.tape_enc(n, d)
   if n == 1 then
-    if shift == 1 then
-      params:delta("output_level", d)
-    else
-      track_focus = util.clamp(track_focus + d, 1, 6)
-      arc_track_focus = track_focus
-      arc_splice_focus = track[track_focus].splice_focus
-      render_splice()
-      dirtygrid = true
-    end
-  end
-  if view_batchload_options then
-    if n > 1 then
-      batchload_numfiles = util.clamp(batchload_numfiles + d, 1, 8)
-    end
-  elseif view_presets then
-    if n == 2 then
-      pset_focus = util.clamp(pset_focus + d, 1, #pset_list)
-    elseif n == 3 then
-      pset_focus = util.clamp(pset_focus + d, 1, #pset_list)
-    end
-  elseif view_track_send then
-    if n == 2 and sends_focus < 5 then
-      params:delta(sends_focus.."send_t5", d)
-    elseif n == 3 and sends_focus < 6 then
-      params:delta(sends_focus.."send_t6", d)
-    end
+    track_focus = util.clamp(track_focus + d, 1, 6)
+    arc_track_focus = track_focus
+    arc_splice_focus = track[track_focus].splice_focus
+    render_splice()
+    dirtygrid = true
   else
-    if shift == 0 then
-      if n == 2 then
-        tape_action = util.clamp(tape_action + d, 1, #tape_actions)
-      elseif n == 3 then
-        tp[track_focus].splice[track[track_focus].splice_focus].resize = util.clamp(tp[track_focus].splice[track[track_focus].splice_focus].resize + d, 1, 64)
-        if track[track_focus].tempo_map == 0 and tp[track_focus].splice[track[track_focus].splice_focus].resize > 57 then
-          tp[track_focus].splice[track[track_focus].splice_focus].resize = 57
-        end
+    if view_batchload_options then
+      batchload_numfiles = util.clamp(batchload_numfiles + d, 1, 8)
+    elseif view_presets then
+      pset_focus = util.clamp(pset_focus + d, 1, #pset_list)
+    elseif view_track_send then
+      if n == 2 and sends_focus < 5 then
+        params:delta(sends_focus.."send_t5", d)
+      elseif n == 3 and sends_focus < 6 then
+        params:delta(sends_focus.."send_t6", d)
       end
     else
-      edit_splices(n, d, "enc", 50)
+      if shift == 0 then
+        if n == 2 then
+          tape_action = util.clamp(tape_action + d, 1, #tape_actions)
+        elseif n == 3 then
+          local i = track_focus
+          local s = track[track_focus].splice_focus
+          tp[i].splice[s].resize = util.clamp(tp[i].splice[s].resize + d, 1, 64)
+          if track[i].tempo_map == 0 and tp[i].splice[s].resize > 57 then
+            tp[i].splice[s].resize = 57
+          end
+        end
+      else
+        edit_splices(n, d, "enc", 50)
+      end
     end
   end
   dirtyscreen = true
@@ -1307,7 +1317,7 @@ function ui.tape_redraw()
     -- actions
     screen.level(pulse_key_mid)
     screen.move(4, 60)
-    screen.text(shift == 0 and "pset  <" or "params  <")
+    screen.text(shift == 0 and "preset  <" or "params  <")
     screen.move(124, 60)
     screen.text_right(">  silent")
   -- track sends
@@ -1396,13 +1406,11 @@ function ui.tape_redraw()
     else
       -- display buffer
       screen.level(6)
-      local x_pos = 0
       for i, s in ipairs(waveform_samples[track_focus]) do
         local height = util.round(math.abs(s) * (14 / wave_gain[track_focus]))
-        screen.move(util.linlin(0, 128, 5, 123, x_pos), 36 - height)
+        screen.move(i + 4, 36 - height)
         screen.line_rel(0, 2 * height)
         screen.stroke()
-        x_pos = x_pos + 1
       end
       -- update buffer
       if track[track_focus].rec == 1 then
