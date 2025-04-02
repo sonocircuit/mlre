@@ -2423,7 +2423,7 @@ function pset_read_callback(filename, silent, number)
     loadsesh = {}
     loadsesh = tab.load(norns.state.data.."sessions/"..number.."/"..pset_id.."_session.data")
     if next(loadsesh) then
-      if loadsesh.format_v22_0 or loadsesh.newformat then
+      if loadsesh.format_v22_0 then
         -- set tempo
         if loadop.tempo > 1 then
           params:set("clock_tempo", loadsesh.tempo)
