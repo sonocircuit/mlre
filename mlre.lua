@@ -53,6 +53,7 @@ patterns_pageNum = 1
 track_focus = 1
 lfo_focus = 1
 env_focus = 1
+wrb_focus = 1
 pattern_focus = 1
 autofocus = true
 
@@ -63,6 +64,7 @@ arc_is = false
 mutes_active = false
 cutview_hold = false
 keyquant_edit = false
+warble_edit = false
 
 view_splice_info = false
 view_track_send = false
@@ -374,6 +376,7 @@ end
 -- punch-in macros
 punch = {}
 punch.rec = 0
+punch.override = false
 for i = 1, 8 do
   punch[i] = {}
   punch[i].has_data = false
@@ -400,6 +403,7 @@ for i = 1, 6 do
 end
 
 function save_event_state()
+  punch.override = false
   for i = 1, 6 do
     tmp[i].play = track[i].play
     tmp[i].rec = track[i].rec
@@ -418,44 +422,46 @@ function save_event_state()
 end
 
 function reset_event_state(sync)
-  for i = 1, 6 do
-    if track[i].play ~= tmp[i].play then
-      toggle_playback(i)
-    end
-    if track[i].rec ~= tmp[i].rec then
-      local e = {t = eREC, i = i, rec = tmp[i].rec, sync = sync} event(e)
-    end
-    if track[i].mute ~= tmp[i].mute then
-      local e = {t = eMUTE, i = i, mute = tmp[i].mute, sync = sync} event(e)
-    end
-    if track[i].route_t5 ~= tmp[i].route_t5 then
-      local e = {t = eROUTE, i = i, ch = 5, route = tmp[i].route_t5, sync = sync} event(e)
-    end
-    if track[i].route_t6 ~= tmp[i].route_t6 then
-      local e = {t = eROUTE, i = i, ch = 6, route = tmp[i].route_t6, sync = sync} event(e)
-    end
-    if tmp[i].loop == 1 then
-      loop_event(i, tmp[i].loop_start, tmp[i].loop_end)
-    elseif track[i].loop == 1 then
-      local e = {t = eUNLOOP, i = i, sync = sync} event(e)
-      track[i].loop_start = tmp[i].loop_start
-      track[i].loop_end = tmp[i].loop_end
-    end
-    if track[i].splice_active ~= tmp[i].splice_active then
-      local e = {t = eSPLICE, i = i, active = tmp[i].splice_active, sync = sync} event(e)
-    end
-    if track[i].speed ~= tmp[i].speed then
-      local e = {t = eSPEED, i = i, speed = tmp[i].speed, sync = sync} event(e)
-    end
-    if track[i].rev ~= tmp[i].rev then
-      local e = {t = eREV, i = i, rev = tmp[i].rev, sync = sync} event(e)
-    end
-    if track[i].transpose ~= tmp[i].transpose then
-      local e = {t = eTRSP, i = i, val = tmp[i].transpose, sync = sync} event(e)
-    end
-    if lfo[i].enabled ~= tmp[i].lfo_enabled then
-      local action = tmp[i].lfo_enabled == 1 and "lfo_on" or "lfo_off"
-      local e = {t = eLFO, i = i, action = action, sync = sync} event(e)
+  if not punch.override then
+    for i = 1, 6 do
+      if track[i].play ~= tmp[i].play then
+        toggle_playback(i)
+      end
+      if track[i].rec ~= tmp[i].rec then
+        local e = {t = eREC, i = i, rec = tmp[i].rec, sync = sync} event(e)
+      end
+      if track[i].mute ~= tmp[i].mute then
+        local e = {t = eMUTE, i = i, mute = tmp[i].mute, sync = sync} event(e)
+      end
+      if track[i].route_t5 ~= tmp[i].route_t5 then
+        local e = {t = eROUTE, i = i, ch = 5, route = tmp[i].route_t5, sync = sync} event(e)
+      end
+      if track[i].route_t6 ~= tmp[i].route_t6 then
+        local e = {t = eROUTE, i = i, ch = 6, route = tmp[i].route_t6, sync = sync} event(e)
+      end
+      if tmp[i].loop == 1 then
+        loop_event(i, tmp[i].loop_start, tmp[i].loop_end)
+      elseif track[i].loop == 1 then
+        local e = {t = eUNLOOP, i = i, sync = sync} event(e)
+        track[i].loop_start = tmp[i].loop_start
+        track[i].loop_end = tmp[i].loop_end
+      end
+      if track[i].splice_active ~= tmp[i].splice_active then
+        local e = {t = eSPLICE, i = i, active = tmp[i].splice_active, sync = sync} event(e)
+      end
+      if track[i].speed ~= tmp[i].speed then
+        local e = {t = eSPEED, i = i, speed = tmp[i].speed, sync = sync} event(e)
+      end
+      if track[i].rev ~= tmp[i].rev then
+        local e = {t = eREV, i = i, rev = tmp[i].rev, sync = sync} event(e)
+      end
+      if track[i].transpose ~= tmp[i].transpose then
+        local e = {t = eTRSP, i = i, val = tmp[i].transpose, sync = sync} event(e)
+      end
+      if lfo[i].enabled ~= tmp[i].lfo_enabled then
+        local action = tmp[i].lfo_enabled == 1 and "lfo_on" or "lfo_off"
+        local e = {t = eLFO, i = i, action = action, sync = sync} event(e)
+      end
     end
   end
 end
@@ -541,6 +547,7 @@ function launch_snapshot(n, i)
 end
 
 function snapshot_exec(n, i, sync)
+  punch.override = true
   -- flip the unflipped
   if mod == 1 and not track[i].loaded then
     load_track_tape(i, true)
@@ -824,6 +831,7 @@ for i = 1, 6 do
   track[i].rate = 1
   track[i].speed = 0
   track[i].warble = 0
+  track[i].wrbviz = 0
   track[i].rev = 0
   track[i].tempo_map = 0
   track[i].detune = 0
@@ -960,6 +968,23 @@ function splice_resize(i, s)
   end
 end
 
+function splice_resize_factor(i, s, factor)
+  local length = tp[i].splice[s].l * factor
+  local new_end = tp[i].splice[s].s + length
+  if new_end <= tp[i].e and new_end > tp[i].s then
+    tp[i].splice[s].e = tp[i].splice[s].s + length
+    tp[i].splice[s].l = length
+    tp[i].splice[s].bpm = 60 / length * tp[i].splice[s].beatnum
+    if s == track[i].splice_active then
+      set_clip(i)
+    end
+    set_info(i, s)
+    render_splice()
+  else
+    show_message("reached   size   limit")
+  end
+end
+
 function splice_reset(i, s) -- reset splice to saved default length
   local s = s or track[i].splice_focus
   -- reset variables
@@ -973,6 +998,7 @@ function splice_reset(i, s) -- reset splice to saved default length
     set_clip(i) 
   end
   set_info(i, s)
+  render_splice()
 end
 
 function mirror_splice(i, s, src, dst) -- copy splice to the other buffer
@@ -1438,19 +1464,20 @@ function phase_poll(i, pos)
   track[i].pos_lo_res = util.clamp(g_pos + 1 % 16, 1, 16) -- coarse mesh for grid
   -- if playing do stuff
   if track[i].play == 1 then
-    -- set positions
+    -- set hardware positions
     if track[i].pos_lo_res ~= track[i].pos_grid then
       track[i].pos_grid = track[i].pos_lo_res
+      -- trig warble at low resolution
+      if track[i].warble == 1 then
+        trig_warble_event(i)
+      end
     end
     if track[i].pos_arc ~= track[i].pos_hi_res then
       track[i].pos_arc = track[i].pos_hi_res
     end
-    if track[i].pos_rel ~= pp then
-      track[i].pos_rel = pp -- relative position within clip
-    end
-    if track[i].pos_clip ~= pc then
-      track[i].pos_clip = pc -- relative position within allocated buffer space
-    end
+    -- set screen positions
+    track[i].pos_rel = pp -- relative position within clip
+    track[i].pos_clip = pc -- relative position within allocated buffer space
     -- display position
     if (grido_view < vLFO or gridz_view < vLFO or grido_view == vTAPE) then
       dirtygrid = true
@@ -2000,49 +2027,65 @@ end
 
 --------------------- TAPE WARBLE -----------------------
 
-local wrblfo = {}
+local wrb = {}
+
+wrb.curves = {
+  {1, 1, 2, 2, 2, 1, 3, 2, 2, 4, 1, 0, 0, 1, 2, 1, 0, 1, 2, 1, 0},
+  {1, 2, 1, 0, 1, 2, 3, 4, 3, 2, 1, 0, 1, 1, 2, 3, 2, 1, 1, 0},
+  {1, 2, 3, 2, 1, 3, 5, 7, 8, 6, 4, 2, 1, 0, 1, 2, 3, 2, 1, 0},
+  {1, 2, 3, 4, 5, 6, 7, 6, 5, 2, 0, 2, 7, 6, 2, 1, 3, 2, 1, 0},
+  {1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
+  {1, 2, 4, 6, 3, 2, 1, 1, 0, 0, 2, 5, 5, 4, 3, 2, 1, 0},
+  {1, 1, 2, 3, 4, 2, 1, 0, 0, 0, 1, 1, 2, 3, 3, 1, 1, 0},
+  {1, 2, 5, 7, 9, 6, 4, 2, 0, 1, 2, 0},
+  {1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1, 0},
+  {1, 2, 0, 0, 1, 2, 3, 2, 3, 0, 1, 0},
+  {1, 2, 3, 4, 3, 2, 1, 0},
+  {1, 3, 6, 8, 5, 2, 1, 0},
+  {1, 2, 1, 0, 1, 2, 1, 0},
+  {1, 3, 6, 2, 1, 2, 0},
+  {1, 2, 1, 3, 1, 0},
+  {1, 2, 3, 2, 1, 0},
+  {1, 3, 2, 1, 0},
+  {1, 2, 3, 1, 0},
+  {1, 4, 6, 3, 0},
+  {2, 7, 9, 4, 0},
+  {2, 4, 6, 8, 0},
+  {1, 5, 2, 0},
+  {1, 2, 1, 0},
+  {1, 8, 2, 0}
+}
+
 for i = 1, 6 do
-  wrblfo[i] = _lfo:add{
-    shape = 'sine',
-    min = 0,
-    max = 1,
-    baseline = 'max',
-    depth = 0,
-    mode = 'free',
-    period = 1,
-    action = function(scaled, raw)
-      if track[i].play == 1 then
-        if wrblfo[i].active then
-          local warble_rate = track[i].rate * scaled
-          softcut.rate(i, warble_rate)
-          if raw < 0.01 then
-            wrblfo[i].active = false
-            update_rate(i)
-          end
-        else
-          if raw < 0.04 and math.random(150) < wrblfo[i].amount then
-            wrblfo[i].active = true
+  wrb[i] = {}
+  wrb[i].clk = nil
+  wrb[i].idle = true
+  wrb[i].amount = 0
+  wrb[i].depth = 0
+end
+
+function trig_warble_event(i)
+  if wrb[i].idle then
+    if math.random(400) < wrb[i].amount then
+      wrb[i].idle = false
+      local curve = wrb.curves[math.random(1, #wrb.curves)]
+      local depth = math.random(wrb[i].depth - 8, wrb[i].depth) * 1.86e-04
+      local t = math.random(22, 32) - math.floor(wrb[i].depth / 10)
+      clock.run(function()
+        for n = 1, #curve do
+          local wrb_rate = track[i].rate * (1 - curve[n] * depth)
+          softcut.rate(i, wrb_rate)
+          track[i].wrbviz = curve[n]
+          clock.sleep(1/t)
+          if n == #curve then
+            wrb[i].idle = true
+            track[i].wrbviz = 0
           end
         end
-      end
+      end)
     end
-  }
-  wrblfo[i]:set('ppqn', 12)
-  wrblfo[i].amount = 0
-  wrblfo[i].active = false
-end
-
-function toggle_warble(i, state)
-  track[i].warble = state - 1
-  if state == 1 then
-    wrblfo[i]:stop()
-    update_rate(i)
-  else
-    wrblfo[i]:start()
   end
-  grid_page(vREC)
 end
-
 
 --------------------- RAND -----------------------
 
@@ -3061,7 +3104,7 @@ function init()
   audio.level_tape(1)
 
   for i = 1, 6 do
-    params:add_group("track_group"..i, "track "..i, 51)
+    params:add_group("track_group"..i, "track "..i, 50)
 
     -- track options
     params:add_separator("track_options_params"..i, "track "..i.." options")
@@ -3151,18 +3194,15 @@ function init()
     -- track warble
     params:add_separator("warble_params"..i, "track "..i.." warble")
 
-    params:add_option(i.."warble_state", "active", {"no", "yes"}, 1)
-    params:set_action(i.."warble_state", function(state) toggle_warble(i, state) end)
+    params:add_option(i.."warble_state", "state", {"off", "on"}, 1)
+    params:set_action(i.."warble_state", function(state) track[i].warble = state - 1 grid_page(vREC) end)
     
-    params:add_number(i.."warble_amount", "amount", 0, 100, 10, function(param) return (param:get().."%") end)
-    params:set_action(i.."warble_amount", function(val) wrblfo[i].amount = val end)
+    params:add_number(i.."warble_amount", "amount", 1, 100, 20, function(param) return (param:get().."%") end)
+    params:set_action(i.."warble_amount", function(val) wrb[i].amount = val end)
     
-    params:add_number(i.."warble_depth", "depth", 0, 100, 12, function(param) return (param:get().."%") end)
-    params:set_action(i.."warble_depth", function(val) wrblfo[i]:set('depth', val / 500) end)
+    params:add_number(i.."warble_depth", "intensity", 10, 100, 32, function(param) return (param:get().."%") end)
+    params:set_action(i.."warble_depth", function(val) wrb[i].depth = val end)
     
-    params:add_control(i.."warble_freq", "freq", controlspec.new(0.2, 2.0, "lin", 0, 0.6, ""), function(param) return (round_form(1 / param:get(), 0.1, "Hz")) end)
-    params:set_action(i.."warble_freq", function(val) wrblfo[i]:set('period', val) end)
-
     -- track envelope
     params:add_separator("envelope_params"..i, "track "..i.." envelope")
 
@@ -3190,20 +3230,20 @@ function init()
     -- track triggers
     params:add_separator(i.."trigger_params", "track "..i.." triggers")
  
-    params:add_option(i.."rec_at_step", "rec @step", {"off", "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"}, 1)
+    params:add_option(i.."rec_at_step", "rec@step", {"off", "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"}, 1)
     params:set_action(i.."rec_at_step", function(num) trig[i].rec_step = num - 1 end)
 
-    params:add_option(i.."trig_at_step", "trig @step", {"off", "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"}, 1)
+    params:add_option(i.."trig_at_step", "trig@step", {"off", "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"}, 1)
     params:set_action(i.."trig_at_step", function(num) trig[i].step = num - 1 end)
 
-    params:add_option(i.."trig_at_count", "trig @count", {"off", "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"}, 1)
+    params:add_option(i.."trig_at_count", "trig@count", {"off", "1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"}, 1)
     params:set_action(i.."trig_at_count", function(num) trig[i].count = num - 1 end)
 
     params:add_option(i.."trig_out", "trig output", {"off", "crow 1", "crow 2", "crow 3", "crow 4", "midi"}, 1)
-    params:set_action(i.."trig_out", function(num) trig[i].out = num build_menu(i) end)
+    params:set_action(i.."trig_out", function(num) trig[i].out = num build_trig_menu(i) end)
 
     params:add_option(i.."trig_type", "trig mode", {"pulse", "envelope"}, 1)
-    params:set_action(i.."trig_type", function(mode) trig[i].pulse = mode == 1 and true or false build_menu(i) end)
+    params:set_action(i.."trig_type", function(mode) trig[i].pulse = mode == 1 and true or false build_trig_menu(i) end)
 
     params:add_control(i.."crow_amp", "amplitude", controlspec.new(0.1, 10, "lin", 0.1, 8, "v"))
     params:set_action(i.."crow_amp", function(val) trig[i].amp = val end)
@@ -3267,6 +3307,7 @@ function init()
   softcut.poll_start_phase()
   softcut.event_position(get_pos)
 
+  -- amp polls
   amp_in = {}
   local amp_src = {"amp_in_l", "amp_in_r"}
   for ch = 1, 2 do
@@ -3363,6 +3404,7 @@ v = {}
 v.key = {}
 v.enc = {}
 v.redraw = {}
+v.arckey = {}
 v.arcdelta = {}
 v.arcredraw = {}
 v.gridkey_o = {}
@@ -3383,7 +3425,6 @@ function set_gridview(x, pos)
     _gridredraw_z = v.gridredraw_z[x]
   end
   if pmac_edit_view and x ~= vMACRO then pmac_edit_view = false end
-  if pmac_perf_view and x == vTAPE then pmac_perf_view = false end
   grd.clear_keylogic()
   screen.ping()
   dirtyscreen = true
@@ -3397,8 +3438,10 @@ function set_view(x)
   _key = v.key[x]
   _enc = v.enc[x]
   _redraw = v.redraw[x]
+  _arckey = v.arckey[x]
   _arcdelta = v.arcdelta[x]
   _arcredraw = v.arcredraw[x]
+  if pmac_perf_view and x == vTAPE then toggle_pmac_perf_view(0) end
   dirtyscreen = true
   dirtygrid = true
 end
@@ -3440,6 +3483,8 @@ function key(n, z)
       ui.pmac_perf_key(n, z)
     elseif pmac_edit_view then
       ui.pmac_edit_key(n, z)
+    elseif warble_edit then
+      -- do nothing
     else
       _key(n, z)
     end
@@ -3456,6 +3501,8 @@ function enc(n, d)
     ui.pmac_perf_enc(n, d)
   elseif pmac_edit_view then
     ui.pmac_edit_enc(n, d)
+  elseif warble_edit then
+    ui.wrbl_enc(n, d)
   else
     _enc(n, d)
   end
@@ -3470,9 +3517,15 @@ function redraw()
     ui.pmac_perf_redraw()
   elseif pmac_edit_view then
     ui.pmac_edit_redraw()
+  elseif warble_edit then
+    ui.wrbl_redraw()
   else
     _redraw()
   end
+end
+
+function a.key(n, z)
+  _arckey(n, z)
 end
 
 function a.delta(n, d)
@@ -3580,12 +3633,14 @@ end
 function arc_connected()
   hardwareredraw()
   arc_is = true
-  build_menu()
+  params:show("arc_params")
+  _menu.rebuild_params()
 end
 
 function arc_removed()
   arc_is = false
-  build_menu()
+  params:hide("arc_params")
+  _menu.rebuild_params()
 end
 
 
@@ -3601,6 +3656,10 @@ end
   
 v.redraw[vMAIN] = function()
   ui.main_redraw()
+end
+
+v.arckey[vMAIN] = function(n, z)
+  ui.arc_main_key(n, z)
 end
 
 v.arcdelta[vMAIN] = function(n, d)
@@ -3707,6 +3766,10 @@ v.redraw[vLFO] = function()
   ui.lfo_redraw()
 end
 
+v.arckey[vLFO] = function(n, z)
+  ui.arc_lfo_key(n, z)
+end
+
 v.arcdelta[vLFO] = function(n, d)
   ui.arc_lfo_delta(n, d)
 end
@@ -3752,6 +3815,10 @@ end
 
 v.redraw[vENV] = function()
   ui.env_redraw()
+end
+
+v.arckey[vENV] = function(n, z)
+  ui.arc_env_key(n, z)
 end
 
 v.arcdelta[vENV] = function(n, d)
@@ -3801,6 +3868,10 @@ v.redraw[vMACRO] = function()
   ui.macro_redraw()
 end
 
+v.arckey[vMACRO] = function(n, z)
+  ui.arc_main_key(n, z)
+end
+
 v.arcdelta[vMACRO] = function(n, d)
   ui.arc_main_delta(n, d)
 end
@@ -3848,6 +3919,10 @@ v.redraw[vTAPE] = function()
   ui.tape_redraw()
 end
 
+v.arckey[vTAPE] = function(n, z)
+  ui.arc_tape_key(n, z)
+end
+
 v.arcdelta[vTAPE] = function(n, d)
   ui.arc_tape_delta(n, d)
 end
@@ -3887,7 +3962,7 @@ function r()
   norns.script.load(norns.state.script)
 end
 
-function build_menu(i)
+function build_trig_menu(i)
   local i = i or 1
   if trig[i].out == 1 then
     params:hide(i.."trig_type")
@@ -3920,13 +3995,6 @@ function build_menu(i)
     params:show(i.."midi_note")
     params:show(i.."midi_vel")
   end
-  if arc_is then
-    params:show("arc_params")
-  else
-    params:hide("arc_params")
-  end
-  _menu.rebuild_params()
-  dirtyscreen = true
 end
 
 function get_beatnum(length)
