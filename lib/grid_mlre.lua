@@ -349,25 +349,7 @@ function grd.rec_keys(x, y, z, offset)
   end
   if y > 1 and y < 8 then
     local i = y - 1
-    if x > 2 and x < 7 then
-      snap_track = z == 1 and i or 0
-      if z == 1 then
-        if track_focus ~= i then
-          track_focus = i
-          arc_track_focus = track_focus
-          dirtyscreen = true
-          render_splice(i)
-        end
-        if alt == 1 and mod == 0 then
-          params:set(i.."tempo_map_mode", util.wrap(track[i].tempo_map + 2, 1, 3))
-        elseif alt == 0 and mod == 1 then
-          params:set(i.."tape_side", tp[i].side == 1 and 2 or 1)
-        end
-        if x == 3 and not track[i].loaded then
-          queue_track_tape(i)
-        end
-      end
-    elseif x == 1 and z == 1 then
+    if x == 1 and z == 1 then
       if alt == 0 then
         if mod == 0 then
           toggle_rec(i)
@@ -385,21 +367,49 @@ function grd.rec_keys(x, y, z, offset)
       end
     elseif x == 2 and z == 1 then
       arm_thresh_rec(i)
-    elseif x == 16 and alt == 0 and mod == 0 and z == 1 then
-      toggle_playback(i)
-    elseif x == 16 and alt == 0 and mod == 1 and z == 1 then
-      track[i].sel = 1 - track[i].sel
-    elseif x == 16 and alt == 1 and mod == 0 and z == 1 then
-      local e = {t = eMUTE, i = i, mute = (1 - track[i].mute)} event(e)
-    elseif x > 8 and x < 16 and alt == 0 and z == 1 then
-      local e = {t = eSPEED, i = i, speed = (x - 12)} event(e)
-    elseif x == 8 and alt == 0 and z == 1 then
+    elseif x > 2 and x < 7 then
+      snap_track = z == 1 and i or 0
+      if z == 1 then
+        if track_focus ~= i then
+          track_focus = i
+          arc_track_focus = track_focus
+          dirtyscreen = true
+          render_splice(i)
+        end
+        if alt == 1 and mod == 0 then
+          params:set(i.."tempo_map_mode", util.wrap(track[i].tempo_map + 2, 1, 3))
+        elseif alt == 0 and mod == 1 then
+          params:set(i.."tape_side", tp[i].side == 1 and 2 or 1)
+        end
+        if x == 3 and not track[i].loaded then
+          queue_track_tape(i)
+        end
+      end
+    elseif x == 7 then
+      wrb_focus = i
+      if alt == 1 and z == 1 then
+        params:set(i.."warble_state", track[i].warble == 0 and 2 or 1)
+        update_rate(i)
+      elseif track[i].warble == 1 then
+        warble_edit = z == 1 and true or false
+        dirtyscreen = true
+      end
+    elseif x == 8 and z == 1 then
       local e = {t = eREV, i = i, rev = (1 - track[i].rev)} event(e)
-    elseif x == 8 and alt == 1 and z == 1 then
-      params:set(i.."warble_state", track[i].warble == 0 and 2 or 1)
-      update_rate(i)
-    elseif x == 12 and alt == 1 and z == 1 then
-      randomize(i)
+    elseif x > 8 and x < 16 and z == 1 then
+      if alt == 0 then
+        local e = {t = eSPEED, i = i, speed = (x - 12)} event(e)
+      elseif x == 12 then
+        randomize(i)
+      end
+    elseif x == 16 and z == 1 then
+      if alt == 0 and mod == 0 then
+        toggle_playback(i)
+      elseif alt == 0 and mod == 1 then
+        track[i].sel = 1 - track[i].sel
+      elseif alt == 1 and mod == 0 then
+        local e = {t = eMUTE, i = i, mute = (1 - track[i].mute)} event(e)
+      end
     end
   elseif y == 8 then -- cut for focused track
     if GRID_SIZE == 128 or offset == 8 then 
@@ -412,14 +422,14 @@ function grd.rec_draw(offset)
   local off = offset or 0
   g:led(4, track_focus + 1 + off, tp[track_focus].side == 1 and 7 or 3)
   g:led(5, track_focus + 1 + off, tp[track_focus].side == 2 and 7 or 3)
+  g:led(6, track_focus + 1 + off, track[track_focus].tempo_map * 6 + 2)
   for i = 1, 6 do
     local y = i + 1 + off
     g:led(1, y, track[i].rec_enabled and (track[i].rec == 1 and 15 or (track[i].fade == 1 and 7 or 3)) or 1)
     g:led(2, y, track[i].oneshot == 1 and pulse_key_fast or 0)
     g:led(3, y, track[i].loaded and (track_focus == i and 7 or 0) or pulse_key_mid)
-    g:led(6, y, track[i].tempo_map == 1 and 7 or (track[i].tempo_map == 2 and 12 or (track_focus == i and 3 or 0)))
-    g:led(8, y, track[i].rev == 1 and (track[i].warble == 1 and 15 or 11) or (track[i].warble == 1 and 8 or 4))
-    g:led(16, y, 3) -- start/stop
+    g:led(7, y, track[i].warble == 1 and (2 + track[i].wrbviz) or 0)
+    g:led(8, y, track[i].rev == 1 and 12 or 6)
     if track[i].mute == 1 then
       g:led(16, y, track[i].play == 0 and (track[i].sel == 0 and pulse_key_slow - 2 or pulse_key_slow) or (track[i].sel == 0 and pulse_key_slow or pulse_key_slow + 3))
     elseif track[i].play == 1 and track[i].sel == 1 then
@@ -428,6 +438,8 @@ function grd.rec_draw(offset)
       g:led(16, y, 10)
     elseif track[i].play == 0 and track[i].sel == 1 then
       g:led(16, y, 5)
+    else
+      g:led(16, y, 3)
     end
     g:led(12, y, 3)
     g:led(12 + track[i].speed, y, 9)
