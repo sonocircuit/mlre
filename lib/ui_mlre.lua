@@ -34,6 +34,8 @@ local patterns_page_names_r = {"length", "play   mode"}
 local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "rename", "format >", "format >>>"}
 local tape_action = 2
 local copy_src = {}
+local length_action = 2
+local length_actions = {": 2", "set", "x 2"}
 
 -- p-macro variables
 local pmac_pageNum = 1
@@ -48,8 +50,15 @@ local arc_track_focus = 1
 local arc_splice_focus = 1
 local arc_wait = false
 local arc_off = 0
+local arc_enc_start = false
+local arc_enc_dir = false
+local arc_enc_mod = 1
 local arc_scrub_sens = 100
 local arc_pmac_sens = 20
+local arc_shortpress = false
+local arc_keypresstimer = nil
+local arc_highres = false
+local mod_rate_clk = nil
 
 local arc_pmac = {}
 for i = 1, 4 do
@@ -86,15 +95,29 @@ end
 ---------------------- PARAMS -------------------------
 function ui.arc_params()
   params:add_group("arc_params", "arc settings", 6)
-  params:add_option("arc_orientation", "arc orientation", {"horizontal", "vertical"}, 1)
+  params:add_option("arc_orientation", "arc orientation", {"0°", "90°", "180°", "270°"}, 1)
   params:set_action("arc_orientation", function(val) arc_off = (val - 1) * 16 end)
+
   params:add_option("arc_enc_1_start", "enc1 > start", {"off", "on"}, 2)
+  params:set_action("arc_enc_1_start", function(mode) arc_enc_start = mode == 2 and true or false end)
+  
   params:add_option("arc_enc_1_dir", "enc1 > direction", {"off", "on"}, 1)
+  params:set_action("arc_enc_1_dir", function(mode) arc_enc_dir = mode == 2 and true or false end)
+  
   params:add_option("arc_enc_1_mod", "enc1 > mod", {"off", "warble", "scrub"}, 3)
-  params:add_number("arc_srub_sens", "scrub sensitivity", 1, 10, 6)
+  params:set_action("arc_enc_1_mod", function(val) arc_enc_mod = val end)
+  
+  params:add_number("arc_srub_sens", "scrub sensitivity", 1, 10, 10)
   params:set_action("arc_srub_sens", function(val) arc_scrub_sens = -50 * val + 550 end)
+
   params:add_number("arc_arc_pmac_sens", "p-macro sensitivity", 1, 10, 2)
   params:set_action("arc_arc_pmac_sens", function(val) arc_pmac_sens = 5 * val end)
+
+  if arc_is then
+    params:show("arc_params")
+  else
+    params:hide("arc_params")
+  end
 end
 
 
@@ -315,6 +338,42 @@ function ui.pmac_edit_redraw()
   screen.update()
 end
 
+---------------------- WARBLE MENU -------------------------
+
+function ui.wrbl_enc(n, d)
+  if n == 2 then
+    params:delta(wrb_focus.."warble_amount", d)
+  elseif n == 3 then
+    params:delta(wrb_focus.."warble_depth", d)
+  end
+  dirtyscreen = true
+end
+
+function ui.wrbl_redraw()
+  screen.clear()
+  screen.font_face(2)
+  screen.font_size(8)
+  screen.level(15)
+  screen.move(4, 12)
+  screen.text("TRACK "..wrb_focus)
+  screen.move(124, 12)
+  screen.text_right("WARBLE")
+  screen.font_size(8)
+  screen.level(4)
+  screen.move(35, 54)
+  screen.text_center("amount")
+  screen.level(4)
+  screen.move(94, 54)
+  screen.text_center("intensity")
+  screen.font_size(16)
+  screen.level(15)
+  screen.move(35, 40)
+  screen.text_center(params:string(wrb_focus.."warble_amount"))
+  screen.move(94, 40)
+  screen.text_center(params:string(wrb_focus.."warble_depth"))
+  screen.update()
+end
+
 
 ---------------------- MAIN VIEW -------------------------
 
@@ -377,21 +436,42 @@ function ui.main_redraw()
   screen.update()
 end
 
+function ui.arc_main_key(n, z)
+  if z == 1 then
+    arc_keypresstimer = clock.run(function()
+      arc_shortpress = true
+      clock.sleep(0.4)
+      arc_shortpress = false
+      arc_keypresstimer = nil
+      toggle_pmac_perf_view(z)
+    end)
+  else
+    if arc_keypresstimer ~= nil then
+      clock.cancel(arc_keypresstimer)
+    end
+    if arc_shortpress then
+      arc_pageNum = arc_pageNum == 1 and 2 or 1
+    else
+      toggle_pmac_perf_view(z)
+    end
+  end
+end
+
 function ui.arc_main_delta(n, d)
   if arc_pageNum == 1 then
     -- enc 1:
     if n == 1 then
       -- start playback
-      if params:get("arc_enc_1_start") == 2 then
+      if arc_enc_start then
         if track[track_focus].play == 0 and (d > 2 or d < -2) then
           local e = {t = eSTART, i = track_focus} event(e)
-          if params:get(track_focus.."play_mode") == 3 then
+          if track[track_focus].play_mode == 3 then
             local e = {t = eGATEON, i = track_focus} event(e)
           end
         end
       end
       -- stop playback when enc stops
-      if params:get(track_focus.."play_mode") == 3 then
+      if track[track_focus].play_mode == 3 then
         arc_inc.stop = (arc_inc.stop % 100) + 1
         if detect_stop ~= nil then
           clock.cancel(detect_stop)
@@ -410,7 +490,7 @@ function ui.arc_main_delta(n, d)
         end)
       end
       -- set direction
-      if params:get("arc_enc_1_dir") == 2 then
+      if arc_enc_dir then
         if d < -2 and track[track_focus].rev == 0 then
           local e = {t = eREV, i = track_focus, rev = 1} event(e)
         elseif d > 2 and track[track_focus].rev == 1 then
@@ -418,19 +498,15 @@ function ui.arc_main_delta(n, d)
         end
       end
       -- temp warble
-      if (d > 10 or d < -10) and params:get("arc_enc_1_mod") == 2 then
-        if track[track_focus].play == 1 then
-          clock.run(function()
-            local speedmod = d / 80
-            local n = math.pow(2, track[track_focus].speed + track[track_focus].transpose + track[track_focus].detune)
-            if track[track_focus].rev == 1 then n = -n end
-            if track[track_focus].tempo_map == 2 then
-              local bpmmod = clock.get_tempo() / clip[i].bpm
-              n = n * bpmmod
-            end
-            local rate = n * speedmod
-            softcut.rate_slew_time(track_focus, 0.25)
-            softcut.rate(track_focus, rate)
+      if arc_enc_mod == 2 then
+        if (d > 10 or d < -10) and track[track_focus].play == 1 then
+          local mod_rate = track[track_focus].rate + (d / 80)
+          softcut.rate_slew_time(track_focus, 0.25)
+          softcut.rate(track_focus, mod_rate)
+          if mod_rate_clk ~= nil then
+            clock.cancel(mod_rate_clk)
+          end
+          mod_rate_clk = clock.run(function()
             clock.sleep(0.4)
             update_rate(track_focus)
             softcut.rate_slew_time(track_focus, track[track_focus].rate_slew)
@@ -438,13 +514,11 @@ function ui.arc_main_delta(n, d)
         end
       end
       -- scrub
-      if (d > 2 or d < -2) and params:get("arc_enc_1_mod") == 3 then
-        if track[track_focus].play == 1 then
-          arc_inc[n] = (arc_inc[n] % 12) + 1
+      if arc_enc_mod == 3 then
+        if (d > 2 or d < -2) and track[track_focus].play == 1 then
+          arc_inc[n] = (arc_inc[n] % 10) + 1
           if arc_inc[n] == 1 then
-            local shift = d / arc_scrub_sens
-            local curr_pos = track[track_focus].pos_abs
-            local new_pos = curr_pos + shift
+            local new_pos = track[track_focus].pos_abs + (d / arc_scrub_sens)
             softcut.position(track_focus, new_pos)
           end
         end
@@ -463,7 +537,7 @@ function ui.arc_main_delta(n, d)
           arc_inc[n] = 0
         end)
       end
-      if track[track_focus].loop == 1 and alt == 1 then
+      if track[track_focus].loop == 1 and alt == 1 then --TODO: add arc longpress
         local e = {t = eUNLOOP, i = track_focus} event(e)
         if env[track_focus].active then
           local e = {t = eGATEOFF, i = track_focus} event(e)
@@ -735,6 +809,10 @@ function ui.lfo_redraw()
   screen.update()
 end
 
+function ui.arc_lfo_key(n, z)
+  toggle_pmac_perf_view(z)
+end
+
 function ui.arc_lfo_delta(n, d)
   if n == 1 then
     params:delta("lfo_depth_lfo_"..lfo_focus, d / 10)
@@ -905,6 +983,10 @@ function ui.env_redraw()
   -- display messages
   display_message()
   screen.update()
+end
+
+function ui.arc_env_key(n, z)
+  toggle_pmac_perf_view(z)
 end
 
 function ui.arc_env_delta(n, d)
@@ -1173,13 +1255,17 @@ function ui.tape_key(n, z)
       end
     else
       if n == 2 and z == 1 then
-        tp[i].splice[s].init_len = tp[i].splice[s].l
-        tp[i].splice[s].init_start = tp[i].splice[s].s
-        tp[i].splice[s].init_beatnum = tp[i].splice[s].beatnum
-        show_message("default   markers   set")
+        if length_action == 2 then
+          tp[i].splice[s].init_len = tp[i].splice[s].l
+          tp[i].splice[s].init_start = tp[i].splice[s].s
+          tp[i].splice[s].init_beatnum = tp[i].splice[s].beatnum
+          show_message("default   markers   set")
+        else
+          local factor = length_action == 1 and 0.5 or 2
+          splice_resize_factor(i, s, factor)
+        end
       elseif n == 3 and z == 1 then
         splice_reset(i, s)
-        render_splice()
       end
     end
   end
@@ -1193,6 +1279,7 @@ function edit_splices(n, d, src, sens)
   local max_start = tp[i].e - tp[i].splice[s].l
   local min_end = tp[i].splice[s].s + 0.1
   local max_end = tp[i].e
+  local sens = arc_highres and (sens * 0.05) or sens
   -- edit splice markers
   if n == (src == "enc" and 2 or 3) then
     -- edit startpoint
@@ -1222,11 +1309,15 @@ end
 
 function ui.tape_enc(n, d)
   if n == 1 then
-    track_focus = util.clamp(track_focus + d, 1, 6)
-    arc_track_focus = track_focus
-    arc_splice_focus = track[track_focus].splice_focus
-    render_splice()
-    dirtygrid = true
+    if shift == 0 then
+      track_focus = util.clamp(track_focus + d, 1, 6)
+      arc_track_focus = track_focus
+      arc_splice_focus = track[track_focus].splice_focus
+      render_splice()
+      dirtygrid = true
+    else
+      length_action = util.clamp(length_action + d, 1, 3)
+    end
   else
     if view_batchload_options then
       batchload_numfiles = util.clamp(batchload_numfiles + d, 1, 8)
@@ -1380,7 +1471,7 @@ function ui.tape_redraw()
     if shift == 0 then
       screen.text_center(tape_actions[tape_action])
     else
-      screen.text_center("set")
+      screen.text_center(length_actions[length_action])
     end
     screen.level(15)
     screen.move(76, 60)
@@ -1460,6 +1551,10 @@ function ui.tape_redraw()
   -- display messages
   display_message()
   screen.update()
+end
+
+function ui.arc_tape_key(n, z)
+  arc_highres = z == 1 and true or false
 end
 
 function ui.arc_tape_delta(n, d)
