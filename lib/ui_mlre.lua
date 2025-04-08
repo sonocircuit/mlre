@@ -49,11 +49,15 @@ local arc_lfo_focus = 1
 local arc_track_focus = 1
 local arc_splice_focus = 1
 local arc_wait = false
-local arc_off = 0
+local off_viz = 0
+local _1 = off_viz < 3 and 1 or 4
+local _2 = off_viz < 3 and 2 or 3
+local _3 = off_viz < 3 and 3 or 2
+local _4 = off_viz < 3 and 4 or 1
 local arc_enc_start = false
 local arc_enc_dir = false
 local arc_enc_mod = 1
-local arc_scrub_sens = 100
+local arc_mod_sens = 100
 local arc_pmac_sens = 20
 local arc_shortpress = false
 local arc_keypresstimer = nil
@@ -96,7 +100,13 @@ end
 function ui.arc_params()
   params:add_group("arc_params", "arc settings", 6)
   params:add_option("arc_orientation", "arc orientation", {"0°", "90°", "180°", "270°"}, 1)
-  params:set_action("arc_orientation", function(val) arc_off = (val - 1) * 16 end)
+  params:set_action("arc_orientation", function(val)
+    off_viz = (val - 1) * 16
+    _1 = val < 3 and 1 or 4
+    _2 = val < 3 and 2 or 3
+    _3 = val < 3 and 3 or 2
+    _4 = val < 3 and 4 or 1
+  end)
 
   params:add_option("arc_enc_1_start", "enc1 > start", {"off", "on"}, 2)
   params:set_action("arc_enc_1_start", function(mode) arc_enc_start = mode == 2 and true or false end)
@@ -107,10 +117,10 @@ function ui.arc_params()
   params:add_option("arc_enc_1_mod", "enc1 > mod", {"off", "warble", "scrub"}, 3)
   params:set_action("arc_enc_1_mod", function(val) arc_enc_mod = val end)
   
-  params:add_number("arc_srub_sens", "scrub sensitivity", 1, 10, 10)
-  params:set_action("arc_srub_sens", function(val) arc_scrub_sens = -50 * val + 550 end)
+  params:add_number("arc_mod_sens", "mod sensitivity", 1, 10, 4)
+  params:set_action("arc_mod_sens", function(val) arc_mod_sens = 550 - val * 50 end) 
 
-  params:add_number("arc_arc_pmac_sens", "p-macro sensitivity", 1, 10, 2)
+  params:add_number("arc_arc_pmac_sens", "p-macro sensitivity", 1, 10, 4)
   params:set_action("arc_arc_pmac_sens", function(val) arc_pmac_sens = 5 * val end)
 
   if arc_is then
@@ -201,7 +211,7 @@ end
 ---------------------- PMAC PERF -------------------------
 function ui.pmac_perf_key(n, z)
   if z == 1 and n > 1 then
-    pmac_pageEnc = n - 2
+    pmac_pageEnc = pmac_pageEnc == 1 and 2 or 1
   end
 end
 
@@ -267,18 +277,19 @@ end
 function ui.arc_pmac_draw()
   a:all(0)
   for i = 1, 4 do
+    local i = off_viz < 3 and i or 5 - i
     local pos = arc_pmac[i].viz
     if pos > 0 then
       for n = 1, pos do
-        a:led(i, n - arc_off, 6)
+        a:led(i, n - off_viz, 6)
       end
     else
       for n = 0, pos, -1 do
-        a:led(i, n - arc_off, 6)
+        a:led(i, n - off_viz, 6)
       end
     end
-    a:led(i, pos - arc_off, 15)
-    a:led(i, 1 - arc_off, 8)
+    a:led(i, pos - off_viz, 15)
+    a:led(i, 1 - off_viz, 8)
   end
   a:refresh()
 end
@@ -440,24 +451,29 @@ function ui.arc_main_key(n, z)
   if z == 1 then
     arc_keypresstimer = clock.run(function()
       arc_shortpress = true
-      clock.sleep(0.4)
+      clock.sleep(0.2)
       arc_shortpress = false
       arc_keypresstimer = nil
       toggle_pmac_perf_view(z)
+      dirtyscreen = true
     end)
   else
     if arc_keypresstimer ~= nil then
       clock.cancel(arc_keypresstimer)
     end
     if arc_shortpress then
+      local msg = {"arc  -  play head", "arc  -  levels"}
       arc_pageNum = arc_pageNum == 1 and 2 or 1
+      show_message(msg[arc_pageNum])
     else
       toggle_pmac_perf_view(z)
+      dirtyscreen = true
     end
   end
 end
 
 function ui.arc_main_delta(n, d)
+  local n = off_viz < 3 and n or 5 - n
   if arc_pageNum == 1 then
     -- enc 1:
     if n == 1 then
@@ -499,8 +515,8 @@ function ui.arc_main_delta(n, d)
       end
       -- temp warble
       if arc_enc_mod == 2 then
-        if (d > 10 or d < -10) and track[track_focus].play == 1 then
-          local mod_rate = track[track_focus].rate + (d / 80)
+        if (d > 4 or d < -4) and track[track_focus].play == 1 then
+          local mod_rate = track[track_focus].rate + (d / arc_mod_sens)
           softcut.rate_slew_time(track_focus, 0.25)
           softcut.rate(track_focus, mod_rate)
           if mod_rate_clk ~= nil then
@@ -518,7 +534,7 @@ function ui.arc_main_delta(n, d)
         if (d > 2 or d < -2) and track[track_focus].play == 1 then
           arc_inc[n] = (arc_inc[n] % 10) + 1
           if arc_inc[n] == 1 then
-            local new_pos = track[track_focus].pos_abs + (d / arc_scrub_sens)
+            local new_pos = track[track_focus].pos_abs + (d / arc_mod_sens)
             softcut.position(track_focus, new_pos)
           end
         end
@@ -623,26 +639,25 @@ function ui.arc_main_draw()
   a:all(0)
   if arc_pageNum == 1 then
     -- draw positon
-    a:led(1, 33 - arc_off, 8)
-    --a:led(1, -track[track_focus].pos_arc + 66 - arc_off, 15)
-    a:led(1, track[track_focus].pos_arc + 32 - arc_off, 15)
+    a:led(_1, 33 - off_viz, 8)
+    a:led(_1, track[track_focus].pos_arc + 32 - off_viz, 15)
     -- draw loop
-    a:led(2, 33 - arc_off, 8)
+    a:led(_2, 33 - off_viz, 8)
     local startpoint = math.ceil(track[track_focus].loop_start * 4) - 3
     local endpoint = math.ceil(track[track_focus].loop_end * 4)
     for i = startpoint, endpoint do
-      a:led(2, i + 32 - arc_off, 8)
+      a:led(_2, i + 32 - off_viz, 8)
     end
     if track[track_focus].play == 1 and track[track_focus].loop == 1 then
-      a:led(2, track[track_focus].pos_arc + 32 - arc_off, 15)
+      a:led(_2, track[track_focus].pos_arc + 32 - off_viz, 15)
     end
     -- draw loop start
-    a:led(3, 33 - arc_off, 8)
+    a:led(_3, 33 - off_viz, 8)
     for i = 0, 3 do
-      a:led(3, startpoint + 32 + i - arc_off, 10 - i * 3)
+      a:led(_3, startpoint + 32 + i - off_viz, 10 - i * 3)
     end
     if track[track_focus].play == 1 and track[track_focus].loop == 1 then
-      a:led(3, track[track_focus].pos_arc + 32 - arc_off, 15)
+      a:led(_3, track[track_focus].pos_arc + 32 - off_viz, 15)
     end
     -- draw loop end
     if cutview_hold then
@@ -650,17 +665,17 @@ function ui.arc_main_draw()
       for i = 1, 6 do
         local off = -13
         for j = 0, 5 do
-          a:led(4, (i + off) + j * 7 - 7 - arc_off, 4)
+          a:led(_4, (i + off) + j * 7 - 7 - off_viz, 4)
         end
-        a:led(4, (i + (track_focus - 1) * 7 - 6) + 50 - arc_off, 15)
+        a:led(_4, (i + (track_focus - 1) * 7 - 6) + 50 - off_viz, 15)
       end
     else
-      a:led(4, 33 - arc_off, 8)
+      a:led(_4, 33 - off_viz, 8)
       for i = 0, 3 do
-        a:led(4, endpoint + 32 - i - arc_off, 10 - i * 3)
+        a:led(_4, endpoint + 32 - i - off_viz, 10 - i * 3)
       end
       if track[track_focus].play == 1 and track[track_focus].loop == 1 then
-        a:led(4, track[track_focus].pos_arc + 32 - arc_off, 15)
+        a:led(_4, track[track_focus].pos_arc + 32 - off_viz, 15)
       end
     end
   elseif arc_pageNum == 2 then
@@ -668,76 +683,76 @@ function ui.arc_main_draw()
     local arc_vol = math.floor(track[track_focus].level * 64)
     for i = 1, 64 do
       if i < arc_vol then
-        a:led(1, i - arc_off, 3)
+        a:led(_1, i - off_viz, 3)
       end
-      a:led(1, arc_vol - arc_off, 15)
+      a:led(_1, arc_vol - off_viz, 15)
     end
     -- draw pan
     local arc_pan = math.floor(track[track_focus].pan * 24)
-    a:led(2, 1 - arc_off, 7)
-    a:led(2, 25 - arc_off, 5)
-    a:led(2, -23 - arc_off, 5)
+    a:led(_2, 1 - off_viz, 7)
+    a:led(_2, 25 - off_viz, 5)
+    a:led(_2, -23 - off_viz, 5)
     if arc_pan > 0 then
       for i = 2, arc_pan do
-        a:led(2, i - arc_off, 4)
+        a:led(_2, i - off_viz, 4)
       end
     elseif arc_pan < 0 then
       for i = arc_pan + 2, 0 do
-        a:led(2, i - arc_off, 4)
+        a:led(_2, i - off_viz, 4)
       end
     end
-    a:led(2, arc_pan + 1 - arc_off, 15)
+    a:led(_2, arc_pan + 1 - off_viz, 15)
     -- draw cutoff
     if track[track_focus].filter_mode == 6 then
       -- 
     elseif track[track_focus].filter_mode == 5 then
       local arc_cut = math.floor(track[track_focus].cutoff * 24)
-      a:led(3, 1 - arc_off, 7)
-      a:led(3, 25 - arc_off, 5)
-      a:led(3, -23 - arc_off, 5)
+      a:led(_3, 1 - off_viz, 7)
+      a:led(_3, 25 - off_viz, 5)
+      a:led(_3, -23 - off_viz, 5)
       if arc_cut > 0 then
         for i = 2, arc_cut do
-          a:led(3, i - arc_off, 4)
+          a:led(_3, i - off_viz, 4)
         end
       elseif arc_cut < 0 then
         for i = arc_cut + 2, 0 do
-          a:led(3, i - arc_off, 4)
+          a:led(_3, i - off_viz, 4)
         end
       end
-      a:led(3, arc_cut + 1 - arc_off, 15)
+      a:led(_3, arc_cut + 1 - off_viz, 15)
     else
       local arc_cut = math.floor(util.explin(20, 12000, 0, 1, track[track_focus].cutoff_hz) * 48) + 41
-      a:led(3, 25 - arc_off, 5)
-      a:led(3, -23 - arc_off, 5)
+      a:led(_3, 25 - off_viz, 5)
+      a:led(_3, -23 - off_viz, 5)
       for i = -22, 24 do
         if i < arc_cut - 64 then
-          a:led(3, i - arc_off, 3)
+          a:led(_3, i - off_viz, 3)
         end
       end
-      a:led(3, arc_cut - arc_off, 15)
+      a:led(_3, arc_cut - off_viz, 15)
     end
     if cutview_hold then
       -- draw track_focus
       for i = 1, 6 do
         local off = -13
         for j = 0, 5 do
-          a:led(4, (i + off) + j * 7 - 7 - arc_off, 4)
+          a:led(_4, (i + off) + j * 7 - 7 - off_viz, 4)
         end
-        a:led(4, (i + (track_focus - 1) * 7 - 6) + 50 - arc_off, 15)
+        a:led(_4, (i + (track_focus - 1) * 7 - 6) + 50 - off_viz, 15)
       end
     else
       -- draw filter_q
       arc_q = 49 - math.floor(track[track_focus].filter_q * 32)
       for i = 49, 17, -1 do
         if i > arc_q then
-          a:led(4, i - arc_off, 3)
+          a:led(_4, i - off_viz, 3)
         end
       end
-      a:led(4, 17 - arc_off, 7)
-      a:led(4, 49 - arc_off, 7)
-      a:led(4, 43 - arc_off, 7)
-      a:led(4, 37 - arc_off, 7)
-      a:led(4, arc_q - arc_off, 15)
+      a:led(_4, 17 - off_viz, 7)
+      a:led(_4, 49 - off_viz, 7)
+      a:led(_4, 43 - off_viz, 7)
+      a:led(_4, 37 - off_viz, 7)
+      a:led(_4, arc_q - off_viz, 15)
     end
   end
   a:refresh()
@@ -811,9 +826,11 @@ end
 
 function ui.arc_lfo_key(n, z)
   toggle_pmac_perf_view(z)
+  dirtyscreen = true
 end
 
 function ui.arc_lfo_delta(n, d)
+  local n = off_viz < 3 and n or 5 - n
   if n == 1 then
     params:delta("lfo_depth_lfo_"..lfo_focus, d / 10)
     if lfo[lfo_focus].depth > 0 and lfo[lfo_focus].enabled == 0 then
@@ -844,48 +861,48 @@ function ui.arc_lfo_draw()
   a:all(0)
   -- draw lfo lfo depth
   local lfo_dth = math.floor((lfo[lfo_focus].depth) * 48) + 41
-  a:led (1, 25 - arc_off, 5)
-  a:led (1, -23 - arc_off, 5)
+  a:led(_1, 25 - off_viz, 5)
+  a:led(_1, -23 - off_viz, 5)
   for i = -22, 24 do
     if i < lfo_dth - 64 then
-      a:led(1, i - arc_off, 3)
+      a:led(_1, i - off_viz, 3)
     end
   end
-  a:led(1, lfo_dth - arc_off, 15)
+  a:led(_1, lfo_dth - off_viz, 15)
   -- draw lfo offset
   local lfo_off = math.floor(lfo[lfo_focus].offset * 100 / ((lfo[lfo_focus].baseline == 'center' and 50 or 100)) * 24)
-  a:led (2, 1 - arc_off, 7)
-  a:led (2, 25 - arc_off, 5)
-  a:led (2, -23 - arc_off, 5)
+  a:led(_2, 1 - off_viz, 7)
+  a:led(_2, 25 - off_viz, 5)
+  a:led(_2, -23 - off_viz, 5)
   if lfo_off > 0 then
     for i = 2, lfo_off do
-      a:led(2, i - arc_off, 4)
+      a:led(_2, i - off_viz, 4)
     end
   elseif lfo_off < 0 then
     for i = lfo_off + 2, 0 do
-      a:led(2, i - arc_off, 4)
+      a:led(_2, i - off_viz, 4)
     end
   end
-  a:led (2, lfo_off + 1 - arc_off, 15)
+  a:led(_2, lfo_off + 1 - off_viz, 15)
   local min = lfo[lfo_focus].mode == 'clocked' and 1 or 0.1
   local max = lfo[lfo_focus].mode == 'clocked' and 22 or 300
   local val = lfo[lfo_focus].mode == 'clocked' and params:get("lfo_clocked_lfo_"..lfo_focus) or params:get("lfo_free_lfo_"..lfo_focus)
   local lfo_frq = lfo[lfo_focus].mode == 'clocked' and (math.floor(util.linlin(min, max, 0, 1, val) * 48) + 41) or (math.floor(util.explin(min, max, 0, 1, val) * 48) + 41)
-  a:led (3, 25 - arc_off, 5)
-  a:led (3, -23 - arc_off, 5)
+  a:led(_3, 25 - off_viz, 5)
+  a:led(_3, -23 - off_viz, 5)
   for i = -22, 24 do
     if i < lfo_frq - 64 then
-      a:led(3, i - arc_off, 3)
+      a:led(_3, i - off_viz, 3)
     end
   end
-  a:led(3, lfo_frq - arc_off, 15)
+  a:led(_3, lfo_frq - off_viz, 15)
   -- draw lfo selection
   for i = 1, 6 do
     local off = -13
     for j = 0, 5 do
-      a:led(4, (i + off) + j * 7 - 7 - arc_off, 4)
+      a:led(_4, (i + off) + j * 7 - 7 - off_viz, 4)
     end
-    a:led(4, (i + (lfo_focus - 1) * 7 - 6) + 50 - arc_off, 15)
+    a:led(_4, (i + (lfo_focus - 1) * 7 - 6) + 50 - off_viz, 15)
   end
   a:refresh()
 end
@@ -987,9 +1004,11 @@ end
 
 function ui.arc_env_key(n, z)
   toggle_pmac_perf_view(z)
+  dirtyscreen = true
 end
 
 function ui.arc_env_delta(n, d)
+  local n = off_viz < 3 and n or 5 - n
   if n == 1 then
     params:delta(env_focus.."adsr_attack", d / 20)
   elseif n == 2 then
@@ -1005,44 +1024,44 @@ function ui.arc_env_draw()
   a:all(0)
   -- draw adsr attack
   local attack = math.floor(util.linlin(0, 100, 0, 1, env[env_focus].attack) * 48) + 41
-  a:led (1, 25 - arc_off, 5)
-  a:led (1, -23 - arc_off, 5)
+  a:led (_1, 25 - off_viz, 5)
+  a:led (_1, -23 - off_viz, 5)
   for i = -22, 24 do
     if i < attack - 64 then
-      a:led(1, i - arc_off, 3)
+      a:led(_1, i - off_viz, 3)
     end
   end
-  a:led(1, attack - arc_off, 15)
+  a:led(_1, attack - off_viz, 15)
   -- draw adsr decay
   local decay = math.floor(util.linlin(0, 100, 0, 1, env[env_focus].decay) * 48) + 41
-  a:led (2, 25 - arc_off, 5)
-  a:led (2, -23 - arc_off, 5)
+  a:led (_2, 25 - off_viz, 5)
+  a:led (_2, -23 - off_viz, 5)
   for i = -22, 24 do
     if i < decay - 64 then
-      a:led(2, i - arc_off, 3)
+      a:led(_2, i - off_viz, 3)
     end
   end
-  a:led(2, decay - arc_off, 15)
+  a:led(_2, decay - off_viz, 15)
   -- draw adsr sustain
   local sustain = math.floor(env[env_focus].sustain * 48) + 41
-  a:led (3, 25 - arc_off, 5)
-  a:led (3, -23 - arc_off, 5)
+  a:led(_3, 25 - off_viz, 5)
+  a:led(_3, -23 - off_viz, 5)
   for i = -22, 24 do
     if i < sustain - 64 then
-      a:led(3, i - arc_off, 3)
+      a:led(_3, i - off_viz, 3)
     end
   end
-  a:led(3, sustain - arc_off, 15)
+  a:led(_3, sustain - off_viz, 15)
   -- draw adsr release
   local release = math.floor(util.linlin(0, 100, 0, 1, env[env_focus].release) * 48) + 41
-  a:led (4, 25 - arc_off, 5)
-  a:led (4, -23 - arc_off, 5)
+  a:led(_4, 25 - off_viz, 5)
+  a:led(_4, -23 - off_viz, 5)
   for i = -22, 24 do
     if i < release - 64 then
-      a:led(4, i - arc_off, 3)
+      a:led(_4, i - off_viz, 3)
     end
   end
-  a:led(4, release - arc_off, 15)
+  a:led(_4, release - off_viz, 15)
   a:refresh()
 end
 
@@ -1279,7 +1298,7 @@ function edit_splices(n, d, src, sens)
   local max_start = tp[i].e - tp[i].splice[s].l
   local min_end = tp[i].splice[s].s + 0.1
   local max_end = tp[i].e
-  local sens = arc_highres and (sens * 0.05) or sens
+  local sens = arc_highres and (sens * 20) or sens
   -- edit splice markers
   if n == (src == "enc" and 2 or 3) then
     -- edit startpoint
@@ -1558,6 +1577,7 @@ function ui.arc_tape_key(n, z)
 end
 
 function ui.arc_tape_delta(n, d)
+  local n = off_viz < 3 and n or 5 - n
   if n == 1 then
     arc_track_focus = util.clamp(arc_track_focus + d / 100, 1, 6)
     track_focus = math.floor(arc_track_focus)
@@ -1581,35 +1601,35 @@ function ui.arc_tape_draw()
   for i = 1, 6 do
     local off = -13
     for j = 0, 5 do
-      a:led(1, (i + off) + j * 7 - 7 - arc_off, 4)
+      a:led(_1, (i + off) + j * 7 - 7 - off_viz, 4)
     end
-    a:led(1, (i + (track_focus - 1) * 7 - 6) + 50 - arc_off, 15)
+    a:led(_1, (i + (track_focus - 1) * 7 - 6) + 50 - off_viz, 15)
   end
   -- draw splice_focus
   for i = 1, 6 do
     local off = -20
     for j = 0, 7 do
-      a:led(2, (i + off) + j * 7 - 7 - arc_off, 4)
+      a:led(_2, (i + off) + j * 7 - 7 - off_viz, 4)
     end
-    a:led(2, (i + (track[track_focus].splice_focus - 1) * 7 - 6) + 43 - arc_off, 15)
+    a:led(_2, (i + (track[track_focus].splice_focus - 1) * 7 - 6) + 43 - off_viz, 15)
   end
   -- draw splice position
   local splice_s = tp[track_focus].splice[track[track_focus].splice_focus].s - tp[track_focus].s
   local splice_l = tp[track_focus].splice[track[track_focus].splice_focus].e - tp[track_focus].splice[track[track_focus].splice_focus].s
   local pos_startpoint = math.floor(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_s) * 58)
   local pos_endpoint = math.ceil(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_l) * 58)
-  a:led(3, -28 - arc_off, 6)
-  a:led(3, 30 - arc_off, 6)
+  a:led(_3, -28 - off_viz, 6)
+  a:led(_3, 30 - off_viz, 6)
   for i = pos_startpoint, pos_startpoint + pos_endpoint do
-    a:led(3, i + 1 - 29 - arc_off, 10)
+    a:led(_3, i + 1 - 29 - off_viz, 10)
   end
   -- draw splice size
   local win_startpoint = math.floor(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_l) * -28)
   local win_endpoint = math.ceil(util.linlin(0, MAX_TAPELENGTH, 0, 1, splice_l) * 28)
-  a:led(4, -28 - arc_off, 6)
-  a:led(4, 30 - arc_off, 6)
+  a:led(_4, -28 - off_viz, 6)
+  a:led(_4, 30 - off_viz, 6)
   for i = win_startpoint, win_endpoint do
-    a:led(4, i + 1 - arc_off, 10)
+    a:led(_4, i + 1 - off_viz, 10)
   end
   a:refresh()
 end
