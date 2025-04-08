@@ -146,7 +146,7 @@ end
 function grd.nav(x, z, pos)
   if x == 1 and z == 1 then
     if alt == 1 then
-      local msg = "clear   splice"
+      local msg = "clear   track  "..track_focus.."   splice  "..track[track_focus].splice_focus
       popupscreen(msg, clear_splice)
     else
       set_gridview(vREC, pos)
@@ -154,7 +154,7 @@ function grd.nav(x, z, pos)
     end
   elseif x == 2 then
     if z == 1 and alt == 1 then
-      local msg = "clear   tape"
+      local msg = "clear   tape  "..tp[track_focus].buffer
       popupscreen(msg, clear_tape)
     elseif alt == 0 then
       if z == 1 then
@@ -856,7 +856,7 @@ function grd.tape_keys(x, y, z, offset)
       arc_splice_focus = track[i].splice_focus
       if track[i].loaded then
         if alt == 1 and mod == 0 then
-          load_splice(i, x)
+          set_active_splice(i, x)
         elseif alt == 0 and mod == 1 then
           local s = track[i].splice_focus
           local src = tp[i].side == 1 and 1 or 2
