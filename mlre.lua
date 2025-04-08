@@ -1044,7 +1044,7 @@ function copy_splice_audio(i, s, src) -- copy to other destination
   end
 end
 
-function load_splice(i, s)
+function set_active_splice(i, s)
   if track[i].play == 0 then
     local e = {t = eSPLICE, i = i, active = s} event(e)
   else
@@ -2387,6 +2387,7 @@ function pset_write_callback(filename, name, number)
     sesh.track[i].sel = track[i].sel
     sesh.track[i].fade = track[i].fade
     sesh.track[i].mute = track[i].mute
+    sesh.track[i].cutoff = track[i].cutoff
     sesh.track[i].speed = track[i].speed
     sesh.track[i].rev = track[i].rev
     sesh.track[i].loop = track[i].loop
@@ -2475,7 +2476,7 @@ function pset_read_callback(filename, silent, number)
         for i = 1, 6 do
           -- tape data
           tp[i].s = loadsesh.track[i].tape_s
-          tp[i].e  = loadsesh.track[i].tape_e
+          tp[i].e = loadsesh.track[i].tape_e
           tp[i].splice = {table.unpack(loadsesh.track[i].tape_splice)}
           -- route data
           track[i].route_t5 = loadsesh.track[i].route_t5
@@ -2500,7 +2501,9 @@ function pset_read_callback(filename, silent, number)
           set_tempo_map(i) -- needs it twice :shrug:
           set_clip(i)
           set_rec_enable(i, loadsesh.track[i].rec_enabled)
-          set_level(i)          
+          set_level(i)       
+          -- set filter -- shite workaround... uhgh
+          params:set(i.."cutoff", loadsesh.track[i].cutoff)
           -- set lfo params
           if loadsesh.track[i].lfo_track ~= nil then
             set_lfo(i, loadsesh.track[i].lfo_destination, loadsesh.track[i].lfo_track, loadsesh.track[i].lfo_offset)
