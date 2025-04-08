@@ -31,7 +31,7 @@ local patterns_page_names_l = {"meter", "launch"}
 local patterns_page_names_r = {"length", "play   mode"}
 
 -- tape page variables
-local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "rename", "format >", "format >>>"}
+local tape_actions = {"populate", "load", "clear", "save", "copy", "paste", "-1dB", "+1dB", "rename", "format >", "format >>>"}
 local tape_action = 2
 local copy_src = {}
 local length_action = 2
@@ -1259,6 +1259,10 @@ function ui.tape_key(n, z)
         elseif tape_actions[tape_action] == "paste" and z == 1 then
           copy_splice_audio(i, s, copy_src)
           copy_src = {}
+        elseif tape_actions[tape_action] == "-1dB" and z == 1 then
+          popupscreen("decrease   level   -1dB", decrease_level_splice)
+        elseif tape_actions[tape_action] == "+1dB" and z == 1 then
+          popupscreen("increase   level   +1dB", increase_level_splice)
         elseif tape_actions[tape_action] == "rename" and z == 0 then
           screenredrawtimer:stop()
           textentry.enter(filerename_callback, tp[i].splice[s].name)
