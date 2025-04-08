@@ -1044,6 +1044,26 @@ function copy_splice_audio(i, s, src) -- copy to other destination
   end
 end
 
+function increase_level_splice()
+  local i = track_focus
+  local s = track[i].splice_focus
+  local start = tp[i].splice[s].s - FADE_TIME
+  local length = tp[i].splice[s].l + SPLICE_GAP
+  local level = util.dbamp(1) - 1
+  softcut.buffer_copy_mono(tp[i].side, tp[i].side, start, start, length, FADE_TIME, level)
+  render_splice()
+end
+
+function decrease_level_splice()
+  local i = track_focus
+  local s = track[i].splice_focus
+  local start = tp[i].splice[s].s - FADE_TIME
+  local length = tp[i].splice[s].l + SPLICE_GAP
+  local level = util.dbamp(-1)
+  softcut.buffer_clear_region_channel(tp[i].side, start, length, FADE_TIME, level)
+  render_splice()
+end
+
 function set_active_splice(i, s)
   if track[i].play == 0 then
     local e = {t = eSPLICE, i = i, active = s} event(e)
