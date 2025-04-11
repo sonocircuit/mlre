@@ -313,6 +313,7 @@ end
 function ui.pmac_edit_enc(n, d)
   if n == 1 then
     pmac_focus = util.clamp(pmac_focus + d, 1, 6)
+    dirtygrid = true
   else
     local p = pmac_param_id[n - 1][pmac_pageNum]
     local inc = d > 0 and 1 or -1
