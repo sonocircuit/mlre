@@ -1,0 +1,26 @@
+return {
+-- Table: {1}
+{
+   ["splice_active"]=1,
+   ["time_signature"]=2,
+   ["quant_rate"]=2,
+   ["detune"]=1,
+   ["scale"]=2,
+   ["reset_count"]=2,
+   ["sync"]=2,
+   ["reset_active"]=2,
+   ["transition"]=8,
+   ["sends"]=1,
+   ["tempo"]=2,
+   ["fade"]=1,
+   ["sel"]=1,
+   ["warble_state"]=1,
+   ["pan"]=1,
+   ["rev"]=1,
+   ["speed"]=1,
+   ["transpose"]=1,
+   ["vol"]=2,
+   ["loops"]=1,
+   ["lfos"]=1,
+},
+}

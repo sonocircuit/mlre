@@ -7,7 +7,6 @@ like mlr, mlre runs on softcut, a multi-voice playback and recording system for 
 
 thank you both, as well as many others from the norns community for all your efforts, countless contributions and sharing of knowledge.
 
-### Documentation:
-[mlre user manual](https://github.com/sonocircuit/mlre/blob/main/doc/mlre%20user%20guide%20v2.2.pdf)
+---
 
-
+### [mlre user manual](https://github.com/sonocircuit/mlre/blob/dev_2.2/doc/mlre%20v2.2%20-%20user%20manual.pdf)
