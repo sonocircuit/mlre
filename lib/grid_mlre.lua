@@ -321,10 +321,10 @@ function grd.cutfocus_keys(x, z)
       loop_event(i, lstart, lend)
     else
       if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-        local e = {t = eSTOP, i = i} event(e)
+        local e = {t = eSTOP, i = i, sync = true} event(e)
       end
       if env[i].active and track[i].loop == 0 then
-        local e = {t = eGATEOFF, i = i} event(e)
+        local e = {t = eGATEOFF, i = i, sync = true} event(e)
       end
     end
     if held[row] < 1 then held[row] = 0 end
@@ -485,7 +485,7 @@ function grd.cut_keys(x, y, z, offset)
         queue_track_tape(i)
       end
       -- cutpage
-      if track_focus ~= i then
+      if track_focus ~= i and cut_autofocus then
         track_focus = i
         arc_track_focus = track_focus
         dirtyscreen = true
@@ -523,10 +523,10 @@ function grd.cut_keys(x, y, z, offset)
         loop_event(i, lstart, lend)
       else
         if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-          local e = {t = eSTOP, i = i} event(e)
+          local e = {t = eSTOP, i = i, sync = true} event(e)
         end
         if env[i].active and track[i].loop == 0 then
-          local e = {t = eGATEOFF, i = i} event(e)
+          local e = {t = eGATEOFF, i = i, sync = true} event(e)
         end
       end
       if held[y] < 1 then held[y] = 0 end
