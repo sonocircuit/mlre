@@ -30,7 +30,8 @@ g = grid.connect()
 
 --------- user variables --------
 local pset_load = false -- if true default pset loaded at launch
-local rotate_grid = false -- zero only. if true will rotate 90° CW
+cut_autofocus = true -- if true pressing a playhead key on the cut page will set track focus
+
 
 --------- other variables --------
 local mlre_path = _path.audio.."mlre/"
@@ -1097,6 +1098,7 @@ function clear_splice() -- clear focused splice
   local buffer = tp[i].side
   local start = tp[i].splice[s].s - FADE_TIME
   local length = tp[i].splice[s].l + SPLICE_GAP
+  tp[i].splice[s].name = ""
   softcut.buffer_clear_region_channel(buffer, start, length)
   render_splice()
   show_message("track    "..i.."    splice    "..s.."    cleared")
@@ -1119,6 +1121,9 @@ function clear_tape() -- clear tape
   local length = MAX_TAPELENGTH + FADE_TIME
   softcut.buffer_clear_region_channel(buffer, start, length)
   render_splice()
+  for s = 1, 8 do
+    tp[track_focus].splice[s].name = ""
+  end
   show_message("track    "..track_focus.."    tape    cleared")
 end
 
@@ -2754,9 +2759,6 @@ function init()
   -- establish grid size
   if g.device then
     GRID_SIZE = g.device.cols * g.device.rows
-    if GRID_SIZE == 256 and rotate_grid then
-      g:rotation(1) -- 1 is 90°
-    end
   end
   -- detect arc
   if a.device then
@@ -2782,6 +2784,11 @@ function init()
   params:add_option("page_autofocus", "autofocus", {"off", "on"}, 1)
   params:set_action("page_autofocus", function(mode) autofocus = mode == 2 and true or false end)
   if GRID_SIZE == 128 then params:hide("page_autofocus") end
+  -- grid rotate
+  params:add_option("grid_orientation", "grid orientation", {"0°", "90°"}, 1)
+  params:set_action("grid_orientation", function(mode) g:rotation(mode - 1) end)
+  if GRID_SIZE == 128 then params:hide("grid_orientation") end
+
   -- scale param
   params:add_option("scale", "scale", scales.options, 1)
   params:set_action("scale", function(option) set_scale(option) end)
@@ -3496,7 +3503,7 @@ end
 function key(n, z)
   if n == 1 then
     shift = z
-    toggle_pmac_perf_view(z)
+    toggle_pmac_perf_view(z) 
   else
     if popup_view then
       ui.popup_key(n, z)
@@ -3645,16 +3652,14 @@ end
 function grid_connected()
   if g.device then
     GRID_SIZE = g.device.cols * g.device.rows
-    if GRID_SIZE == 256 and rotate_grid then
-      g:rotation(1) -- 1 is 90°
+    if GRID_SIZE == 256 then
+      g:rotation(params:get("grid_orientation") - 1)
     end
   end
   dirtygrid = true
-  hardwareredraw()
 end
 
 function arc_connected()
-  hardwareredraw()
   arc_is = true
   params:show("arc_params")
   _menu.rebuild_params()
