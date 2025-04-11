@@ -9,4 +9,4 @@ thank you both, as well as many others from the norns community for all your eff
 
 ---
 
-### [mlre user manual](https://github.com/sonocircuit/mlre/blob/dev_2.2/doc/mlre%20v2.2%20-%20user%20manual.pdf)
+### [mlre user manual](https://github.com/sonocircuit/mlre/blob/main/doc/mlre%20v2.2%20-%20user%20manual.pdf)
