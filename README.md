@@ -10,3 +10,5 @@ thank you both, as well as many others from the norns community for all your eff
 ---
 
 ### [mlre user manual](https://github.com/sonocircuit/mlre/blob/main/doc/mlre%20v2.2%20-%20user%20manual.pdf)
+
+### [mlre tutorial - part 1](https://youtu.be/aFzF4Vb15qg)
