@@ -8,8 +8,8 @@ local filters = require 'filters'
 
 -- keyquant page variables
 local keyq_pageNum = 1
-local keyq_page_params = {{"time_signature", "quant_rate"}, {"snap_launch", "splice_launch"}}
-local keyq_page_names = {{"time   signature", "key  quantization"}, {"snapshot   launch", "splice   launch"}}
+local keyq_page_params = {{"time_signature", "quant_rate"}, {"snap_launch", "splice_launch"}, {"rec_launch", "loadop_sync"}}
+local keyq_page_names = {{"time   signature", "key  quantization"}, {"snapshot   launch", "splice   launch"}, {"rec   launch", "silent   load   sync"}}
 
 -- main page variables
 local main_page_params_l = {"vol", "rec", "cutoff", "filter_type", "detune","rate_slew", "play_mode", "reset_active"}
@@ -169,7 +169,7 @@ end
 
 function ui.keyquant_key(n, z)
   if n > 1 and z == 1 then
-    keyq_pageNum = util.wrap(keyq_pageNum + 1, 1, 2)
+    keyq_pageNum = util.wrap(keyq_pageNum + 1, 1, 3)
   end
   dirtyscreen = true
 end
@@ -188,9 +188,9 @@ function ui.keyquant_redraw()
   screen.level(15)
   screen.move(64, 12)
   screen.text_center("QUANTIZATION")
-  for i = 1, 2 do
+  for i = 1, 3 do
     screen.level(keyq_pageNum == i and 15 or 4)
-    screen.rect(120 + (i - 1) * 4, 6, 2, 6)
+    screen.rect(116 + (i - 1) * 4, 6, 2, 6)
     screen.fill()
   end
   screen.font_size(16)
@@ -211,7 +211,7 @@ end
 ---------------------- PMAC PERF -------------------------
 function ui.pmac_perf_key(n, z)
   if z == 1 and n > 1 then
-    pmac_pageEnc = pmac_pageEnc == 1 and 2 or 1
+    pmac_pageEnc = 1 - pmac_pageEnc
   end
 end
 
