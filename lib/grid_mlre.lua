@@ -291,10 +291,9 @@ function grd.cutfocus_keys(x, z)
     -- cutfocus 
     if alt == 1 and mod == 0 then
       toggle_playback(i)
-    elseif mod == 1 then -- "hold mode" as on cut page
-      heldmax[row] = x
+    elseif mod == 1 then
       loop_event(i, x, x)
-    elseif held[row] == 1 then -- cut at pos
+    elseif held[row] == 1 then
       first[row] = x
       if track[i].play == 1 or track[i].start_launch == 1 then
         local e = {t = eCUT, i = i, pos = x} event(e)
@@ -321,10 +320,10 @@ function grd.cutfocus_keys(x, z)
       loop_event(i, lstart, lend)
     else
       if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-        local e = {t = eSTOP, i = i, sync = true} event(e)
+        local e = {t = eSTOP, i = i} event(e)
       end
       if env[i].active and track[i].loop == 0 then
-        local e = {t = eGATEOFF, i = i, sync = true} event(e)
+        local e = {t = eGATEOFF, i = i} event(e)
       end
     end
     if held[row] < 1 then held[row] = 0 end
@@ -350,23 +349,21 @@ function grd.rec_keys(x, y, z, offset)
   if y > 1 and y < 8 then
     local i = y - 1
     if x == 1 and z == 1 then
-      if alt == 0 then
-        if mod == 0 then
-          toggle_rec(i)
-          chop(i)
-        else
+      if mod == 0 then
+        toggle_rec(i, alt == 1)
+        chop_thresh_rec(i)
+      else
+        if alt == 0 then
           backup_rec(i, "undo")
-        end
-      elseif alt == 1 then
-        if mod == 0 then
+        else
           track[i].fade = 1 - track[i].fade
           set_rec(i)
-        else
-          set_rec_enable(i, not track[i].rec_enabled)
         end
       end
     elseif x == 2 and z == 1 then
-      arm_thresh_rec(i)
+      if track[i].rec_enabled then
+        arm_thresh_rec(i, alt == 1)
+      end
     elseif x > 2 and x < 7 then
       snap_track = z == 1 and i or 0
       if z == 1 then
@@ -425,8 +422,8 @@ function grd.rec_draw(offset)
   g:led(6, track_focus + 1 + off, track[track_focus].tempo_map * 6 + 2)
   for i = 1, 6 do
     local y = i + 1 + off
-    g:led(1, y, track[i].rec_enabled and (track[i].rec == 1 and 15 or (track[i].fade == 1 and 7 or 3)) or 1)
-    g:led(2, y, track[i].oneshot == 1 and pulse_key_fast or 0)
+    g:led(1, y, track[i].rec_enabled and (track[i].rec == 1 and 15 or (track[i].rec_armed == 1 and pulse_key_slow or (track[i].fade == 1 and 7 or 3))) or 1)
+    g:led(2, y, track[i].rec_thresh == 1 and (autolength and pulse_key_mid or pulse_key_fast) or (track[i].rec_oneshot == 1 and pulse_key_slow or 0))
     g:led(3, y, track[i].loaded and (track_focus == i and 7 or 0) or pulse_key_mid)
     g:led(7, y, track[i].warble == 1 and (2 + track[i].wrbviz) or 0)
     g:led(8, y, track[i].rev == 1 and 12 or 6)
@@ -493,8 +490,7 @@ function grd.cut_keys(x, y, z, offset)
       end
       if alt == 1 and y < 8 then
         toggle_playback(i)
-      elseif mod == 1 and y < 8 then -- "hold mode"
-        heldmax[y] = x
+      elseif mod == 1 and y < 8 then
         loop_event(i, x, x)
       elseif y < 8 and held[y] == 1 then
         first[y] = x
