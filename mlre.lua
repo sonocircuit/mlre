@@ -98,11 +98,13 @@ local amp_threshold = 1
 local armed_track = 1
 local oneshot_rec = false
 local transport_run = false
-local autolength = false
 local loop_pos = 1
 local rec_dur = 0
 local autobackup = false
 local rec_backup = false
+local rec_default_mode = 1
+local rec_launch = 1
+autolength = false
 
 -- misc variables
 local current_scale = 1
@@ -797,8 +799,11 @@ for i = 1, 6 do
   track[i].play = 0
   track[i].sel = 0
   track[i].rec = 0
+  track[i].rec_oneshot = 0
+  track[i].rec_thresh = 0
+  track[i].rec_armed = 0
+  track[i].rec_queued = 0
   track[i].rec_enabled = true
-  track[i].oneshot = 0
   track[i].level = 1
   track[i].prev_level = 1
   track[i].pan = 0
@@ -1202,23 +1207,59 @@ end
 
 
 --------------------- SOFTCUT FUNCTIONS -----------------------
+
 function set_rec_enable(i, active)
   if active then
     track[i].rec_enabled = true
   else
     track[i].rec_enabled = false
     track[i].rec = 0
-    track[i].fade = 0
+    track[i].rec_oneshot = 0
+    track[i].rec_thresh = 0
+    track[i].rec_armed = 0
+    track[i].rec_queued = 0
     set_rec(i)
   end
 end
 
-function toggle_rec(i)
+function toggle_rec(i, oneshot)
+  local mode = oneshot and 1 or 0
   if track[i].rec_enabled then
-    track[i].rec = 1 - track[i].rec
-    local e = {t = eREC, i = i, rec = track[i].rec} event(e)
-    if track[i].rec == 1 then
-      backup_rec(i, "save")
+    if rec_default_mode == 2 then
+      mode = 1 - mode
+    end
+    if rec_launch == 4 then
+      track[i].rec_queued = 1 - track[i].rec_queued
+      if track[i].rec_queued == 1 then
+        track[i].rec_armed = 1
+        track[i].rec_oneshot = mode
+      else
+        track[i].rec = 0
+        set_rec(i)
+      end
+    else
+      if track[i].rec == 0 and track[i].rec_armed == 0 then
+        backup_rec(i, "save")
+        track[i].rec_armed = 1
+        track[i].rec_oneshot = mode
+        local beat_sync = rec_launch > 1 and (rec_launch == 3 and bar_val or 1) or (quantizing and q_rate or nil)
+        if beat_sync ~= nil then
+          track[i].rec_clock = clock.run(function()
+            clock.sync(beat_sync)
+            local e = {t = eREC, i = i, rec = 1, sync = true} event(e)
+            run_oneshot_timer(i)
+            track[i].rec_clock = nil
+          end)
+        else
+          local e = {t = eREC, i = i, rec = 1} event(e)
+          run_oneshot_timer(i)
+        end
+      else
+        local e = {t = eREC, i = i, rec = 0} event(e)
+        if track[i].rec_clock ~= nil then
+          clock.cancel(track[i].rec_clock)
+        end
+      end
     end
   end
 end
@@ -1232,6 +1273,9 @@ function set_rec(i)
       local fade = track[i].fade == 0 and 1 or track[i].pre_level
       softcut.pre_level(i, fade)
       softcut.rec_level(i, 0)
+      track[i].rec_armed = 0
+      track[i].rec_queued = 0
+      track[i].rec_oneshot = 0
     end
   else
     softcut.pre_level(i, 1)
@@ -1315,7 +1359,7 @@ function set_track_reset(i)
 end
 
 function cut_track(i, pos)
-  if track[i].oneshot == 1 then
+  if track[i].rec_thresh == 1 then
     set_quarantine(i, false)
   end
   if track[i].loop == 1 then
@@ -1333,7 +1377,7 @@ function cut_track(i, pos)
 end
 
 function start_track(i, pos)
-  if track[i].oneshot == 1 then
+  if track[i].rec_thresh == 1 then
     set_quarantine(i, false)
   end
   softcut.position(i, pos or track[i].cut)
@@ -1345,7 +1389,7 @@ function start_track(i, pos)
 end
 
 function stop_track(i)
-  if track[i].oneshot == 1 then
+  if track[i].rec_thresh == 1 then
     set_quarantine(i, true)
   end
   softcut.query_position(i)
@@ -1508,6 +1552,18 @@ function phase_poll(i, pos)
       dirtygrid = true
     end
     page_redraw(vTAPE)
+    -- queue recording
+    if track[i].rec_queued == 1 then
+      local upper = track[i].loop == 0 and 1 or (track[i].loop_start * 4 - 3)
+      local lower = track[i].loop == 0 and 64 or (track[i].loop_end * 4)
+      local limit = track[i].rev == 0 and lower or upper
+      if track[i].pos_hi_res == limit then
+        backup_rec(i, "save")
+        track[i].rec = 1
+        set_rec(i)
+        run_oneshot_timer(i)
+      end
+    end
     -- oneshot play_mode
     if track[i].play_mode == 2 and track[i].loop == 0 then
       local limit = track[i].rev == 0 and 64 or 1
@@ -1517,7 +1573,7 @@ function phase_poll(i, pos)
     end
     -- queue splice load
     if next(tp[i].event) then
-      local upper = track[i].loop == 0 and 1 or (track[i].loop_start * 4)
+      local upper = track[i].loop == 0 and 1 or (track[i].loop_start * 4 - 3)
       local lower = track[i].loop == 0 and 64 or (track[i].loop_end * 4)
       local limit = track[i].rev == 0 and lower or upper
       if track[i].pos_hi_res == limit then
@@ -1535,26 +1591,17 @@ function phase_poll(i, pos)
     end
     -- rec @step / track 2 trigger
     if trig[i].rec_step > 0 then
-      if track[i].rev == 0 then
-        if track[i].pos_hi_res == trig[i].rec_step * 4 - 3 then
-          toggle_rec(i)
-        end
-      else
-        if track[i].pos_hi_res == trig[i].rec_step * 4 then
-          toggle_rec(i)
-        end
+      local recpos = track[i].rev == 0 and (trig[i].rec_step * 4 - 3) or (trig[i].rec_step * 4)
+      if track[i].pos_hi_res == recpos then
+        track[i].rec = 1 - track[i].rec
+        set_rec(i)
       end
     end
     -- trig @step mode / track 2 trigger
     if trig[i].step > 0 then
-      if track[i].rev == 0 then
-        if track[i].pos_hi_res == trig[i].step * 4 - 3 then
-          send_trig(i)
-        end
-      else
-        if track[i].pos_hi_res == trig[i].step * 4 then
-          send_trig(i)
-        end
+      local steppos = track[i].rev == 0 and (trig[i].step * 4 - 3) or (trig[i].step * 4)
+      if track[i].pos_hi_res == steppos then
+        send_trig(i)
       end
     end
     -- trig @count mode / track 2 trigger
@@ -1667,6 +1714,7 @@ function toggle_transport()
   if transport_run == false then
     if params:get("midi_trnsp") == 2 then
       m:start()
+      clock.link.start()
     end
     transport_run = true
   end
@@ -1679,6 +1727,7 @@ function startall(sync) -- start all tracks at the beginning
   end
   if params:get("midi_trnsp") == 2 and not transport_run then
     m:start()
+    clock.link.start()
   end
 end
 
@@ -1691,6 +1740,7 @@ function stopall(sync) -- stop all tracks and patterns / send midi stop if midi 
   end
   if params:get("midi_trnsp") == 2 then
     m:stop()
+    clock.link.stop()
   end
   transport_run = false
 end
@@ -1707,21 +1757,40 @@ end
 
 --------------------- ONESHOT RECORDING -----------------------
 
-function arm_thresh_rec(i)
+function run_oneshot_timer(i)
+  if track[i].rec_oneshot == 1 then
+    local dur = math.abs(clip[i].cl / track[i].rate)
+    clock.run(function()
+      clock.sleep(dur)
+      track[i].rec = 0
+      track[i].rec_armed = 0
+      track[i].rec_queued = 0
+      track[i].rec_thresh = 0
+      track[i].rec_oneshot = 0
+      set_rec(i)
+      tracktimer:stop()
+      oneshot_rec = false
+      autolength = false
+    end)
+  end
+end
+
+function arm_thresh_rec(i, alt)
   if oneshot_rec then
-    chop(i)
+    chop_thresh_rec(i)
   else
-    track[i].oneshot = 1 - track[i].oneshot
+    track[i].rec_thresh = 1 - track[i].rec_thresh
     for n = 1, 6 do
       if n ~= i then
-        track[n].oneshot = 0
+        track[n].rec_thresh = 0
       end
     end
-    if track[i].oneshot == 1 then
+    if track[i].rec_thresh == 1 then
       armed_track = i
       -- set autolength
-      if alt == 1 then
+      if alt then
         stop_track(i)
+        clear_loop(i)
         autolength = true
       else
         autolength = false
@@ -1754,16 +1823,9 @@ function rec_at_threshold(i)
     toggle_transport()
   end
   track[i].rec = 1
+  track[i].rec_oneshot = 1
   set_rec(i)
-  local dur = math.abs(clip[i].cl / track[i].rate)
-  clock.run(function()
-    clock.sleep(dur)
-    track[i].rec = 0
-    track[i].oneshot = 0
-    set_rec(i)
-    tracktimer:stop()
-    oneshot_rec = false
-  end)
+  run_oneshot_timer(i)
   tracktimer:start()
   amp_in[1]:stop()
   amp_in[2]:stop()
@@ -1771,8 +1833,8 @@ function rec_at_threshold(i)
   dirtygrid = true
 end
 
-function chop(i)
-  if oneshot_rec == true and track[i].oneshot == 1 then
+function chop_thresh_rec(i)
+  if oneshot_rec == true and track[i].rec_thresh == 1 then
     if autolength then
       -- get length of recording and stop timer
       tracktimer:stop()
@@ -1789,19 +1851,19 @@ function chop(i)
       -- set clip
       set_clip(i)
       set_info(i, s)
-      track[i].oneshot = 0
-      autolength = false
+      track[i].rec_thresh = 0
     else
       -- set loop points
       local lstart = math.min(loop_pos, track[i].pos_grid)
       local lend = math.max(loop_pos, track[i].pos_grid)
       loop_event(i, lstart, lend)
-      track[i].oneshot = 0
+      track[i].rec_thresh = 0
     end
     -- stop rec
     track[i].rec = 0
     set_rec(i)
     oneshot_rec = false
+    autolength = false
   end
 end
 
@@ -2525,7 +2587,6 @@ function pset_read_callback(filename, silent, number)
           params:set(i.."tempo_map_mode", loadsesh.track[i].tempo_map)
           set_tempo_map(i) -- needs it twice :shrug:
           set_clip(i)
-          set_rec_enable(i, loadsesh.track[i].rec_enabled)
           set_level(i)       
           -- set filter -- shite workaround... uhgh
           params:set(i.."cutoff", loadsesh.track[i].cutoff)
@@ -2794,7 +2855,7 @@ function init()
   params:set_action("scale", function(option) set_scale(option) end)
 
   -- quantization params
-  params:add_group("quantization_params", "quantization", 4)
+  params:add_group("quantization_params", "quantization", 5)
 
   params:add_number("time_signature", "time signature", 2, 11, 4, function(param) return param:get().."/4" end)
   params:set_action("time_signature", function(val) bar_val = val end)
@@ -2808,10 +2869,16 @@ function init()
   params:add_option("splice_launch", "splice launch", {"manual", "beat", "bar", "queue"}, 1)
   params:set_action("splice_launch", function(mode) splice_launch = mode end)
 
+  params:add_option("rec_launch", "rec launch", {"manual", "beat", "bar", "queue"}, 1)
+  params:set_action("rec_launch", function(mode) rec_launch = mode end)
+
   -- rec params
-  params:add_group("rec_params", "recording", 5)
-  
-  params:add_option("rec_source", "rec source", {"adc/eng", "adc/tape", "adc/eng/tape"})
+  params:add_group("rec_params", "recording", 6)
+
+  params:add_option("rec_default", "rec key default", {"toggle", "one-shot"}, 1)
+  params:set_action("rec_default", function(option) rec_default_mode = option end)
+
+  params:add_option("rec_source", "rec source", {"adc/eng", "adc/tape", "adc/eng/tape"}, 1)
   params:set_action("rec_source", function(option) set_track_source(option) end)
   
   params:add_control("rec_threshold", "rec threshold", controlspec.new(-40, 0, 'lin', 0.01, -12, "dB"))
@@ -2998,7 +3065,11 @@ function init()
   end)
 
   -- track control params
-  params:add_group("track_control_params", "track control", 63)
+  params:add_group("track_control_params", "track control", 64)
+
+  params:add_binary("p_macro_menu_remote", "show p-macros", "momentary", 0)
+  params:set_action("p_macro_menu_remote", function(z) toggle_pmac_perf_view(z) dirtyscreen = true end)
+  params:hide("p_macro_menu_remote")
   
   params:add_separator("midi_transport_control", "midi output")
 
@@ -3077,6 +3148,7 @@ function init()
 
     params:add_binary(i.."track_rand", "randomize", "trigger", 0)
     params:set_action(i.."track_rand", function() randomize(i) end)    
+
   end
 
   -- randomize settings
@@ -3134,7 +3206,7 @@ function init()
   audio.level_tape(1)
 
   for i = 1, 6 do
-    params:add_group("track_group"..i, "track "..i, 50)
+    params:add_group("track_group"..i, "track "..i, 51)
 
     -- track options
     params:add_separator("track_options_params"..i, "track "..i.." options")
@@ -3142,6 +3214,9 @@ function init()
     params:add_option(i.."input_options", "tape input", {"sum", "left", "right", "off"}, 1)
     params:set_action(i.."input_options", function(option) tp[i].input = option set_softcut_input(i) end)
     params:hide(i.."input_options")
+
+    params:add_option(i.."rec_enable", "rec enable", {"off", "on"}, 2)
+    params:set_action(i.."rec_enable", function(x) set_rec_enable(i, x == 2) grid_page(vREC) end)
 
     params:add_number(i.."tape_buffer", "track tape", 1, 6, i)
     params:set_action(i.."tape_buffer", function(x) tp[i].buffer = x set_tape(i, x) end)
@@ -3366,7 +3441,7 @@ function init()
   fastpulse = vizclock:new_sprocket{
     action = function(t)
       pulse_key_fast = pulse_key_fast == 8 and 12 or 8
-      if pattern_rec or track[armed_track].oneshot == 1 or splice_queued then dirtygrid = true end
+      if pattern_rec or track[armed_track].rec_thresh == 1 or splice_queued then dirtygrid = true end
     end,
     division = 1/32,
     enabled = true
