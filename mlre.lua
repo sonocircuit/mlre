@@ -2751,7 +2751,6 @@ function load_track_tape(i, with_snapshot)
   local snap = with_snapshot and true or false
   -- load and clear tape
   softcut.buffer_copy_mono(2, 1, tp[i].s - FADE_TIME, tp[i].s - FADE_TIME, MAX_TAPELENGTH + FADE_TIME, 0.01)
-  softcut.buffer_clear_region_channel(2, tp[i].s - 0.5, MAX_TAPELENGTH + 0.5, 0.01, 0)
   -- tape data
   tp[i].s = loadsesh.track[i].tape_s
   tp[i].e = loadsesh.track[i].tape_e
