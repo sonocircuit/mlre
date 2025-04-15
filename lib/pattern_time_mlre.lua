@@ -25,18 +25,17 @@ function pattern.new(id)
   i.step = 0
   i.time_factor = 1  
   i.bpm = nil
-  i.tempo_map = true
   i.loop = true
   i.clock_tick = 0
   i.synced = false
   i.sync_meter = 4/4
   i.sync_beatnum = 16
   i.num_ticks = 1024
-  i.sync_clock = nil
   i.metro = metro.init(function() i:next_event() end, 1, 1)
   i.start_callback = function() end
   i.event_callback = function() end
   i.process = function(_) end
+  i:init_sync_clock()
   return i
 end
 
@@ -213,25 +212,23 @@ function pattern:undo()
   end
 end
 
-function pattern:init_clock()
-  self.sync_clock = clock.run(pattern_sync, self)
-end
-
-function pattern_sync(target)
-  while true do
-    clock.sync(1/32)
-    if target.synced and target.play == 1 then
-      target.clock_tick = (target.clock_tick + 1) % target.num_ticks
-      if target.clock_tick == 0 then
-        target:undo()
-        if target.loop then
-          target:first()
-        else
-          target:stop()
+function pattern:init_sync_clock()
+  self.sync_clock = clock.run(function()
+    while true do
+      clock.sync(1/32)
+      if self.synced and self.play == 1 then
+        self.clock_tick = (self.clock_tick + 1) % self.num_ticks
+        if self.clock_tick == 0 then
+          self:undo()
+          if self.loop then
+            self:first()
+          else
+            self:stop()
+          end
         end
       end
     end
-  end
+  end)
 end
 
 function pattern:cleanup()

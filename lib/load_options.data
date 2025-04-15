@@ -21,5 +21,6 @@ return {
    ["transpose"]=1,
    ["vol"]=2,
    ["loops"]=1,
+   ["lfos"]=1,
 },
 }
