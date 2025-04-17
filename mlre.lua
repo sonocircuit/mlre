@@ -1223,16 +1223,13 @@ function set_rec_enable(i, active)
 end
 
 function toggle_rec(i, oneshot)
-  local mode = oneshot and 1 or 0
   if track[i].rec_enabled then
-    if rec_default_mode == 2 then
-      mode = 1 - mode
-    end
     if rec_launch == 4 then
       track[i].rec_queued = 1 - track[i].rec_queued
       if track[i].rec_queued == 1 then
         track[i].rec_armed = 1
-        track[i].rec_oneshot = mode
+        track[i].rec_oneshot = rec_default_mode == 1 and (oneshot and 1 or 0) or (oneshot and 0 or 1)
+        backup_rec(i, "save")
       else
         track[i].rec = 0
         set_rec(i)
@@ -1241,7 +1238,7 @@ function toggle_rec(i, oneshot)
       if track[i].rec == 0 and track[i].rec_armed == 0 then
         backup_rec(i, "save")
         track[i].rec_armed = 1
-        track[i].rec_oneshot = mode
+        track[i].rec_oneshot = rec_default_mode == 1 and (oneshot and 1 or 0) or (oneshot and 0 or 1)
         local beat_sync = rec_launch > 1 and (rec_launch == 3 and bar_val or 1) or (quantizing and q_rate or nil)
         if beat_sync ~= nil then
           track[i].rec_clock = clock.run(function()
@@ -1421,6 +1418,15 @@ function clear_loop(i)
   softcut.loop_end(i, clip[i].ce)
 end
 
+function chop_loop(i)
+  if track[i].loop == 1 then
+    local lend = track[i].loop_end - ((track[i].loop_end - track[i].loop_start + 1) / 2)
+    if (lend - track[i].loop_start + 1) > 1/16 then
+      loop_event(i, track[i].loop_start, lend)
+    end
+  end
+end
+
 function set_quarantine(i, isolate)
   if isolate then
     track[i].pos_arc =  track[i].rev == 0 and 1 or 64
@@ -1554,14 +1560,22 @@ function phase_poll(i, pos)
     page_redraw(vTAPE)
     -- queue recording
     if track[i].rec_queued == 1 then
-      local upper = track[i].loop == 0 and 1 or (track[i].loop_start * 4 - 3)
-      local lower = track[i].loop == 0 and 64 or (track[i].loop_end * 4)
-      local limit = track[i].rev == 0 and lower or upper
-      if track[i].pos_hi_res == limit then
-        backup_rec(i, "save")
-        track[i].rec = 1
-        set_rec(i)
-        run_oneshot_timer(i)
+      if track[i].rev == 0 then
+        local limit = track[i].loop == 0 and 64 or (math.floor(track[i].loop_end * 4))
+        if track[i].pos_hi_res >= limit then
+          track[i].rec_queued = 0
+          track[i].rec = 1
+          set_rec(i)
+          run_oneshot_timer(i)
+        end
+      else
+        local limit = track[i].loop == 0 and 1 or (math.floor(track[i].loop_start * 4 - 3))
+        if track[i].pos_hi_res <= limit then
+          track[i].rec_queued = 0
+          track[i].rec = 1
+          set_rec(i)
+          run_oneshot_timer(i)
+        end
       end
     end
     -- oneshot play_mode
@@ -1573,13 +1587,20 @@ function phase_poll(i, pos)
     end
     -- queue splice load
     if next(tp[i].event) then
-      local upper = track[i].loop == 0 and 1 or (track[i].loop_start * 4 - 3)
-      local lower = track[i].loop == 0 and 64 or (track[i].loop_end * 4)
-      local limit = track[i].rev == 0 and lower or upper
-      if track[i].pos_hi_res == limit then
-        event(tp[i].event)
-        tp[i].event = {}
-        splice_queued = false
+      if track[i].rev == 0 then
+        local limit = track[i].loop == 0 and 64 or (math.floor(track[i].loop_end * 4))
+        if track[i].pos_hi_res >= limit then
+          event(tp[i].event)
+          tp[i].event = {}
+          splice_queued = false
+        end
+      else
+        local limit = track[i].loop == 0 and 1 or (math.floor(track[i].loop_start * 4 - 3))
+        if track[i].pos_hi_res <= limit then
+          event(tp[i].event)
+          tp[i].event = {}
+          splice_queued = false
+        end
       end
     end
     -- randomize at cycle
@@ -2546,14 +2567,13 @@ function pset_read_callback(filename, silent, number)
     io.input(loaded_file)
     local pset_id = string.sub(io.read(), 4, -1)
     io.close(loaded_file)
-    -- clear temp buffer
-    softcut.buffer_clear_channel(2)
-    -- load main buffer
-    softcut.buffer_read_mono(norns.state.data.."sessions/"..number.."/"..pset_id.."_buffer.wav", 0, 0, -1, 1, 1)
-    -- load sesh data file
     loadsesh = {}
     loadsesh = tab.load(norns.state.data.."sessions/"..number.."/"..pset_id.."_session.data")
     if next(loadsesh) then
+      -- clear and load buffer
+      softcut.buffer_clear_channel(2)
+      softcut.buffer_read_mono(norns.state.data.."sessions/"..number.."/"..pset_id.."_buffer.wav", 0, 0, -1, 1, 1)
+      -- load sesh data file
       if loadsesh.format_v22_0 then
         -- set tempo
         if loadop.tempo > 1 then
@@ -2561,6 +2581,9 @@ function pset_read_callback(filename, silent, number)
         end
         -- load data
         for i = 1, 6 do
+          -- stop rec
+          track[i].rec = 0
+          set_rec(i)
           -- tape data
           tp[i].s = loadsesh.track[i].tape_s
           tp[i].e = loadsesh.track[i].tape_e
