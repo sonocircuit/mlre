@@ -169,7 +169,8 @@ end
 
 function ui.keyquant_key(n, z)
   if n > 1 and z == 1 then
-    keyq_pageNum = util.wrap(keyq_pageNum + 1, 1, 3)
+    local inc = n == 3 and 1 or -1
+    keyq_pageNum = util.wrap(keyq_pageNum + inc, 1, 3)
   end
   dirtyscreen = true
 end
@@ -554,7 +555,7 @@ function ui.arc_main_delta(n, d)
           arc_inc[n] = 0
         end)
       end
-      if track[track_focus].loop == 1 and alt == 1 then --TODO: add arc longpress
+      if track[track_focus].loop == 1 and alt == 1 then
         local e = {t = eUNLOOP, i = track_focus} event(e)
         if env[track_focus].active then
           local e = {t = eGATEOFF, i = track_focus} event(e)
@@ -577,6 +578,9 @@ function ui.arc_main_delta(n, d)
           local lend = clip[track_focus].s + (track[track_focus].loop_end) / 16 * clip[track_focus].l
           softcut.loop_start(track_focus, lstart)
           softcut.loop_end(track_focus, lend)
+          clip[track_focus].cs = lstart
+          clip[track_focus].ce = lend
+          clip[track_focus].cl = clip[track_focus].ce - clip[track_focus].cs
         end
         dirtygrid = true
       end
@@ -593,6 +597,8 @@ function ui.arc_main_delta(n, d)
         else
           local lstart = clip[track_focus].s + (track[track_focus].loop_start - 1) / 16 * clip[track_focus].l
           softcut.loop_start(track_focus, lstart)
+          clip[track_focus].cs = lstart
+          clip[track_focus].cl = clip[track_focus].ce - clip[track_focus].cs
         end
       end
       dirtygrid = true
@@ -613,6 +619,8 @@ function ui.arc_main_delta(n, d)
           else
             local lend = clip[track_focus].s + (track[track_focus].loop_end) / 16 * clip[track_focus].l
             softcut.loop_end(track_focus, lend)
+            clip[track_focus].ce = lend
+            clip[track_focus].cl = clip[track_focus].ce - clip[track_focus].cs
           end
         end
       end
