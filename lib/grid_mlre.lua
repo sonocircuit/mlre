@@ -137,6 +137,90 @@ local function punch_actions(i, z)
   if view == vMACRO then dirtyscreen = true end
 end
 
+local function track_cut(i, x, z)
+  local row = i + 1
+  if z == 1 and held[row] then heldmax[row] = 0 end
+  held[row] = held[row] + (z * 2 - 1)
+  if held[row] > heldmax[row] then heldmax[row] = held[row] end
+  if z == 1 then
+    -- flip the unflipped
+    if not track[i].loaded and alt == 0 and mod == 0 then
+      queue_track_tape(i)
+    end
+    -- cutfocus 
+    if alt == 1 and mod == 0 then
+      toggle_playback(i)
+    elseif alt == 0 and mod == 1 then
+      loop_event(i, x, x)
+    elseif alt == 1 and mod == 1 then
+      chop_loop(i) -- easter egg
+    elseif held[row] == 1 then
+      first[row] = x
+      if track[i].play == 1 or track[i].start_launch == 1 then
+        local e = {t = eCUT, i = i, pos = x} event(e)
+        if env[i].active then
+          local e = {t = eGATEON, i = i} event(e)
+        end
+      elseif track[i].play == 0 and track[i].start_launch > 1 then
+        clock.run(function()
+          local beat_sync = track[i].start_launch == 2 and 1 or bar_val
+          clock.sync(beat_sync)
+          local e = {t = eCUT, i = i, pos = x, sync = true} event(e)
+          if env[i].active then
+            local e = {t = eGATEON, i = i, sync = true} event(e)
+          end
+        end)
+      end
+    elseif held[row] == 2 then -- second keypress
+      second[row] = x
+    end
+  elseif z == 0 then
+    if held[row] == 1 and heldmax[row] == 2 then -- if two keys held at release then loop
+      local lstart = math.min(first[row], second[row])
+      local lend = math.max(first[row], second[row])
+      loop_event(i, lstart, lend)
+    else
+      if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
+        local e = {t = eSTOP, i = i} event(e)
+      end
+      if env[i].active and track[i].loop == 0 then
+        local e = {t = eGATEOFF, i = i} event(e)
+      end
+    end
+    if held[row] < 1 then held[row] = 0 end
+  end
+end
+
+local function track_cut_draw(y)
+  if track[track_focus].loop == 1 then
+    for x = math.floor(track[track_focus].loop_start), math.ceil(track[track_focus].loop_end) do
+      g:led(x, y, 4)
+    end
+  end
+  if track[track_focus].play == 1 then
+    g:led(track[track_focus].pos_grid, y, 15)
+  end
+end
+
+local function track_trsp(i, x)
+  if alt == 0 and mod == 0 then
+    if x >= 1 and x <= 8 then
+      local e = {t = eTRSP, i = i, val = x} event(e)
+    elseif x >= 9 and x <= 16 then
+      local e = {t = eTRSP, i = i, val = (x - 1)} event(e)
+    end
+  end
+  if x > 7 and x < 10 then
+    if alt == 1 and mod == 0 then
+      toggle_playback(i)
+    elseif alt == 0 and mod == 1 then
+      local inc = x == 9 and 1 or -1
+      local n = util.clamp(track[i].speed + inc, -3, 3)
+      local e = {t = eSPEED, i = i, speed = n} event(e)
+    end
+  end
+end
+
 function grd.clear_keylogic() -- reset key logic in case of stuck loops
   for i = 1, 8 do
     held[i] = 0
@@ -277,70 +361,6 @@ function grd.drawnav(y)
   g:led(16, y, alt == 1 and 15 or 9) -- alt
 end
 
-function grd.cutfocus_keys(x, z)
-  local row = track_focus + 1
-  local i = track_focus
-  if z == 1 and held[row] then heldmax[row] = 0 end
-  held[row] = held[row] + (z * 2 - 1)
-  if held[row] > heldmax[row] then heldmax[row] = held[row] end
-  if z == 1 then
-    -- flip the unflipped
-    if not track[i].loaded and alt == 0 and mod == 0 then
-      queue_track_tape(i)
-    end
-    -- cutfocus 
-    if alt == 1 and mod == 0 then
-      toggle_playback(i)
-    elseif mod == 1 then
-      loop_event(i, x, x)
-    elseif held[row] == 1 then
-      first[row] = x
-      if track[i].play == 1 or track[i].start_launch == 1 then
-        local e = {t = eCUT, i = i, pos = x} event(e)
-        if env[i].active then
-          local e = {t = eGATEON, i = i} event(e)
-        end
-      elseif track[i].play == 0 and track[i].start_launch > 1 then
-        clock.run(function()
-          local beat_sync = track[i].start_launch == 2 and 1 or bar_val
-          clock.sync(beat_sync)
-          local e = {t = eCUT, i = i, pos = x, sync = true} event(e)
-          if env[i].active then
-            local e = {t = eGATEON, i = i, sync = true} event(e)
-          end
-        end)
-      end
-    elseif held[row] == 2 then -- second keypress
-      second[row] = x
-    end
-  elseif z == 0 then
-    if held[row] == 1 and heldmax[row] == 2 then -- if two keys held at release then loop
-      local lstart = math.min(first[row], second[row])
-      local lend = math.max(first[row], second[row])
-      loop_event(i, lstart, lend)
-    else
-      if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-        local e = {t = eSTOP, i = i} event(e)
-      end
-      if env[i].active and track[i].loop == 0 then
-        local e = {t = eGATEOFF, i = i} event(e)
-      end
-    end
-    if held[row] < 1 then held[row] = 0 end
-  end
-end
-
-function grd.cutfocus_draw(y)
-  if track[track_focus].loop == 1 then
-    for x = math.floor(track[track_focus].loop_start), math.ceil(track[track_focus].loop_end) do
-      g:led(x, y, 4)
-    end
-  end
-  if track[track_focus].play == 1 then
-    g:led(track[track_focus].pos_grid, y, 15)
-  end
-end
-
 function grd.rec_keys(x, y, z, offset)
   local y = offset and y - offset or y
   if z == 1 and view ~= vMAIN and autofocus then
@@ -410,7 +430,7 @@ function grd.rec_keys(x, y, z, offset)
     end
   elseif y == 8 then -- cut for focused track
     if GRID_SIZE == 128 or offset == 8 then 
-      grd.cutfocus_keys(x, z)
+      track_cut(track_focus, x, z)
     end
   end
 end
@@ -442,7 +462,7 @@ function grd.rec_draw(offset)
     g:led(12 + track[i].speed, y, 9)
   end
   if GRID_SIZE == 128 or offset == 8 then 
-    grd.cutfocus_draw(8 + off)
+    track_cut_draw(8 + off)
   end
 end
 
@@ -451,82 +471,19 @@ function grd.cut_keys(x, y, z, offset)
   if z == 1 and view ~= vMAIN and autofocus then
     set_view(vMAIN)
   end
-  if z == 1 and held[y] then heldmax[y] = 0 end
-  held[y] = held[y] + (z * 2 - 1)
-  if held[y] > heldmax[y] then heldmax[y] = held[y] end
   if y == 8 then
     if z == 1 then
-      local i = track_focus
-      if mod == 0 then
-        if x >= 1 and x <= 8 then
-          local e = {t = eTRSP, i = i, val = x} event(e)
-        end
-        if x >= 9 and x <= 16 then
-          local e = {t = eTRSP, i = i, val = (x - 1)} event(e)
-        end
-      elseif mod == 1 then
-        if x == 8 then
-          local n = util.clamp(track[i].speed - 1, -3, 3)
-          local e = {t = eSPEED, i = i, speed = n} event(e)
-        elseif x == 9 then
-          local n = util.clamp(track[i].speed + 1, -3, 3)
-          local e = {t = eSPEED, i = i, speed = n} event(e)
-        end
-      end
+      track_trsp(track_focus, x)
     end
   else
     local i = y - 1
-    if z == 1 then
-      -- flip the unflipped
-      if not track[i].loaded and alt == 0 and mod == 0 then
-        queue_track_tape(i)
-      end
-      -- cutpage
-      if track_focus ~= i and cut_autofocus then
-        track_focus = i
-        arc_track_focus = track_focus
-        dirtyscreen = true
-        render_splice(i)
-      end
-      if alt == 1 and y < 8 then
-        toggle_playback(i)
-      elseif mod == 1 and y < 8 then
-        loop_event(i, x, x)
-      elseif y < 8 and held[y] == 1 then
-        first[y] = x
-        if track[i].play == 1 or track[i].start_launch == 1 then
-          local e = {t = eCUT, i = i, pos = x} event(e)
-          if env[i].active then
-            local e = {t = eGATEON, i = i} event(e)
-          end
-        elseif track[i].play == 0 and track[i].start_launch > 1 then
-          clock.run(function()
-            local beat_sync = track[i].start_launch == 2 and 1 or bar_val
-            clock.sync(beat_sync)
-            local e = {t = eCUT, i = i, pos = x, sync = true} event(e)
-            if env[i].active then
-              local e = {t = eGATEON, i = i, sync = true} event(e)
-            end
-          end)
-        end
-      elseif y < 8 and held[y] == 2 then
-        second[y] = x
-      end
-    elseif z == 0 then
-      if held[y] == 1 and heldmax[y] == 2 then
-        local lstart = math.min(first[y], second[y])
-        local lend = math.max(first[y], second[y])
-        loop_event(i, lstart, lend)
-      else
-        if track[i].play_mode == 3 and track[i].loop == 0 and not env[i].active then
-          local e = {t = eSTOP, i = i, sync = true} event(e)
-        end
-        if env[i].active and track[i].loop == 0 then
-          local e = {t = eGATEOFF, i = i, sync = true} event(e)
-        end
-      end
-      if held[y] < 1 then held[y] = 0 end
+    if track_focus ~= i and cut_autofocus and z == 1 then
+      track_focus = i
+      arc_track_focus = track_focus
+      dirtyscreen = true
+      render_splice(i)
     end
+    track_cut(i, x, z)
   end
 end
 
@@ -565,30 +522,11 @@ function grd.trsp_keys(x, y, z, offset)
         dirtyscreen = true
         render_splice(i)
       end
-      if alt == 0 and mod == 0 then
-        if x >= 1 and x <= 8 then
-          local e = {t = eTRSP, i = i, val = x} event(e)
-        end
-        if x >= 9 and x <= 16 then
-          local e = {t = eTRSP, i = i, val = (x - 1)} event(e)
-        end
-      end
-      if alt == 1 and x > 7 and x < 10 then
-        toggle_playback(i)
-      end
-      if mod == 1 then
-        if x == 8 then
-          local n = util.clamp(track[i].speed - 1, -3, 3)
-          local e = {t = eSPEED, i = i, speed = n} event(e)
-        elseif x == 9 then
-          local n = util.clamp(track[i].speed + 1, -3, 3)
-          local e = {t = eSPEED, i = i, speed = n} event(e)
-        end
-      end
+      track_trsp(i, x)
     end
   elseif y == 8 then -- cut for focused track
-    if GRID_SIZE == 128 or offset == 8 then 
-      grd.cutfocus_keys(x, z)
+    if GRID_SIZE == 128 or offset == 8 then
+      track_cut(track_focus, x, z)
     end
   end
 end
@@ -605,7 +543,7 @@ function grd.trsp_draw(offset)
     end
   end
   if GRID_SIZE == 128 or offset == 8 then 
-    grd.cutfocus_draw(8 + off)
+    track_cut_draw(8 + off)
   end
 end
 
@@ -931,7 +869,7 @@ function grd.tape_keys(x, y, z, offset)
     end
   elseif y == 8 then
     if GRID_SIZE == 128 or offset == 8 then 
-      grd.cutfocus_keys(x, z)
+      track_cut(track_focus, x, z)
     end
   end
   dirtyscreen = true
@@ -977,7 +915,7 @@ function grd.tape_draw(offset)
   g:led(16, 7 + off, view_presets and 15 or 5)
   -- cut focus
   if GRID_SIZE == 128 or offset == 8 then 
-    grd.cutfocus_draw(8 + off)
+    track_cut_draw(8 + off)
   end
 end
 
