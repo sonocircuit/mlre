@@ -2847,17 +2847,6 @@ function load_track_tape(i, with_snapshot)
     end
   end
   loadop.active = count > 0 and true or false
-  -- clear temp buffer
-  --[[
-    if loadop.active == false then
-    print("all tracks loaded")
-    clock.run(function()
-      clock.sleep(0.5)
-      print("cleared temp buffer")
-      softcut.buffer_clear_channel(2)
-    end)
-  end
-  --]]
   -- render
   render_splice(i)
   show_message("track  "..i.."   loaded")
@@ -3401,7 +3390,7 @@ function init()
     params:add_option(i.."trig_out", "trig output", {"off", "crow 1", "crow 2", "crow 3", "crow 4", "midi"}, 1)
     params:set_action(i.."trig_out", function(num) trig[i].out = num build_trig_menu(i) end)
 
-    params:add_option(i.."trig_type", "trig mode", {"pulse", "envelope"}, 1)
+    params:add_option(i.."trig_type", "trig mode", {"pulse", "env"}, 1)
     params:set_action(i.."trig_type", function(mode) trig[i].pulse = mode == 1 and true or false build_trig_menu(i) end)
 
     params:add_control(i.."crow_amp", "amplitude", controlspec.new(0.1, 10, "lin", 0.1, 8, "v"))
@@ -4122,7 +4111,6 @@ function r()
 end
 
 function build_trig_menu(i)
-  local i = i or 1
   if trig[i].out == 1 then
     params:hide(i.."trig_type")
     params:hide(i.."crow_amp")
@@ -4154,6 +4142,7 @@ function build_trig_menu(i)
     params:show(i.."midi_note")
     params:show(i.."midi_vel")
   end
+  _menu.rebuild_params()
 end
 
 function get_beatnum(length)
