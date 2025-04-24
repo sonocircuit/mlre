@@ -41,7 +41,7 @@ local length_actions = {": 2", "set", "x 2"}
 local pmac_pageNum = 1
 local pmac_pageEnc = 0
 local pmac_param_id = {{"cutoff", "vol", "detune", "lfo_depth"}, {"filter_q", "pan", "rate_slew", "lfo_rate"}}
-local pmac_param_name = {{"cutoff", "vol", "detune", "lfo   depth"}, {"filter  q", "pan", "rate_slew", "lfo   rate"}}
+local pmac_param_name = {{"cutoff", "vol", "detune", "lfo   depth"}, {"filter  q", "pan", "rate   slew", "lfo   rate"}}
 
 -- arc variables
 local arc_pageNum = 1
