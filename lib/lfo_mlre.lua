@@ -13,6 +13,15 @@ LFO.__index = LFO
 local lfo_rates = {1/32,1/16,1/8,1/4,5/16,1/3,3/8,1/2,3/4,1,1.5,2,3,4,6,8,16,32,64,128}
 local lfo_rates_as_strings = {"1/32","1/16","1/8","1/4","5/16","1/3","3/8","1/2","3/4","1","1.5","2","3","4","6","8","16","32","64","128"}
 local lfo_shapes = {'sine','tri','square','random','up','down'}
+local reset_targets = {'floor', 'ceiling', 'mid: rising', 'mid: falling'}
+local reset_values = {
+  sine = {0.75, 0.25, 1, 0.5}, 
+  tri = {1, 0.5, 0.25, 0.75},
+  square = {0.75, 1, 0.25, 0.5},
+  random = {0.75, 1, 0.25, 0.5},
+  up = {1, 1, 0.5, 0.5},
+  down = {1, 1, 0.5, 0.5}
+}
 
 local beat_sec = clock.get_beat_sec()
 
@@ -248,25 +257,19 @@ local function process_lfo(id)
 
     local min = _lfo.min
     local max = _lfo.max
-    local offset = (_lfo.max - _lfo.min) * _lfo.offset
-
-    if _lfo.shape ~= 'random' then
-      _lfo.raw = current_val
-    end
-    
+    local offset = (_lfo.max - _lfo.min) * _lfo.offset  
     local value = util.linlin(0, 1, min, min + _lfo.percentage, current_val)
 
     if _lfo.depth > 0 then
-
       if _lfo.baseline == 'center' then
         value = util.linlin(0, 1, _lfo.scaled_min, _lfo.scaled_max, current_val)
       elseif _lfo.baseline == 'max' then
         value = util.linlin(0, 1, _lfo.scaled_max, _lfo.scaled_min, current_val)
       end
-
       if _lfo.shape == 'sine' or  _lfo.shape == 'tri' or _lfo.shape == 'up' or _lfo.shape == 'down' then
         value = util.clamp(value, min, max)
         _lfo.scaled = value + offset
+        _lfo.raw = current_val
       elseif _lfo.shape == 'square' then
         local square_value = value >= _lfo.mid and max or min
         square_value = util.linlin(min, max, _lfo.scaled_min, _lfo.scaled_max, square_value)
@@ -284,9 +287,7 @@ local function process_lfo(id)
           _lfo.raw = util.linlin(_lfo.scaled_min, _lfo.scaled_max, 0, 1, rand_value)
         end
       end
-
       _lfo.action(_lfo.scaled, _lfo.raw)
-
     end
   end
 end
@@ -361,16 +362,9 @@ end
 
 --- reset the LFO's phase
 function LFO:reset_phase()
-  local baseline = self.mode == "free" and (clock.get_beat_sec() / self.period) or self.period
-  if self.reset_target == "floor" then
-    self.phase_counter = 0.75 / baseline
-  elseif self.reset_target == "ceiling" then
-    self.phase_counter = 0.25 / baseline
-  elseif self.reset_target == "mid: falling" then
-    self.phase_counter = 0.5 / baseline
-  elseif self.reset_target == "mid: rising" then
-    self.phase_counter = baseline
-  end
+  local baseline = self.mode == "free" and (self.period / beat_sec) or self.period
+  local value = reset_values[self.shape][tab.key(reset_targets, self.reset_target)]
+  self.phase_counter = value * baseline
 end
 
 
