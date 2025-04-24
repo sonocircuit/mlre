@@ -75,10 +75,10 @@ end
 local function snapshot_actions(i, z)
   snap[i].active = z == 1 and true or false
   if z == 1 then
-    if alt == 1 then
+    if alt == 1 and mod == 0 then
       snap[i].data = false
       snap[i].active = false
-    else
+    elseif alt == 0 then
       if snap[i].data then
         if snap_track > 0 then
           launch_snapshot(i, track_focus)
@@ -153,7 +153,11 @@ local function track_cut(i, x, z)
     elseif alt == 0 and mod == 1 then
       loop_event(i, x, x)
     elseif alt == 1 and mod == 1 then
-      chop_loop(i) -- easter egg
+      if track[i].loop == 1 then -- easter egg
+        chop_loop(i)
+      else
+        loop_event(i, track[i].loop_start, track[i].loop_end)
+      end
     elseif held[row] == 1 then
       first[row] = x
       if track[i].play == 1 or track[i].start_launch == 1 then
@@ -371,7 +375,6 @@ function grd.rec_keys(x, y, z, offset)
     if x == 1 and z == 1 then
       if mod == 0 then
         toggle_rec(i, alt == 1)
-        chop_thresh_rec(i)
       else
         if alt == 0 then
           backup_rec(i, "undo")
